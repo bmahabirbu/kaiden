@@ -23,9 +23,11 @@ import { inject, injectable, preDestroy } from 'inversify';
 import { parse as parseYAML } from 'yaml';
 
 import { IPCHandle } from '/@/plugin/api.js';
+import { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
 import { Exec } from '/@/plugin/util/exec.js';
 import type {
   AgentWorkspaceConfiguration,
+  AgentWorkspaceCreateOptions,
   AgentWorkspaceId,
   AgentWorkspaceSummary,
 } from '/@api/agent-workspace-info.js';
@@ -43,11 +45,38 @@ export class AgentWorkspaceManager implements Disposable {
     private readonly ipcHandle: IPCHandle,
     @inject(Exec)
     private readonly exec: Exec,
+    @inject(CliToolRegistry)
+    private readonly cliToolRegistry: CliToolRegistry,
   ) {}
 
-  private async execKdn<T>(args: string[]): Promise<T> {
-    const result = await this.exec.exec('kdn', ['workspace', ...args, '--output', 'json']);
+  private getCliPath(): string {
+    const tool = this.cliToolRegistry.getCliToolInfos().find(t => t.name === 'kdn');
+    if (tool?.path) {
+      return tool.path;
+    }
+    return 'kdn';
+  }
+
+  private async execKdn<T>(args: string[], options?: { cwd?: string }): Promise<T> {
+    const cliPath = this.getCliPath();
+    const result = await this.exec.exec(cliPath, ['workspace', ...args, '--output', 'json'], options);
     return JSON.parse(result.stdout) as T;
+  }
+
+  async create(options: AgentWorkspaceCreateOptions): Promise<AgentWorkspaceId> {
+    const cliPath = this.getCliPath();
+    const runtime = options.runtime ?? 'podman';
+    const args = ['init', options.sourcePath, '--runtime', runtime, '--agent', options.agent, '--output', 'json'];
+    if (options.name) {
+      args.push('--name', options.name);
+    }
+    if (options.project) {
+      args.push('--project', options.project);
+    }
+    const result = await this.exec.exec(cliPath, args);
+    const workspaceId = JSON.parse(result.stdout) as AgentWorkspaceId;
+    this.apiSender.send('agent-workspace-update');
+    return workspaceId;
   }
 
   async list(): Promise<AgentWorkspaceSummary[]> {
@@ -91,6 +120,13 @@ export class AgentWorkspaceManager implements Disposable {
   }
 
   init(): void {
+    this.ipcHandle(
+      'agent-workspace:create',
+      async (_listener: unknown, options: AgentWorkspaceCreateOptions): Promise<AgentWorkspaceId> => {
+        return this.create(options);
+      },
+    );
+
     this.ipcHandle('agent-workspace:list', async (): Promise<AgentWorkspaceSummary[]> => {
       return this.list();
     });

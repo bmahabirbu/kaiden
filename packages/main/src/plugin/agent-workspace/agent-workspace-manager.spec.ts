@@ -23,10 +23,12 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { parse as parseYAML } from 'yaml';
 
 import type { IPCHandle } from '/@/plugin/api.js';
-import type { Proxy } from '/@/plugin/proxy.js';
+import type { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
+import type { Proxy as ProxyType } from '/@/plugin/proxy.js';
 import { Exec } from '/@/plugin/util/exec.js';
-import type { AgentWorkspaceSummary } from '/@api/agent-workspace-info.js';
+import type { AgentWorkspaceCreateOptions, AgentWorkspaceSummary } from '/@api/agent-workspace-info.js';
 import type { ApiSenderType } from '/@api/api-sender/api-sender-type.js';
+import type { CliToolInfo } from '/@api/cli-tool-info.js';
 
 import { AgentWorkspaceManager } from './agent-workspace-manager.js';
 
@@ -62,20 +64,36 @@ const apiSender: ApiSenderType = {
 const ipcHandle: IPCHandle = vi.fn();
 const proxy = {
   isEnabled: vi.fn().mockReturnValue(false),
-} as unknown as Proxy;
+} as unknown as ProxyType;
 const exec = new Exec(proxy);
+const cliToolRegistry = {
+  getCliToolInfos: vi
+    .fn()
+    .mockReturnValue([
+      { name: 'kdn', path: '/usr/local/bin/kdn' },
+    ]),
+} as unknown as CliToolRegistry;
+
+const KAIDEN_CLI_PATH = '/usr/local/bin/kdn';
 
 function mockExecResult(stdout: string): RunResult {
-  return { command: 'kdn', stdout, stderr: '' };
+  return { command: KAIDEN_CLI_PATH, stdout, stderr: '' };
 }
 
 beforeEach(() => {
   vi.resetAllMocks();
-  manager = new AgentWorkspaceManager(apiSender, ipcHandle, exec);
+  vi.mocked(cliToolRegistry.getCliToolInfos).mockReturnValue([
+    { name: 'kdn', path: KAIDEN_CLI_PATH },
+  ] as unknown as CliToolInfo[]);
+  manager = new AgentWorkspaceManager(apiSender, ipcHandle, exec, cliToolRegistry);
   manager.init();
 });
 
 describe('init', () => {
+  test('registers IPC handler for create', () => {
+    expect(ipcHandle).toHaveBeenCalledWith('agent-workspace:create', expect.any(Function));
+  });
+
   test('registers IPC handler for list', () => {
     expect(ipcHandle).toHaveBeenCalledWith('agent-workspace:list', expect.any(Function));
   });
@@ -97,13 +115,90 @@ describe('init', () => {
   });
 });
 
+describe('getCliPath', () => {
+  test('falls back to kdn when no CLI tool is registered', async () => {
+    vi.mocked(cliToolRegistry.getCliToolInfos).mockReturnValue([]);
+    vi.spyOn(exec, 'exec').mockResolvedValue(mockExecResult(JSON.stringify({ items: [] })));
+
+    await manager.list();
+
+    expect(exec.exec).toHaveBeenCalledWith('kdn', ['workspace', 'list', '--output', 'json'], undefined);
+  });
+});
+
+describe('create', () => {
+  const defaultOptions: AgentWorkspaceCreateOptions = {
+    sourcePath: '/tmp/my-project',
+    agent: 'claude',
+    runtime: 'podman',
+  };
+
+  test('executes kdn init with required flags and returns the workspace id', async () => {
+    vi.spyOn(exec, 'exec').mockResolvedValue(mockExecResult(JSON.stringify({ id: 'ws-new' })));
+
+    const result = await manager.create(defaultOptions);
+
+    expect(exec.exec).toHaveBeenCalledWith(KAIDEN_CLI_PATH, [
+      'init',
+      '/tmp/my-project',
+      '--runtime',
+      'podman',
+      '--agent',
+      'claude',
+      '--output',
+      'json',
+    ]);
+    expect(result).toEqual({ id: 'ws-new' });
+  });
+
+  test('defaults runtime to podman when not specified', async () => {
+    vi.spyOn(exec, 'exec').mockResolvedValue(mockExecResult(JSON.stringify({ id: 'ws-new' })));
+
+    await manager.create({ sourcePath: '/tmp/my-project', agent: 'claude' });
+
+    expect(exec.exec).toHaveBeenCalledWith(KAIDEN_CLI_PATH, expect.arrayContaining(['--runtime', 'podman']));
+  });
+
+  test('includes optional name flag when provided', async () => {
+    vi.spyOn(exec, 'exec').mockResolvedValue(mockExecResult(JSON.stringify({ id: 'ws-new' })));
+
+    await manager.create({ ...defaultOptions, name: 'my-workspace' });
+
+    expect(exec.exec).toHaveBeenCalledWith(KAIDEN_CLI_PATH, expect.arrayContaining(['--name', 'my-workspace']));
+  });
+
+  test('includes optional project flag when provided', async () => {
+    vi.spyOn(exec, 'exec').mockResolvedValue(mockExecResult(JSON.stringify({ id: 'ws-new' })));
+
+    await manager.create({ ...defaultOptions, project: 'my-project' });
+
+    expect(exec.exec).toHaveBeenCalledWith(KAIDEN_CLI_PATH, expect.arrayContaining(['--project', 'my-project']));
+  });
+
+  test('emits agent-workspace-update event', async () => {
+    vi.spyOn(exec, 'exec').mockResolvedValue(mockExecResult(JSON.stringify({ id: 'ws-new' })));
+
+    await manager.create(defaultOptions);
+
+    expect(apiSender.send).toHaveBeenCalledWith('agent-workspace-update');
+  });
+
+  test('rejects when source directory does not exist', async () => {
+    vi.spyOn(exec, 'exec').mockRejectedValue(new Error('sources directory does not exist: /tmp/not-found'));
+
+    await expect(manager.create({ ...defaultOptions, sourcePath: '/tmp/not-found' })).rejects.toThrow(
+      'sources directory does not exist: /tmp/not-found',
+    );
+  });
+});
+
 describe('list', () => {
   test('executes kdn workspace list and returns items', async () => {
     vi.spyOn(exec, 'exec').mockResolvedValue(mockExecResult(JSON.stringify({ items: TEST_SUMMARIES })));
 
     const result = await manager.list();
 
-    expect(exec.exec).toHaveBeenCalledWith('kdn', ['workspace', 'list', '--output', 'json']);
+    expect(exec.exec).toHaveBeenCalledWith(KAIDEN_CLI_PATH, ['workspace', 'list', '--output', 'json'], undefined);
     expect(result).toHaveLength(2);
     expect(result.map(s => s.id)).toEqual(['ws-1', 'ws-2']);
   });
@@ -145,7 +240,11 @@ describe('remove', () => {
 
     const result = await manager.remove('ws-1');
 
-    expect(exec.exec).toHaveBeenCalledWith('kdn', ['workspace', 'remove', 'ws-1', '--output', 'json']);
+    expect(exec.exec).toHaveBeenCalledWith(
+      KAIDEN_CLI_PATH,
+      ['workspace', 'remove', 'ws-1', '--output', 'json'],
+      undefined,
+    );
     expect(result).toEqual({ id: 'ws-1' });
   });
 
@@ -172,7 +271,7 @@ describe('getConfiguration', () => {
 
     const result = await manager.getConfiguration('ws-1');
 
-    expect(exec.exec).toHaveBeenCalledWith('kdn', ['workspace', 'list', '--output', 'json']);
+    expect(exec.exec).toHaveBeenCalledWith(KAIDEN_CLI_PATH, ['workspace', 'list', '--output', 'json'], undefined);
     expect(readFile).toHaveBeenCalledWith('/tmp/ws1/.kaiden.yaml', 'utf-8');
     expect(parseYAML).toHaveBeenCalledWith('mounts:\n  dependencies: []\n');
     expect(result).toEqual({ mounts: { dependencies: [] } });
@@ -211,7 +310,11 @@ describe('start', () => {
 
     const result = await manager.start('ws-1');
 
-    expect(exec.exec).toHaveBeenCalledWith('kdn', ['workspace', 'start', 'ws-1', '--output', 'json']);
+    expect(exec.exec).toHaveBeenCalledWith(
+      KAIDEN_CLI_PATH,
+      ['workspace', 'start', 'ws-1', '--output', 'json'],
+      undefined,
+    );
     expect(result).toEqual({ id: 'ws-1' });
   });
 
@@ -236,7 +339,11 @@ describe('stop', () => {
 
     const result = await manager.stop('ws-1');
 
-    expect(exec.exec).toHaveBeenCalledWith('kdn', ['workspace', 'stop', 'ws-1', '--output', 'json']);
+    expect(exec.exec).toHaveBeenCalledWith(
+      KAIDEN_CLI_PATH,
+      ['workspace', 'stop', 'ws-1', '--output', 'json'],
+      undefined,
+    );
     expect(result).toEqual({ id: 'ws-1' });
   });
 
