@@ -39,7 +39,7 @@ export type AgentWorkspaceId = cliComponents['schemas']['WorkspaceId'];
 export type AgentWorkspaceConfiguration = configComponents['schemas']['WorkspaceConfiguration'];
 
 /**
- * Options for creating (initializing) a new workspace via `kortex-cli init`.
+ * Options for creating (initializing) a new workspace via `kdn init`.
  */
 export interface AgentWorkspaceCreateOptions {
   sourcePath: string;
