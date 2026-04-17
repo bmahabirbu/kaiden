@@ -2,6 +2,7 @@
 import {
   faCode,
   faFolder,
+  faFolderOpen,
   faGears,
   faHome,
   faLock,
@@ -15,6 +16,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { Button, Input } from '@podman-desktop/ui-svelte';
 import { Icon } from '@podman-desktop/ui-svelte/icons';
+import { toast } from 'svelte-sonner';
 
 import { Textarea } from '/@/lib/chat/components/ui/textarea';
 import CardSelector from '/@/lib/ui/CardSelector.svelte';
@@ -116,6 +118,40 @@ function updateCustomPath(index: number, value: string): void {
   customPaths = customPaths.map((p, i) => (i === index ? value : p));
 }
 
+async function handleBrowseCustomPath(index: number): Promise<void> {
+  try {
+    const result = await window.openDialog({
+      title: 'Select a directory',
+      selectors: ['openDirectory'],
+    });
+    const selected = result?.[0];
+    if (selected) {
+      updateCustomPath(index, selected);
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    error = message;
+    toast.error(`Failed to browse for directory: ${message}`);
+  }
+}
+
+async function handleBrowseFolder(): Promise<void> {
+  try {
+    const result = await window.openDialog({
+      title: 'Select a working directory',
+      selectors: ['openDirectory'],
+    });
+    const selected = result?.[0];
+    if (selected) {
+      workingDir = selected;
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    error = message;
+    toast.error(`Failed to browse for directory: ${message}`);
+  }
+}
+
 function cancel(): void {
   handleNavigation({ page: NavigationPage.AGENT_WORKSPACES });
 }
@@ -189,7 +225,10 @@ async function startWorkspace(): Promise<void> {
               </div>
               <div>
                 <span class="block text-sm font-semibold text-[var(--pd-modal-text)] mb-2">Working Directory</span>
-                <Input bind:value={workingDir} placeholder="/path/to/project" class="w-full" />
+                <div class="flex flex-row gap-2 items-center">
+                  <Input bind:value={workingDir} placeholder="/path/to/project" class="grow" />
+                  <Button onclick={handleBrowseFolder} aria-label="Browse for folder" icon={faFolderOpen} />
+                </div>
               </div>
             </div>
 
@@ -273,13 +312,14 @@ async function startWorkspace(): Promise<void> {
             {#if selectedFileAccess === 'custom'}
               <div class="mt-4 p-4 rounded-lg bg-[var(--pd-content-card-inset-bg)]">
                 {#each customPaths as path, index (index)}
-                  <div class="flex gap-3 mb-2">
+                  <div class="flex gap-3 mb-2 items-center">
                     <Input
                       value={path}
                       placeholder="/path/to/allowed/directory"
                       class="flex-1 font-mono text-sm"
                       oninput={(e: Event): void => updateCustomPath(index, (e.target as HTMLInputElement).value)}
                     />
+                    <Button onclick={(): Promise<void> => handleBrowseCustomPath(index)} aria-label="Browse for directory" icon={faFolderOpen} />
                     {#if customPaths.length > 1}
                       <Button class="text-red-400" onclick={(): void => removeCustomPath(index)}>Remove</Button>
                     {/if}
