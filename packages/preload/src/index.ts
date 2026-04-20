@@ -142,7 +142,7 @@ import type { ChunkProviderInfo } from '/@api/rag/chunk-provider-info';
 import type { RagEnvironment } from '/@api/rag/rag-environment';
 import type { ExtensionBanner, RecommendedRegistry } from '/@api/recommendations/recommendations';
 import type { ReleaseNotesInfo } from '/@api/release-notes-info';
-import type { SkillFileContent, SkillFolderInfo, SkillInfo } from '/@api/skill/skill-info';
+import type { SkillFileContent, SkillFolderInfo, SkillInfo, SkillResourceEntry } from '/@api/skill/skill-info';
 import type { StatusBarEntryDescriptor } from '/@api/status-bar';
 import type { PinOption } from '/@api/status-bar/pin-option';
 import type { TelemetryMessages } from '/@api/telemetry';
@@ -408,9 +408,12 @@ export function initExposure(): void {
     return ipcInvoke('skill-manager:getSkillContent', name);
   });
 
-  contextBridge.exposeInMainWorld('listSkillFolderContent', async (name: string): Promise<string[]> => {
-    return ipcInvoke('skill-manager:listSkillFolderContent', name);
-  });
+  contextBridge.exposeInMainWorld(
+    'listSkillFolderContent',
+    async (name: string, relativePath?: string): Promise<SkillResourceEntry[]> => {
+      return ipcInvoke('skill-manager:listSkillFolderContent', name, relativePath);
+    },
+  );
 
   contextBridge.exposeInMainWorld('getSkillFileContent', async (filePath: string): Promise<SkillFileContent> => {
     return ipcInvoke('skill-manager:getSkillFileContent', filePath);

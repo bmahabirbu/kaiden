@@ -487,22 +487,52 @@ test('getSkillContent should throw when skill name not found', async () => {
   await expect(skillManager.getSkillContent('nonexistent')).rejects.toThrow('Skill not found with name');
 });
 
-test('listSkillFolderContent should return folder entries for a registered skill', async () => {
+test('listSkillFolderContent should return single level of entries', async () => {
   vi.mocked(existsSync).mockReturnValue(true);
   vi.mocked(readFile).mockResolvedValue(validSkillMd);
 
   const skillManager = createSkillManager();
-  const skill = await skillManager.registerSkill(join(SKILLS_DIR, 'my-test-skill'));
+  await skillManager.registerSkill(join(SKILLS_DIR, 'my-test-skill'));
 
-  vi.mocked(readdir).mockResolvedValue([
+  vi.mocked(readdir).mockResolvedValueOnce([
     { name: 'SKILL.md', isDirectory: (): boolean => false },
     { name: 'utils.ts', isDirectory: (): boolean => false },
     { name: 'templates', isDirectory: (): boolean => true },
   ] as unknown as Awaited<ReturnType<typeof readdir>>);
 
   const entries = await skillManager.listSkillFolderContent('my-test-skill');
-  expect(entries).toEqual(['SKILL.md', 'utils.ts', 'templates/']);
-  expect(readdir).toHaveBeenCalledWith(skill.path, { withFileTypes: true });
+  expect(entries).toEqual([
+    { name: 'SKILL.md', isDirectory: false },
+    { name: 'utils.ts', isDirectory: false },
+    { name: 'templates', isDirectory: true },
+  ]);
+});
+
+test('listSkillFolderContent should load subdirectory with relativePath', async () => {
+  vi.mocked(existsSync).mockReturnValue(true);
+  vi.mocked(readFile).mockResolvedValue(validSkillMd);
+
+  const skillManager = createSkillManager();
+  await skillManager.registerSkill(join(SKILLS_DIR, 'my-test-skill'));
+
+  vi.mocked(readdir).mockResolvedValueOnce([
+    { name: 'deploy.yaml', isDirectory: (): boolean => false },
+  ] as unknown as Awaited<ReturnType<typeof readdir>>);
+
+  const entries = await skillManager.listSkillFolderContent('my-test-skill', 'templates');
+  expect(entries).toEqual([{ name: 'deploy.yaml', isDirectory: false }]);
+});
+
+test('listSkillFolderContent should reject path traversal', async () => {
+  vi.mocked(existsSync).mockReturnValue(true);
+  vi.mocked(readFile).mockResolvedValue(validSkillMd);
+
+  const skillManager = createSkillManager();
+  await skillManager.registerSkill(join(SKILLS_DIR, 'my-test-skill'));
+
+  await expect(skillManager.listSkillFolderContent('my-test-skill', '../other')).rejects.toThrow(
+    'Invalid relative path',
+  );
 });
 
 test('listSkillFolderContent should throw when skill name not found', async () => {

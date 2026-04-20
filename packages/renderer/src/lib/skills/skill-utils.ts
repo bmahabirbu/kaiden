@@ -16,36 +16,17 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-export interface SkillMetadata {
-  name: string;
-  description: string;
+import type { SkillResourceEntry } from '/@api/skill/skill-info';
+
+export function countTopLevelEntries(entries: SkillResourceEntry[]): number {
+  return entries.length;
 }
 
-export interface SkillInfo extends SkillMetadata {
-  path: string;
-  enabled: boolean;
-  managed: boolean;
+export function formatTokenCount(text: string | undefined): string {
+  if (!text) return 'N/A';
+  const tokens = Math.ceil(text.length / 3.5);
+  if (tokens >= 1000) {
+    return `~${(tokens / 1000).toFixed(1)}k tokens`;
+  }
+  return `~${tokens} tokens`;
 }
-
-export interface SkillFolderInfo {
-  label: string;
-  badge: string;
-  icon?: string;
-  baseDirectory: string;
-}
-
-export interface SkillFileContent extends SkillMetadata {
-  content?: string;
-  sourcePath?: string;
-}
-
-export interface SkillResourceEntry {
-  name: string;
-  isDirectory: boolean;
-  children?: SkillResourceEntry[];
-}
-
-export const SKILL_SECTION = 'skills';
-export const SKILL_ENABLED = 'enabled';
-export const SKILL_REGISTERED = 'registered';
-export const SKILL_FILE_NAME = 'SKILL.md';

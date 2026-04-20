@@ -39,6 +39,7 @@ import {
   type SkillFolderInfo,
   type SkillInfo,
   type SkillMetadata,
+  type SkillResourceEntry,
 } from '/@api/skill/skill-info.js';
 
 const RESERVED_WORDS = ['anthropic', 'claude'];
@@ -128,9 +129,12 @@ export class SkillManager {
       return this.getSkillContent(name);
     });
 
-    this.ipcHandle('skill-manager:listSkillFolderContent', async (_listener, name: string): Promise<string[]> => {
-      return this.listSkillFolderContent(name);
-    });
+    this.ipcHandle(
+      'skill-manager:listSkillFolderContent',
+      async (_listener, name: string, relativePath?: string): Promise<SkillResourceEntry[]> => {
+        return this.listSkillFolderContent(name, relativePath);
+      },
+    );
 
     this.ipcHandle(
       'skill-manager:getSkillFileContent',
@@ -376,11 +380,26 @@ export class SkillManager {
     return { name: metadata.name, description: metadata.description, content: body };
   }
 
-  /** Lists all file/directory names inside the skill's folder. Directories have a trailing slash. */
-  async listSkillFolderContent(name: string): Promise<string[]> {
+  /** Lists one level of files/directories inside the skill's folder or a subfolder. */
+  async listSkillFolderContent(name: string, relativePath?: string): Promise<SkillResourceEntry[]> {
     const skill = this.findSkillByName(name);
-    const entries = await readdir(skill.path, { withFileTypes: true });
-    return entries.map(entry => (entry.isDirectory() ? `${entry.name}/` : entry.name));
+    let targetPath = skill.path;
+    if (relativePath) {
+      targetPath = join(skill.path, relativePath);
+      const resolved = resolve(targetPath);
+      if (!resolved.startsWith(resolve(skill.path) + sep)) {
+        throw new Error('Invalid relative path');
+      }
+    }
+    return this.readDirectoryLevel(targetPath);
+  }
+
+  private async readDirectoryLevel(dirPath: string): Promise<SkillResourceEntry[]> {
+    const entries = await readdir(dirPath, { withFileTypes: true });
+    return entries.map(entry => ({
+      name: entry.name,
+      isDirectory: entry.isDirectory(),
+    }));
   }
 
   private findSkillByName(name: string): SkillInfo {

@@ -1,7 +1,5 @@
 <script lang="ts">
-import { faFile, faFolder } from '@fortawesome/free-regular-svg-icons';
 import { Checkbox, EmptyScreen, Tab } from '@podman-desktop/ui-svelte';
-import { Icon } from '@podman-desktop/ui-svelte/icons';
 import { toast } from 'svelte-sonner';
 import { router } from 'tinro';
 
@@ -10,10 +8,12 @@ import NoLogIcon from '/@/lib/ui/NoLogIcon.svelte';
 import { getTabUrl, isTabSelected } from '/@/lib/ui/Util';
 import Route from '/@/Route.svelte';
 import { skillInfos } from '/@/stores/skills';
-import type { SkillInfo } from '/@api/skill/skill-info';
+import type { SkillInfo, SkillResourceEntry } from '/@api/skill/skill-info';
 
+import { countTopLevelEntries, formatTokenCount } from './skill-utils';
 import SkillActions from './SkillActions.svelte';
 import SkillDetailRow from './SkillDetailRow.svelte';
+import SkillResourceTree from './SkillResourceTree.svelte';
 
 interface Props {
   name: string;
@@ -23,7 +23,7 @@ let { name }: Props = $props();
 
 let skillInfo: SkillInfo | undefined = $derived($skillInfos.find(s => s.name === name));
 let skillContent: string | undefined = $state(undefined);
-let folderContents: string[] = $state([]);
+let folderContents: SkillResourceEntry[] = $state([]);
 
 $effect(() => {
   if (!skillInfo) {
@@ -49,15 +49,6 @@ $effect(() => {
     })
     .catch((err: unknown) => console.error('Unexpected error loading skill details:', err));
 });
-
-function formatTokenCount(text: string | undefined): string {
-  if (!text) return 'N/A';
-  const tokens = Math.ceil(text.length / 3.5);
-  if (tokens >= 1000) {
-    return `~${(tokens / 1000).toFixed(1)}k tokens`;
-  }
-  return `~${tokens} tokens`;
-}
 
 let toggling = $state(false);
 
@@ -145,7 +136,7 @@ function onToggle(): void {
               <h3 class="text-sm font-semibold text-[var(--pd-content-card-header-text)] uppercase tracking-wider mb-4">Metadata</h3>
               <div class="divide-y divide-[var(--pd-content-card-border)]">
                 <SkillDetailRow label="Instructions Size" value={formatTokenCount(skillContent)} />
-                <SkillDetailRow label="Bundled Resources" value="{folderContents.length} items" />
+                <SkillDetailRow label="Bundled Resources" value="{countTopLevelEntries(folderContents)} items" />
               </div>
             </div>
           </div>
@@ -172,21 +163,14 @@ function onToggle(): void {
       <div class="px-5 py-4 h-full overflow-auto">
         <div class="bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] rounded-lg overflow-hidden">
           <div class="px-5 py-4 border-b border-[var(--pd-content-card-border)] bg-[var(--pd-content-bg)]">
-            <span class="text-base font-semibold text-[var(--pd-content-text)]">Bundled Resources ({folderContents.length})</span>
+            <span class="text-base font-semibold text-[var(--pd-content-text)]">Bundled Resources ({countTopLevelEntries(folderContents)})</span>
           </div>
           {#if folderContents.length === 0}
             <div class="px-6 py-12 text-center">
               <p class="text-sm text-[var(--pd-content-card-text)]">No bundled resources.</p>
             </div>
           {:else}
-            {#each folderContents as item (item)}
-              <div class="flex items-center gap-3 px-5 py-3 border-b border-[var(--pd-content-card-border)] last:border-b-0 hover:bg-[var(--pd-content-card-hover-bg)]">
-                <div class="w-8 h-8 rounded-md flex items-center justify-center bg-[var(--pd-content-bg)]">
-                  <Icon icon={item.endsWith('/') ? faFolder : faFile} class="text-[var(--pd-content-card-text)]" />
-                </div>
-                <span class="text-sm font-medium text-[var(--pd-content-text)] font-mono">{item}</span>
-              </div>
-            {/each}
+            <SkillResourceTree skillName={name} entries={folderContents} />
           {/if}
         </div>
       </div>
