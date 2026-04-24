@@ -38,7 +38,7 @@ test('Expect form elements rendered correctly', () => {
   expect(screen.getByPlaceholderText('e.g. GitHub · docs repo')).toBeInTheDocument();
   expect(screen.getByText('API Token')).toBeInTheDocument();
   expect(screen.getByText('Infrastructure')).toBeInTheDocument();
-  expect(screen.getByRole('combobox', { name: 'Credential type' })).toBeInTheDocument();
+  expect(screen.getByLabelText('Credential type')).toBeInTheDocument();
   expect(screen.getByPlaceholderText('Paste token or key')).toBeInTheDocument();
   expect(screen.getByLabelText('Expiration date')).toBeInTheDocument();
   expect(screen.getByLabelText('No expiry')).toBeInTheDocument();

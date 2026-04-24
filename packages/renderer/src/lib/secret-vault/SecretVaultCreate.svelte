@@ -1,6 +1,6 @@
 <script lang="ts">
 import { faKey, faServer, faShieldHalved } from '@fortawesome/free-solid-svg-icons';
-import { Button, Input } from '@podman-desktop/ui-svelte';
+import { Button, Checkbox, Dropdown, ErrorMessage, Input } from '@podman-desktop/ui-svelte';
 import { Icon } from '@podman-desktop/ui-svelte/icons';
 
 import { Textarea } from '/@/lib/chat/components/ui/textarea';
@@ -114,17 +114,12 @@ async function saveSecret(): Promise<void> {
             <!-- Credential type -->
             <div>
               <span class="block text-sm font-semibold text-[var(--pd-modal-text)] mb-2">Credential type</span>
-              <select
+              <Dropdown
+                name="credentialType"
                 bind:value={type}
-                class="w-full p-2 rounded-lg text-sm outline-hidden cursor-pointer
-                  bg-[var(--pd-select-bg)] text-[var(--pd-content-card-text)]
-                  border-r-8 border-transparent"
-                aria-label="Credential type"
-              >
-                {#each credentialTypes as ct (ct.value)}
-                  <option value={ct.value}>{ct.label}</option>
-                {/each}
-              </select>
+                ariaLabel="Credential type"
+                options={credentialTypes}
+              />
             </div>
 
             <!-- Secret value -->
@@ -170,20 +165,13 @@ async function saveSecret(): Promise<void> {
                     disabled:opacity-50 disabled:cursor-not-allowed"
                   aria-label="Expiration date"
                 />
-                <label class="inline-flex items-center gap-2 text-sm text-[var(--pd-content-card-text)] cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    bind:checked={noExpiry}
-                    class="w-4 h-4 accent-[var(--pd-button-primary-bg)] cursor-pointer"
-                  />
-                  No expiry
-                </label>
+                <Checkbox bind:checked={noExpiry} title="No expiry" />
               </div>
             </div>
           </section>
 
           {#if error}
-            <div class="text-sm text-red-400 bg-red-900/20 rounded-lg p-3">{error}</div>
+            <ErrorMessage error={error} />
           {/if}
 
           <!-- Footer actions -->
