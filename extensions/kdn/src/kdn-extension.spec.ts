@@ -45,6 +45,14 @@ afterAll(() => {
   }
 });
 
+function mockConfiguration(customPath: string | undefined): void {
+  vi.mocked(extensionApi.configuration.getConfiguration).mockReturnValue({
+    get: vi.fn().mockReturnValue(customPath),
+    has: vi.fn(),
+    update: vi.fn(),
+  } as never);
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
 
@@ -60,6 +68,9 @@ beforeEach(() => {
   } as unknown as ExtensionContext;
 
   kdnExtension = new KdnExtension(extensionContext);
+
+  mockConfiguration(undefined);
+  vi.mocked(extensionApi.configuration.onDidChangeConfiguration).mockReturnValue({ dispose: vi.fn() } as never);
 
   vi.mocked(getLatestVersion).mockResolvedValue('0.5.0');
 
@@ -205,4 +216,118 @@ test('pushes cli tool to subscriptions for cleanup', async () => {
   await kdnExtension.activate();
 
   expect(extensionContext.subscriptions).toContain(disposable);
+});
+
+test('uses custom binary path when kdn.binary.path is set', async () => {
+  mockConfiguration('/custom/path/kdn');
+  vi.mocked(extensionApi.process.exec).mockResolvedValue({
+    command: 'kdn',
+    stdout: 'kdn version 2.0.0',
+    stderr: '',
+  });
+  vi.mocked(extensionApi.cli.createCliTool).mockReturnValue({ dispose: vi.fn() } as never);
+
+  await kdnExtension.activate();
+
+  expect(extensionApi.cli.createCliTool).toHaveBeenCalledWith(
+    expect.objectContaining({
+      name: 'kdn',
+      version: '2.0.0',
+      path: '/custom/path/kdn',
+      installationSource: 'external',
+    }),
+  );
+  expect(existsSync).not.toHaveBeenCalled();
+});
+
+test('falls back to normal discovery when custom path is empty', async () => {
+  mockConfiguration('');
+  vi.mocked(existsSync).mockReturnValue(true);
+  vi.mocked(extensionApi.process.exec).mockResolvedValue({
+    command: 'kdn',
+    stdout: '',
+    stderr: 'kdn version 0.5.0',
+  });
+  vi.mocked(extensionApi.cli.createCliTool).mockReturnValue({ dispose: vi.fn() } as never);
+
+  await kdnExtension.activate();
+
+  expect(extensionApi.cli.createCliTool).toHaveBeenCalledWith(
+    expect.objectContaining({
+      path: join('/storage', 'bin', 'kdn'),
+      installationSource: 'extension',
+    }),
+  );
+});
+
+test('falls back to normal discovery when custom path binary is invalid', async () => {
+  mockConfiguration('/bad/path/kdn');
+  vi.mocked(extensionApi.process.exec).mockRejectedValueOnce(new Error('not found')).mockResolvedValueOnce({
+    command: 'kdn',
+    stdout: '',
+    stderr: 'kdn version 1.0.0',
+  });
+  vi.mocked(existsSync).mockReturnValue(false);
+  vi.mocked(extensionApi.cli.createCliTool).mockReturnValue({ dispose: vi.fn() } as never);
+
+  await kdnExtension.activate();
+
+  expect(extensionApi.cli.createCliTool).toHaveBeenCalledWith(
+    expect.objectContaining({
+      path: 'kdn',
+      version: '1.0.0',
+      installationSource: 'external',
+    }),
+  );
+});
+
+test('registers configuration change listener', async () => {
+  vi.mocked(existsSync).mockReturnValue(true);
+  vi.mocked(extensionApi.process.exec).mockResolvedValue({
+    command: 'kdn',
+    stdout: 'kdn version 0.5.0',
+    stderr: '',
+  });
+  vi.mocked(extensionApi.cli.createCliTool).mockReturnValue({ dispose: vi.fn() } as never);
+
+  await kdnExtension.activate();
+
+  expect(extensionApi.configuration.onDidChangeConfiguration).toHaveBeenCalled();
+});
+
+test('configuration change updates cli tool with new path', async () => {
+  const updateVersion = vi.fn();
+  vi.mocked(existsSync).mockReturnValue(true);
+  vi.mocked(extensionApi.process.exec).mockResolvedValue({
+    command: 'kdn',
+    stdout: 'kdn version 0.5.0',
+    stderr: '',
+  });
+  vi.mocked(extensionApi.cli.createCliTool).mockReturnValue({ dispose: vi.fn(), updateVersion } as never);
+
+  let configChangeCallback: (e: { affectsConfiguration: (section: string) => boolean }) => void = () => {};
+  vi.mocked(extensionApi.configuration.onDidChangeConfiguration).mockImplementation((cb: unknown) => {
+    configChangeCallback = cb as typeof configChangeCallback;
+    return { dispose: vi.fn() } as never;
+  });
+
+  await kdnExtension.activate();
+
+  mockConfiguration('/new/path/kdn');
+  vi.mocked(extensionApi.process.exec).mockResolvedValue({
+    command: 'kdn',
+    stdout: 'kdn version 3.0.0',
+    stderr: '',
+  });
+
+  configChangeCallback({ affectsConfiguration: (s: string) => s === 'kdn.binary.path' });
+
+  await vi.waitFor(() => {
+    expect(updateVersion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        version: '3.0.0',
+        path: '/new/path/kdn',
+      }),
+    );
+  });
 });

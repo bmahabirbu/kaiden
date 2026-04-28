@@ -20,7 +20,7 @@ import { existsSync } from 'node:fs';
 import { arch } from 'node:os';
 import { join } from 'node:path';
 
-import type { CliToolInstallationSource, ExtensionContext } from '@openkaiden/api';
+import type { CliTool, CliToolInstallationSource, Disposable, ExtensionContext } from '@openkaiden/api';
 import * as extensionApi from '@openkaiden/api';
 
 import { downloadKdn, getLatestVersion } from './kdn-download';
@@ -30,6 +30,8 @@ const DOWNLOAD_TIMEOUT_MS = 60_000;
 export class KdnExtension {
   private downloadAbortController: AbortController | undefined;
   private deactivated = false;
+  private cliTool: CliTool | undefined;
+  private configDisposable: Disposable | undefined;
 
   constructor(private readonly extensionContext: ExtensionContext) {}
 
@@ -38,43 +40,7 @@ export class KdnExtension {
     const binaryName = extensionApi.env.isWindows ? 'kdn.exe' : 'kdn';
     const localBinaryPath = join(binDir, binaryName);
 
-    let binaryPath: string | undefined;
-    let version: string | undefined;
-    let installationSource: CliToolInstallationSource = 'external';
-
-    if (existsSync(localBinaryPath)) {
-      version = await this.getVersion(localBinaryPath);
-      if (version) {
-        binaryPath = localBinaryPath;
-        installationSource = 'extension';
-        console.log('binary found in extension storage');
-      }
-    }
-
-    if (!binaryPath) {
-      const systemResult = await this.findOnPath();
-      if (systemResult) {
-        binaryPath = 'kdn';
-        version = systemResult.version;
-        installationSource = 'external';
-        console.log('kdn binary found in system PATH');
-      }
-    }
-
-    if (!binaryPath) {
-      const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
-      if (resourcesPath) {
-        const bundledBinaryPath = join(resourcesPath, 'kdn', binaryName);
-        if (existsSync(bundledBinaryPath)) {
-          version = await this.getVersion(bundledBinaryPath);
-          if (version) {
-            binaryPath = bundledBinaryPath;
-            installationSource = 'extension';
-            console.log('binary found in bundled resources');
-          }
-        }
-      }
-    }
+    const { path: binaryPath, version, installationSource } = await this.resolveBinary();
 
     if (binaryPath) {
       this.registerCliTool(binaryPath, version, installationSource);
@@ -96,7 +62,7 @@ export class KdnExtension {
     version: string | undefined,
     installationSource: CliToolInstallationSource,
   ): void {
-    const cliTool = extensionApi.cli.createCliTool({
+    this.cliTool = extensionApi.cli.createCliTool({
       name: 'kdn',
       displayName: 'kdn',
       markdownDescription: 'Kaiden CLI for managing agent workspaces',
@@ -105,7 +71,14 @@ export class KdnExtension {
       path: binaryPath,
       installationSource,
     });
-    this.extensionContext.subscriptions.push(cliTool);
+    this.extensionContext.subscriptions.push(this.cliTool);
+
+    this.configDisposable = extensionApi.configuration.onDidChangeConfiguration(async e => {
+      if (e.affectsConfiguration('kdn.binary.path')) {
+        await this.onCustomPathChanged();
+      }
+    });
+    this.extensionContext.subscriptions.push(this.configDisposable);
   }
 
   private async downloadAndRegister(localBinaryPath: string, binDir: string): Promise<void> {
@@ -133,6 +106,67 @@ export class KdnExtension {
         }
       },
     );
+  }
+
+  private getCustomBinaryPath(): string | undefined {
+    const value = extensionApi.configuration.getConfiguration('kdn').get<string>('binary.path');
+    if (value) {
+      return value;
+    }
+    return undefined;
+  }
+
+  private async onCustomPathChanged(): Promise<void> {
+    if (!this.cliTool) return;
+
+    const { path: binaryPath, version } = await this.resolveBinary();
+    if (binaryPath && version) {
+      this.cliTool.updateVersion({ version, path: binaryPath });
+    }
+  }
+
+  private async resolveBinary(): Promise<{
+    path: string | undefined;
+    version: string | undefined;
+    installationSource: CliToolInstallationSource;
+  }> {
+    const customPath = this.getCustomBinaryPath();
+    if (customPath) {
+      const version = await this.getVersion(customPath);
+      if (version) {
+        return { path: customPath, version, installationSource: 'external' };
+      }
+      console.warn(`kdn binary not found or invalid at custom path: ${customPath}`);
+    }
+
+    const binDir = join(this.extensionContext.storagePath, 'bin');
+    const binaryName = extensionApi.env.isWindows ? 'kdn.exe' : 'kdn';
+    const localBinaryPath = join(binDir, binaryName);
+
+    if (existsSync(localBinaryPath)) {
+      const version = await this.getVersion(localBinaryPath);
+      if (version) {
+        return { path: localBinaryPath, version, installationSource: 'extension' };
+      }
+    }
+
+    const systemResult = await this.findOnPath();
+    if (systemResult) {
+      return { path: 'kdn', version: systemResult.version, installationSource: 'external' };
+    }
+
+    const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+    if (resourcesPath) {
+      const bundledBinaryPath = join(resourcesPath, 'kdn', binaryName);
+      if (existsSync(bundledBinaryPath)) {
+        const version = await this.getVersion(bundledBinaryPath);
+        if (version) {
+          return { path: bundledBinaryPath, version, installationSource: 'extension' };
+        }
+      }
+    }
+
+    return { path: undefined, version: undefined, installationSource: 'external' };
   }
 
   private parseVersion(output: string): string | undefined {
