@@ -15,6 +15,7 @@ dist
 yarn.lock
 extensions/podman/assets/
 extensions-extra/
+kdn-binary/
 .claude
 output/
 __mocks__/@openkaiden/api.ts

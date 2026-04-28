@@ -39,6 +39,9 @@ export class KdnExtension {
       if (version) {
         binaryPath = localBinaryPath;
         installationSource = 'extension';
+        console.log('binary found in extension storage');
+      } else {
+        console.warn(`binary exists at ${localBinaryPath} but failed to report a version`);
       }
     }
 
@@ -48,6 +51,9 @@ export class KdnExtension {
         binaryPath = 'kdn';
         version = systemResult.version;
         installationSource = 'external';
+        console.log('kdn binary found in system PATH');
+      } else {
+        console.warn('kdn not found in system PATH');
       }
     }
 
@@ -60,14 +66,18 @@ export class KdnExtension {
           if (version) {
             binaryPath = bundledBinaryPath;
             installationSource = 'extension';
+            console.log('binary found in bundled resources');
+          } else {
+            console.warn(`bundled binary at ${bundledBinaryPath} failed to report a version`);
           }
+        } else {
+          console.warn(`bundled binary not found at ${bundledBinaryPath}`);
         }
       }
     }
 
     if (!binaryPath) {
-      console.error('kdn CLI not found in extension storage, PATH, or bundled resources');
-      return;
+      throw new Error('kdn CLI not found in extension storage, PATH, or bundled resources');
     }
 
     const cliTool = extensionApi.cli.createCliTool({

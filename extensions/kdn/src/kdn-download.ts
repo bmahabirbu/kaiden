@@ -29,7 +29,12 @@ import { sha256 } from './sha256';
 
 const KDN_REPO = 'openkaiden/kdn';
 
-export async function getLatestVersion(): Promise<string> {
+interface ReleaseInfo {
+  version: string;
+  digests: Map<string, string>;
+}
+
+export async function getLatestRelease(): Promise<ReleaseInfo> {
   const headers: Record<string, string> = { Accept: 'application/vnd.github.v3+json' };
   const token = process.env['GITHUB_TOKEN'];
   if (token) {
@@ -42,8 +47,15 @@ export async function getLatestVersion(): Promise<string> {
   if (!res.ok) {
     throw new Error(`failed to fetch latest kdn release: ${res.status} ${res.statusText}`);
   }
-  const data = (await res.json()) as { tag_name: string };
-  return data.tag_name.replace(/^v/, '');
+  const data = (await res.json()) as { tag_name: string; assets: { name: string; digest: string | null }[] };
+  const version = data.tag_name.replace(/^v/, '');
+  const digests = new Map<string, string>();
+  for (const asset of data.assets) {
+    if (asset.digest) {
+      digests.set(asset.name, asset.digest.replace(/^sha256:/, ''));
+    }
+  }
+  return { version, digests };
 }
 
 const PLATFORM_MAP: Record<string, string> = { darwin: 'darwin', linux: 'linux', win32: 'windows' };
@@ -57,23 +69,16 @@ export async function download(url: string, dest: string): Promise<void> {
   await pipeline(res.body, createWriteStream(dest));
 }
 
-export async function verifyChecksum(version: string, assetFileName: string, filePath: string): Promise<void> {
-  const checksumsUrl = `https://github.com/${KDN_REPO}/releases/download/v${version}/kdn_${version}_checksums.txt`;
-  const res = await fetch(checksumsUrl, { redirect: 'follow' });
-  if (!res.ok) {
-    throw new Error(`failed to download checksums: ${res.status} ${res.statusText}`);
+export async function verifyChecksum(
+  digests: Map<string, string>,
+  assetFileName: string,
+  filePath: string,
+): Promise<void> {
+  const expected = digests.get(assetFileName);
+  if (!expected) {
+    throw new Error(`no digest found for ${assetFileName} in release assets`);
   }
 
-  const content = await res.text();
-  const line = content.split('\n').find(l => {
-    const parts = l.trim().split(/\s+/);
-    return parts.length >= 2 && parts[parts.length - 1] === assetFileName;
-  });
-  if (!line) {
-    throw new Error(`no checksum found for ${assetFileName}`);
-  }
-
-  const expected = line.trim().split(/\s+/)[0]!;
   const actual = await sha256(filePath);
   if (actual !== expected) {
     throw new Error(`checksum mismatch for ${assetFileName}: expected ${expected}, got ${actual}`);
@@ -111,7 +116,13 @@ export async function extract(archive: string, outDir: string): Promise<void> {
   }
 }
 
-export async function downloadKdn(version: string, platform: string, arch: string, outputDir: string): Promise<void> {
+export async function downloadKdn(
+  version: string,
+  platform: string,
+  arch: string,
+  outputDir: string,
+  digests: Map<string, string>,
+): Promise<void> {
   const versionFile = join(outputDir, '.kdn-version');
   const versionMarker = `${version}-${platform}-${arch}`;
   const binaryPath = join(outputDir, platform === 'win32' ? 'kdn.exe' : 'kdn');
@@ -138,7 +149,7 @@ export async function downloadKdn(version: string, platform: string, arch: strin
 
   console.log(`downloading kdn ${version} for ${platform}/${arch}...`);
   await download(url, archivePath);
-  await verifyChecksum(version, assetFileName, archivePath);
+  await verifyChecksum(digests, assetFileName, archivePath);
 
   console.log(`extracting to ${outputDir}...`);
   await extract(archivePath, outputDir);
@@ -176,8 +187,8 @@ function parseArgs(args: string[]): { output: string; platform: string; arch: st
 
 if (!process.env['VITEST']) {
   const { output, platform, arch } = parseArgs(process.argv.slice(2));
-  getLatestVersion()
-    .then(version => downloadKdn(version, platform, arch, output))
+  getLatestRelease()
+    .then(({ version, digests }) => downloadKdn(version, platform, arch, output, digests))
     .catch((error: unknown) => {
       console.error(error);
       process.exit(1);

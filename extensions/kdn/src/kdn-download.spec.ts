@@ -24,7 +24,7 @@ import { PassThrough } from 'node:stream';
 import * as tar from 'tar';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { downloadKdn, getLatestVersion } from './kdn-download';
+import { downloadKdn, getLatestRelease } from './kdn-download';
 import { sha256 } from './sha256';
 
 const getEntriesMock = vi.fn();
@@ -46,21 +46,15 @@ function normPath(p: string): string {
   return path.posix.normalize(String(p).replace(/\\/g, '/'));
 }
 
-function stubFetch(checksumLine: string): void {
+function stubFetch(): void {
   vi.stubGlobal(
     'fetch',
-    vi.fn((url: string) => {
-      if (String(url).includes('checksums')) {
-        return Promise.resolve({
-          ok: true,
-          text: () => Promise.resolve(checksumLine),
-        });
-      }
-      return Promise.resolve({
+    vi.fn(() =>
+      Promise.resolve({
         ok: true,
         body: new PassThrough(),
-      });
-    }),
+      }),
+    ),
   );
 }
 
@@ -90,32 +84,34 @@ describe('downloadKdn', () => {
       }),
     );
 
-    await downloadKdn('0.5.0', 'linux', 'x64', '/output');
+    await downloadKdn('0.5.0', 'linux', 'x64', '/output', new Map());
   });
 
   test('re-downloads when binary is missing but version marker exists', async () => {
     fileMap.set('/output/.kdn-version', true);
     fileMap.set('/output/kdn', false);
     vi.mocked(readFile).mockResolvedValue('0.5.0-linux-x64');
-    stubFetch('abc123  kdn_0.5.0_linux_amd64.tar.gz\n');
+    stubFetch();
+    const digests = new Map([['kdn_0.5.0_linux_amd64.tar.gz', 'abc123']]);
 
     vi.mocked(tar.extract).mockImplementation(async (opts: { cwd?: string }) => {
       fileMap.set(normPath(path.join(opts.cwd ?? '', 'kdn')), true);
     });
 
-    await downloadKdn('0.5.0', 'linux', 'x64', '/output');
+    await downloadKdn('0.5.0', 'linux', 'x64', '/output', digests);
 
     expect(vi.mocked(tar.extract)).toHaveBeenCalled();
   });
 
   test('extracts tar.gz and writes version marker (linux)', async () => {
-    stubFetch('abc123  kdn_0.5.0_linux_amd64.tar.gz\n');
+    stubFetch();
+    const digests = new Map([['kdn_0.5.0_linux_amd64.tar.gz', 'abc123']]);
 
     vi.mocked(tar.extract).mockImplementation(async (opts: { cwd?: string }) => {
       fileMap.set(normPath(path.join(opts.cwd ?? '', 'kdn')), true);
     });
 
-    await downloadKdn('0.5.0', 'linux', 'x64', '/output');
+    await downloadKdn('0.5.0', 'linux', 'x64', '/output', digests);
 
     expect(vi.mocked(tar.extract)).toHaveBeenCalledWith({
       file: expect.stringContaining('kdn_0.5.0_linux_amd64.tar.gz'),
@@ -130,11 +126,12 @@ describe('downloadKdn', () => {
   });
 
   test('extracts zip entries safely and writes version marker (win32)', async () => {
-    stubFetch('abc123  kdn_0.5.0_windows_amd64.zip\n');
+    stubFetch();
+    const digests = new Map([['kdn_0.5.0_windows_amd64.zip', 'abc123']]);
     const fileData = Buffer.from('binary-content');
     getEntriesMock.mockReturnValue([{ entryName: 'kdn.exe', isDirectory: false, getData: (): Buffer => fileData }]);
 
-    await downloadKdn('0.5.0', 'win32', 'x64', '/output');
+    await downloadKdn('0.5.0', 'win32', 'x64', '/output', digests);
 
     expect(getEntriesMock).toHaveBeenCalled();
     expect(mkdir).toHaveBeenCalledWith(expect.stringContaining('output'), { recursive: true });
@@ -147,24 +144,43 @@ describe('downloadKdn', () => {
   });
 
   test('throws on checksum mismatch', async () => {
-    stubFetch('wrongchecksum  kdn_0.5.0_linux_amd64.tar.gz\n');
+    stubFetch();
+    const digests = new Map([['kdn_0.5.0_linux_amd64.tar.gz', 'wrongchecksum']]);
 
-    await expect(downloadKdn('0.5.0', 'linux', 'x64', '/output')).rejects.toThrow('checksum mismatch');
+    await expect(downloadKdn('0.5.0', 'linux', 'x64', '/output', digests)).rejects.toThrow('checksum mismatch');
   });
 
   test('rejects unsafe zip paths', async () => {
-    stubFetch('abc123  kdn_0.5.0_windows_amd64.zip\n');
+    stubFetch();
+    const digests = new Map([['kdn_0.5.0_windows_amd64.zip', 'abc123']]);
     getEntriesMock.mockReturnValue([
       { entryName: '../evil.sh', isDirectory: false, getData: (): Buffer => Buffer.from('bad') },
     ]);
 
-    await expect(downloadKdn('0.5.0', 'win32', 'x64', '/output')).rejects.toThrow('unsafe path');
+    await expect(downloadKdn('0.5.0', 'win32', 'x64', '/output', digests)).rejects.toThrow('unsafe path');
   });
 });
 
-describe('getLatestVersion', () => {
-  test('strips v prefix from tag_name', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => ({ tag_name: 'v1.2.3' }) }));
-    expect(await getLatestVersion()).toBe('1.2.3');
+describe('getLatestRelease', () => {
+  test('strips v prefix and builds digest map', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => ({
+          tag_name: 'v1.2.3',
+          assets: [
+            { name: 'kdn_1.2.3_linux_amd64.tar.gz', digest: 'sha256:abc123' },
+            { name: 'kdn_1.2.3_darwin_arm64.tar.gz', digest: 'sha256:def456' },
+            { name: 'no-digest-asset.txt', digest: null },
+          ],
+        }),
+      }),
+    );
+    const release = await getLatestRelease();
+    expect(release.version).toBe('1.2.3');
+    expect(release.digests.get('kdn_1.2.3_linux_amd64.tar.gz')).toBe('abc123');
+    expect(release.digests.get('kdn_1.2.3_darwin_arm64.tar.gz')).toBe('def456');
+    expect(release.digests.has('no-digest-asset.txt')).toBe(false);
   });
 });

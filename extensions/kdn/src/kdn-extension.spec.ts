@@ -123,12 +123,13 @@ test('registers from bundled resources when not in extension storage or PATH', a
   );
 });
 
-test('does not register when not found anywhere', async () => {
+test('throws when not found anywhere', async () => {
   vi.mocked(existsSync).mockReturnValue(false);
   vi.mocked(extensionApi.process.exec).mockRejectedValue(new Error('not found'));
 
-  await kdnExtension.activate();
-
+  await expect(kdnExtension.activate()).rejects.toThrow(
+    'kdn CLI not found in extension storage, PATH, or bundled resources',
+  );
   expect(extensionApi.cli.createCliTool).not.toHaveBeenCalled();
 });
 
