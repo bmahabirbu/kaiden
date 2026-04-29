@@ -48,6 +48,7 @@ const TEST_SUMMARIES: AgentWorkspaceSummary[] = [
     state: 'stopped',
     model: 'gpt-4o',
     paths: { source: '/tmp/ws1', configuration: '/tmp/ws1/.kaiden' },
+    timestamps: { created: 1700000000 },
   },
   {
     id: 'ws-2',
@@ -56,6 +57,7 @@ const TEST_SUMMARIES: AgentWorkspaceSummary[] = [
     agent: 'coder-v2',
     state: 'running',
     paths: { source: '/tmp/ws2', configuration: '/tmp/ws2/.kaiden' },
+    timestamps: { created: 1700000001, started: 1700000002 },
   },
 ];
 

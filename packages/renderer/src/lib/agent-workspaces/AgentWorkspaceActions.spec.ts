@@ -37,6 +37,7 @@ const workspace: AgentWorkspaceSummary = {
     source: '/home/user/projects/backend',
     configuration: '/home/user/.config/kaiden/workspaces/api-refactor.yaml',
   },
+  timestamps: { created: 1700000000 },
 };
 
 beforeEach(() => {

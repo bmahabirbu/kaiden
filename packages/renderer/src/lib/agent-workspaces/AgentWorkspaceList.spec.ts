@@ -55,6 +55,7 @@ test('Expect workspace rows displayed with total count', () => {
         source: '/home/user/projects/backend',
         configuration: '/home/user/.config/kaiden/workspaces/api-refactor.yaml',
       },
+      timestamps: { created: 1700000000 },
     },
     {
       id: 'ws-2',
@@ -66,6 +67,7 @@ test('Expect workspace rows displayed with total count', () => {
         source: '/home/user/projects/frontend',
         configuration: '/home/user/.config/kaiden/workspaces/frontend-redesign.yaml',
       },
+      timestamps: { created: 1700000001, started: 1700000002 },
     },
   ];
   agentWorkspaces.set(workspaces);
