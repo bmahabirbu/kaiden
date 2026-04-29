@@ -4,15 +4,15 @@ import Fa from 'svelte-fa';
 
 import type { AgentWorkspaceSummaryUI } from '/@/stores/agent-workspaces.svelte';
 
+import { isActiveWorkspace } from './workspace-utils';
+
 interface Props {
   workspaces: AgentWorkspaceSummaryUI[];
 }
 
 let { workspaces }: Props = $props();
 
-const activeCount = $derived(
-  workspaces.filter(ws => ws.state === 'running' || ws.state === 'starting' || ws.state === 'stopping').length,
-);
+const activeCount = $derived(workspaces.filter(isActiveWorkspace).length);
 const totalCount = $derived(workspaces.length);
 const agentCount = $derived(new Set(workspaces.map(ws => ws.agent)).size);
 </script>

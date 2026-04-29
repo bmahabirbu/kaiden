@@ -2,10 +2,10 @@
 import { onDestroy } from 'svelte';
 import { router } from 'tinro';
 
+import AgentWorkspaceIcon from '/@/lib/agent-workspaces/columns/AgentWorkspaceIcon.svelte';
 import type { AgentWorkspaceSummaryUI } from '/@/stores/agent-workspaces.svelte';
 
 import AgentWorkspaceActions from './AgentWorkspaceActions.svelte';
-import AgentWorkspaceIcon from './columns/AgentWorkspaceIcon.svelte';
 
 interface Props {
   object: AgentWorkspaceSummaryUI;
@@ -82,58 +82,62 @@ function handleKeydown(e: KeyboardEvent): void {
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="group grid grid-cols-[44px_minmax(0,1fr)_200px_56px_80px] gap-x-5 items-center w-full text-left px-[22px] py-3.5 cursor-pointer border-b border-b-[var(--pd-content-card-border)]/65 bg-transparent text-inherit last:border-b-0 hover:bg-[var(--pd-content-card-hover-bg)] focus-within:bg-[var(--pd-content-card-hover-bg)]"
-  role="row"
+  class="workspace-row group"
+  role="button"
   tabindex="0"
   onclick={openDetails}
   onkeydown={handleKeydown}>
 
-  <div class="flex items-center">
-    <AgentWorkspaceIcon {object} />
-  </div>
+  <AgentWorkspaceIcon {object} />
 
-  <div class="flex flex-col gap-1.5 min-w-0">
-    <div
-      class="text-lg font-semibold text-[var(--pd-content-text)] leading-normal overflow-hidden text-ellipsis whitespace-nowrap group-hover:text-[var(--pd-link)]"
-      title={object.name}>
+  <div class="flex flex-col min-w-0 gap-1">
+    <div class="text-sm font-semibold truncate group-hover:text-[var(--pd-link)]" title={object.name}>
       {object.name}
     </div>
-    {#if object.model}
-      <div class="text-base text-[var(--pd-content-text)] opacity-60 overflow-hidden text-ellipsis whitespace-nowrap">
-        {object.model}
-      </div>
-    {/if}
-    <div class="flex gap-1.5 flex-wrap items-center">
-      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-[var(--pd-status-running)] bg-[color-mix(in_srgb,var(--pd-status-running)_12%,transparent)]">
+    <div class="flex items-center gap-2 text-xs opacity-60 min-w-0">
+      {#if object.model}
+        <span class="truncate">{object.model}</span>
+      {/if}
+      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium text-[var(--pd-status-running)] bg-[color-mix(in_srgb,var(--pd-status-running)_12%,transparent)]">
         {agentLabel}
       </span>
     </div>
   </div>
 
-  <div class="min-w-0 flex items-center gap-1.5">
-    <span
-      class="w-[7px] h-[7px] rounded-full shrink-0"
-      class:bg-[var(--pd-status-running)]={isRunning}
-      class:animate-pulse={isRunning || isTransitioning}
-      class:bg-[var(--pd-status-waiting)]={isTransitioning}
-      class:bg-[var(--pd-status-terminated)]={!isRunning && !isTransitioning}>
-    </span>
-    <span class="text-xs font-medium text-[var(--pd-content-text)] opacity-50">
-      {statusLabel}
-    </span>
+  <span
+    class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium w-fit"
+    class:text-[var(--pd-status-running)]={isRunning}
+    class:bg-[color-mix(in_srgb,var(--pd-status-running)_12%,transparent)]={isRunning}
+    class:animate-pulse={isTransitioning}
+    class:text-[var(--pd-status-waiting)]={isTransitioning}
+    class:bg-[color-mix(in_srgb,var(--pd-status-waiting)_12%,transparent)]={isTransitioning}
+    class:text-[var(--pd-status-terminated)]={!isRunning && !isTransitioning}
+    class:bg-[color-mix(in_srgb,var(--pd-status-terminated)_12%,transparent)]={!isRunning && !isTransitioning}>
+    <span class="w-1.5 h-1.5 rounded-full bg-current"></span>
+    {statusLabel}
+  </span>
+
+  <div class="text-xs opacity-50 font-semibold tabular-nums text-right">
+    {timeLabel ?? '—'}
   </div>
 
-  <div class="justify-self-end text-xs text-[var(--pd-content-text)] opacity-50 font-semibold tabular-nums">
-    {#if timeLabel}
-      <span>{timeLabel}</span>
-    {:else}
-      <span>&mdash;</span>
-    {/if}
-  </div>
-
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="justify-self-end flex gap-1.5 shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity" onclick={(e: MouseEvent): void => e.stopPropagation()}>
+  <div class="flex justify-end gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition" onclick={(e: MouseEvent): void => e.stopPropagation()} onkeydown={(e: KeyboardEvent): void => e.stopPropagation()}>
     <AgentWorkspaceActions {object} />
   </div>
 </div>
+
+<style>
+  .workspace-row {
+    display: grid;
+    grid-template-columns: var(--ws-grid);
+    gap: var(--ws-gap);
+    align-items: center;
+    padding: 14px 20px;
+    cursor: pointer;
+  }
+
+  .workspace-row:hover {
+    background: var(--pd-content-card-hover-bg);
+  }
+</style>
