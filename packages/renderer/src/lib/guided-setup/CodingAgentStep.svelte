@@ -34,7 +34,7 @@ const agentOptions: CardSelectorOption[] = $derived(
   filteredDefinitions.map(d => ({
     value: d.cliName,
     title: d.title,
-    badge: d.badge,
+    badge: d.badge ?? '',
     description: d.description,
     icon: d.icon,
   })),
