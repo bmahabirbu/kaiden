@@ -25,29 +25,35 @@ let { workspaceSummary, configuration }: Props = $props();
 
 const agentDef = $derived(getAgentDefinition(workspaceSummary?.agent ?? ''));
 
-const stateColor = $derived(
-  workspaceSummary?.state === 'running'
-    ? 'text-[var(--pd-status-running)]'
-    : workspaceSummary?.state === 'starting' || workspaceSummary?.state === 'stopping'
-      ? 'text-[var(--pd-status-waiting)]'
-      : 'text-[var(--pd-status-terminated)]',
-);
-
-const sandboxLabel = $derived(
-  workspaceSummary?.state === 'running'
-    ? 'Sandbox Active'
-    : workspaceSummary?.state === 'starting' || workspaceSummary?.state === 'stopping'
-      ? 'Sandbox Starting'
-      : 'Sandbox Stopped',
-);
-
-const sandboxColor = $derived(
-  workspaceSummary?.state === 'running'
-    ? 'var(--pd-status-running)'
-    : workspaceSummary?.state === 'starting' || workspaceSummary?.state === 'stopping'
-      ? 'var(--pd-status-waiting)'
-      : 'var(--pd-status-terminated)',
-);
+const statusStyle = $derived.by(() => {
+  const state = workspaceSummary?.state;
+  if (state === 'running') {
+    return {
+      stateColor: 'text-[var(--pd-status-running)]',
+      sandboxLabel: 'Sandbox Active',
+      sandboxColor: 'var(--pd-status-running)',
+    };
+  }
+  if (state === 'starting') {
+    return {
+      stateColor: 'text-[var(--pd-status-waiting)]',
+      sandboxLabel: 'Sandbox Starting',
+      sandboxColor: 'var(--pd-status-waiting)',
+    };
+  }
+  if (state === 'stopping') {
+    return {
+      stateColor: 'text-[var(--pd-status-waiting)]',
+      sandboxLabel: 'Sandbox Stopping',
+      sandboxColor: 'var(--pd-status-waiting)',
+    };
+  }
+  return {
+    stateColor: 'text-[var(--pd-status-terminated)]',
+    sandboxLabel: 'Sandbox Stopped',
+    sandboxColor: 'var(--pd-status-terminated)',
+  };
+});
 
 function formatRelativeTime(ts: number | undefined): string {
   if (!ts) return '-';
@@ -78,7 +84,10 @@ const skillsList = $derived(
     return match?.name ?? path;
   }),
 );
-const mcpServersList = $derived([...(configuration?.mcp?.servers ?? []), ...(configuration?.mcp?.commands ?? [])]);
+const mcpServersList = $derived([
+  ...(configuration?.mcp?.servers ?? []).map(s => ({ ...s, _key: `server:${s.name}` })),
+  ...(configuration?.mcp?.commands ?? []).map(c => ({ ...c, _key: `command:${c.name}` })),
+]);
 const mountsList = $derived(configuration?.mounts ?? []);
 
 const filesystemBadge = $derived.by(() => {
@@ -111,9 +120,9 @@ const filesystemBadge = $derived.by(() => {
         </div>
         <div
           class="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-lg border shrink-0"
-          style="background: color-mix(in srgb, {sandboxColor} 10%, transparent); border-color: color-mix(in srgb, {sandboxColor} 20%, transparent);">
-          <span style="color: {sandboxColor}"><Icon icon={faShieldHalved} size="sm" /></span>
-          <span class="text-[11px] font-medium" style="color: {sandboxColor}">{sandboxLabel}</span>
+          style="background: color-mix(in srgb, {statusStyle.sandboxColor} 10%, transparent); border-color: color-mix(in srgb, {statusStyle.sandboxColor} 20%, transparent);">
+          <span style="color: {statusStyle.sandboxColor}"><Icon icon={faShieldHalved} size="sm" /></span>
+          <span class="text-[11px] font-medium" style="color: {statusStyle.sandboxColor}">{statusStyle.sandboxLabel}</span>
         </div>
       </div>
       {#if workspaceSummary?.project}
@@ -131,7 +140,7 @@ const filesystemBadge = $derived.by(() => {
       <div class="flex gap-6">
         <div class="flex flex-col gap-0.5">
           <div class="text-[10px] text-[var(--pd-content-text)] opacity-60 uppercase tracking-wider">Status</div>
-          <div class="text-[13px] font-semibold {stateColor}">
+          <div class="text-[13px] font-semibold {statusStyle.stateColor}">
             {workspaceSummary?.state ?? 'unknown'}
           </div>
         </div>
@@ -197,7 +206,7 @@ const filesystemBadge = $derived.by(() => {
         </div>
         <div class="flex flex-col gap-1.5">
           {#if mcpServersList.length > 0}
-            {#each mcpServersList as server (server.name)}
+            {#each mcpServersList as server (server._key)}
               <div
                 class="flex items-center gap-2.5 py-2 px-2.5 rounded-lg bg-[var(--pd-content-bg)] border border-transparent overflow-hidden">
                 <div

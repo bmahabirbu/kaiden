@@ -54,6 +54,7 @@ const configuration: AgentWorkspaceConfiguration = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.useFakeTimers({ shouldAdvanceTime: true });
 });
 
 test('Expect agent name is displayed', () => {
@@ -101,6 +102,16 @@ test('Expect stopped workspace shows Created label with relative time', () => {
 
   expect(screen.getByText('Created')).toBeInTheDocument();
   expect(screen.getByText('3 hr ago')).toBeInTheDocument();
+});
+
+test('Expect stopping workspace shows Sandbox Stopping label', () => {
+  const stoppingWorkspace = {
+    ...workspaceSummary,
+    state: 'stopping' as const,
+  };
+  render(AgentWorkspaceDetailsOverview, { workspaceSummary: stoppingWorkspace, configuration });
+
+  expect(screen.getByText('Sandbox Stopping')).toBeInTheDocument();
 });
 
 test('Expect skills are displayed', () => {
