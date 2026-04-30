@@ -16,7 +16,7 @@ const agentDef = $derived(getAgentDefinition(object.agent));
 const agentLabel = $derived(agentDef.title);
 
 function openDetails(): void {
-  router.goto(`/agent-workspaces/${encodeURIComponent(object.id)}/summary`);
+  router.goto(`/agent-workspaces/${encodeURIComponent(object.id)}/overview`);
 }
 </script>
 
