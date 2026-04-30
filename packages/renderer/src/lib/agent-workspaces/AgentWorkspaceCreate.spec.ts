@@ -548,4 +548,36 @@ test('Expect Manage Knowledges button navigates to rag environments page', async
   expect(handleNavigation).toHaveBeenCalledWith({ page: 'rag-environments' });
 });
 
+test('Expect createAgentWorkspace called with knowledge base names', async () => {
+  vi.mocked(ragStore).ragEnvironments = writable<RagEnvironment[]>([
+    {
+      name: 'k8s-kb',
+      ragConnection: { name: 'Milvus', providerId: 'milvus' },
+      chunkerId: 'docling',
+      files: [],
+      mcpServer: {
+        id: 'mcp-k8s',
+        name: 'kaiden.milvus.mcp-server-milvus-k8s-kb',
+        description: 'Milvus MCP Server',
+        url: '',
+        infos: { internalProviderId: 'internal', serverId: 's1', remoteId: 0 },
+        tools: {},
+      },
+    },
+  ]);
+
+  render(AgentWorkspaceCreate);
+
+  await fireEvent.input(screen.getByPlaceholderText('/path/to/project'), {
+    target: { value: '/home/user/my-repo' },
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Use all defaults and create workspace' }));
+
+  expect(window.createAgentWorkspace).toHaveBeenCalledWith(
+    expect.objectContaining({
+      knowledgeBases: ['k8s-kb'],
+    }),
+  );
+});
+
 const wizardStepCount = 5;

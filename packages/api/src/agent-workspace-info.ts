@@ -58,6 +58,20 @@ export interface AgentWorkspaceMcpServer {
  */
 export interface AgentWorkspaceMcpConfig {
   servers?: AgentWorkspaceMcpServer[];
+  commands?: AgentWorkspaceMcpCommand[];
+}
+
+/**
+ * Options for creating (initializing) a new workspace via `kdn init`.
+ */
+/**
+ * A command-based MCP server to attach to the workspace.
+ */
+export interface AgentWorkspaceMcpCommand {
+  name: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
 }
 
 /**
@@ -70,4 +84,5 @@ export interface AgentWorkspaceCreateOptions {
   name?: string;
   project?: string;
   mcp?: AgentWorkspaceMcpConfig;
+  knowledgeBases?: string[];
 }

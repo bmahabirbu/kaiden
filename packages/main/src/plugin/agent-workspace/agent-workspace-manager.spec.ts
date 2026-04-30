@@ -26,6 +26,8 @@ import type { IPCHandle } from '/@/plugin/api.js';
 import type { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
 import type { FilesystemMonitoring } from '/@/plugin/filesystem-monitoring.js';
 import { KdnCli } from '/@/plugin/kdn-cli/kdn-cli.js';
+import type { MCPRegistry } from '/@/plugin/mcp/mcp-registry.js';
+import type { RagEnvironmentRegistry } from '/@/plugin/rag-environment-registry.js';
 import type { TaskManager } from '/@/plugin/tasks/task-manager.js';
 import type { Task } from '/@/plugin/tasks/tasks.js';
 import type { Exec } from '/@/plugin/util/exec.js';
@@ -95,6 +97,14 @@ const filesystemMonitoring = {
   createFileSystemWatcher: vi.fn().mockReturnValue(mockWatcher),
 } as unknown as FilesystemMonitoring;
 
+const ragEnvironmentRegistry = {
+  getEnvironment: vi.fn(),
+} as unknown as RagEnvironmentRegistry;
+
+const mcpRegistry = {
+  getInternalMCPServer: vi.fn(),
+} as unknown as MCPRegistry;
+
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(taskManager.createTask).mockReturnValue(mockTask);
@@ -102,7 +112,15 @@ beforeEach(() => {
   mockTask.status = '' as TaskStatus;
   mockTask.error = '';
   vi.mocked(filesystemMonitoring.createFileSystemWatcher).mockReturnValue(mockWatcher);
-  manager = new AgentWorkspaceManager(apiSender, ipcHandle, kdnCli, taskManager, filesystemMonitoring);
+  manager = new AgentWorkspaceManager(
+    apiSender,
+    ipcHandle,
+    kdnCli,
+    taskManager,
+    filesystemMonitoring,
+    ragEnvironmentRegistry,
+    mcpRegistry,
+  );
   manager.init();
 });
 
@@ -377,5 +395,76 @@ describe('stop', () => {
     vi.mocked(kdnCli.stopWorkspace).mockRejectedValue(new Error('workspace not found: unknown-id'));
 
     await expect(manager.stop('unknown-id')).rejects.toThrow('workspace not found: unknown-id');
+  });
+});
+
+describe('resolveKnowledgeBases', () => {
+  test('resolves knowledge base to MCP command from package spec', () => {
+    vi.mocked(ragEnvironmentRegistry.getEnvironment).mockReturnValue({
+      name: 'k8s-kb',
+      ragConnection: { name: 'Milvus', providerId: 'milvus' },
+      chunkerId: 'docling',
+      files: [],
+      mcpServer: {
+        id: 'mcp-k8s',
+        name: 'kaiden.milvus.mcp-server-milvus-k8s-kb',
+        description: 'Milvus MCP Server',
+        url: '',
+        infos: { internalProviderId: 'internal', serverId: 'srv-1', remoteId: 0 },
+        tools: {},
+      },
+    });
+    vi.mocked(mcpRegistry.getInternalMCPServer).mockReturnValue({
+      serverId: 'srv-1',
+      name: 'kaiden.milvus.mcp-server-milvus-k8s-kb',
+      description: 'Milvus MCP Server',
+      version: '0.1.1',
+      packages: [
+        {
+          registryType: 'pypi',
+          identifier: 'mcp-server-milvus',
+          version: '0.1.1',
+          runtimeHint: 'uvx',
+          transport: { type: 'stdio' },
+          packageArguments: [
+            { isRequired: true, format: 'string', value: '--milvus-uri', isSecret: false },
+            { isRequired: true, format: 'string', value: 'http://localhost:19530', isSecret: false },
+          ],
+        },
+      ],
+    });
+
+    const result = manager.resolveKnowledgeBases(['k8s-kb']);
+
+    expect(result).toEqual([
+      {
+        name: 'kaiden.milvus.mcp-server-milvus-k8s-kb',
+        command: 'uvx',
+        args: ['mcp-server-milvus', '--milvus-uri', 'http://localhost:19530'],
+      },
+    ]);
+  });
+
+  test('skips knowledge base without MCP server', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.mocked(ragEnvironmentRegistry.getEnvironment).mockReturnValue({
+      name: 'no-mcp',
+      ragConnection: { name: 'Milvus', providerId: 'milvus' },
+      chunkerId: 'docling',
+      files: [],
+    });
+
+    const result = manager.resolveKnowledgeBases(['no-mcp']);
+
+    expect(result).toEqual([]);
+  });
+
+  test('skips unknown knowledge base name', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.mocked(ragEnvironmentRegistry.getEnvironment).mockReturnValue(undefined);
+
+    const result = manager.resolveKnowledgeBases(['unknown']);
+
+    expect(result).toEqual([]);
   });
 });

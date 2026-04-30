@@ -26,11 +26,14 @@ import { inject, injectable, preDestroy } from 'inversify';
 import { IPCHandle } from '/@/plugin/api.js';
 import { FilesystemMonitoring } from '/@/plugin/filesystem-monitoring.js';
 import { KdnCli } from '/@/plugin/kdn-cli/kdn-cli.js';
+import { MCPRegistry } from '/@/plugin/mcp/mcp-registry.js';
+import { RagEnvironmentRegistry } from '/@/plugin/rag-environment-registry.js';
 import { TaskManager } from '/@/plugin/tasks/task-manager.js';
 import type {
   AgentWorkspaceConfiguration,
   AgentWorkspaceCreateOptions,
   AgentWorkspaceId,
+  AgentWorkspaceMcpCommand,
   AgentWorkspaceSummary,
   CliInfo,
 } from '/@api/agent-workspace-info.js';
@@ -54,6 +57,10 @@ export class AgentWorkspaceManager implements Disposable {
     private readonly taskManager: TaskManager,
     @inject(FilesystemMonitoring)
     private readonly filesystemMonitoring: FilesystemMonitoring,
+    @inject(RagEnvironmentRegistry)
+    private readonly ragEnvironmentRegistry: RagEnvironmentRegistry,
+    @inject(MCPRegistry)
+    private readonly mcpRegistry: MCPRegistry,
   ) {}
 
   async getCliInfo(): Promise<CliInfo> {
@@ -61,6 +68,19 @@ export class AgentWorkspaceManager implements Disposable {
   }
 
   async create(options: AgentWorkspaceCreateOptions): Promise<AgentWorkspaceId> {
+    if (options.knowledgeBases?.length) {
+      const commands = this.resolveKnowledgeBases(options.knowledgeBases);
+      if (commands.length > 0) {
+        options = {
+          ...options,
+          mcp: {
+            ...options.mcp,
+            commands: [...(options.mcp?.commands ?? []), ...commands],
+          },
+        };
+      }
+    }
+
     const suffix = options.name ? ` "${options.name}"` : '';
     const task = this.taskManager.createTask({ title: `Creating workspace${suffix}` });
     task.state = 'running';
@@ -167,6 +187,38 @@ export class AgentWorkspaceManager implements Disposable {
     this.instancesWatcher.onDidChange(notify);
     this.instancesWatcher.onDidCreate(notify);
     this.instancesWatcher.onDidDelete(notify);
+  }
+
+  resolveKnowledgeBases(names: string[]): AgentWorkspaceMcpCommand[] {
+    const commands: AgentWorkspaceMcpCommand[] = [];
+    for (const name of names) {
+      const env = this.ragEnvironmentRegistry.getEnvironment(name);
+      if (!env?.mcpServer) {
+        console.warn(`Knowledge base "${name}" not found or has no MCP server, skipping`);
+        continue;
+      }
+      const serverDetail = this.mcpRegistry.getInternalMCPServer(env.mcpServer.infos.serverId);
+      if (!serverDetail?.packages?.[0]) {
+        console.warn(`No package config found for knowledge base "${name}", skipping`);
+        continue;
+      }
+      const pkg = serverDetail.packages[0];
+      const runtimeHint = pkg.runtimeHint ?? 'uvx';
+      const pkgArgs = (pkg.packageArguments ?? []).filter(a => a.value !== undefined).map(a => String(a.value));
+      const envVars: Record<string, string> = {};
+      for (const v of pkg.environmentVariables ?? []) {
+        if (v.name && v.value !== undefined) {
+          envVars[v.name] = String(v.value);
+        }
+      }
+      commands.push({
+        name: serverDetail.name,
+        command: runtimeHint,
+        args: [pkg.identifier, ...pkgArgs],
+        ...(Object.keys(envVars).length > 0 ? { env: envVars } : {}),
+      });
+    }
+    return commands;
   }
 
   @preDestroy()

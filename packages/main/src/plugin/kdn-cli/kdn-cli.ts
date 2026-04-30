@@ -127,7 +127,8 @@ export class KdnCli {
 
   async writeWorkspaceConfig(options: AgentWorkspaceCreateOptions): Promise<void> {
     const mcpServers = options.mcp?.servers;
-    if (!mcpServers?.length) {
+    const mcpCommands = options.mcp?.commands;
+    if (!mcpServers?.length && !mcpCommands?.length) {
       return;
     }
 
@@ -142,14 +143,24 @@ export class KdnCli {
       // file doesn't exist yet — start fresh
     }
 
-    existing.mcp = {
-      ...existing.mcp,
-      servers: mcpServers.map(s => ({
+    existing.mcp = { ...existing.mcp };
+
+    if (mcpServers?.length) {
+      existing.mcp.servers = mcpServers.map(s => ({
         name: s.name,
         url: s.url,
         ...(s.headers && Object.keys(s.headers).length > 0 ? { headers: s.headers } : {}),
-      })),
-    };
+      }));
+    }
+
+    if (mcpCommands?.length) {
+      existing.mcp.commands = mcpCommands.map(c => ({
+        name: c.name,
+        command: c.command,
+        ...(c.args?.length ? { args: c.args } : {}),
+        ...(c.env && Object.keys(c.env).length > 0 ? { env: c.env } : {}),
+      }));
+    }
 
     await mkdir(configDir, { recursive: true });
     await writeFile(configPath, JSON.stringify(existing, undefined, 2) + '\n', 'utf-8');

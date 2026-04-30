@@ -230,6 +230,7 @@ async function startWorkspace(): Promise<void> {
       agent: selectedAgent,
       name: sessionName,
       mcp: selectedServers.length > 0 ? { servers: selectedServers } : undefined,
+      knowledgeBases: selectedKnowledgeIds.length > 0 ? selectedKnowledgeIds : undefined,
     });
   } catch (err: unknown) {
     console.error('Failed to create agent workspace', err);
