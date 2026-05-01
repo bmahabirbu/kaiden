@@ -280,7 +280,7 @@ test.describe('Workspaces page - MCP integration', { tag: '@smoke' }, () => {
     await createPage.navigateToStep(WIZARD_STEP.TOOLS_SECRETS);
     await createPage.expandCustomize();
 
-    await expect(createPage.mcpServersSearchInput).toBeVisible();
+    await expect(createPage.mcpServersPanel).toBeVisible();
     await expect(createPage.getCardByName(githubServer.serverName)).toBeVisible();
   });
 });

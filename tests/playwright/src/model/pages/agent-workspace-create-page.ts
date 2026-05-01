@@ -31,7 +31,7 @@ export class AgentWorkspaceCreatePage extends BasePage {
   readonly agentSelector: Locator;
   readonly toolsSummary: Locator;
   readonly customizeExpandable: Locator;
-  readonly mcpServersSearchInput: Locator;
+  readonly mcpServersPanel: Locator;
   readonly fileAccessHeading: Locator;
   readonly firstCustomPathInput: Locator;
   readonly addPathButton: Locator;
@@ -53,7 +53,7 @@ export class AgentWorkspaceCreatePage extends BasePage {
     this.agentSelector = this.page.getByRole('region', { name: 'Select Coding Agent' });
     this.toolsSummary = this.page.getByText(/Everything available is included|Expand.*Customize/);
     this.customizeExpandable = this.page.getByText('Customize skills, MCP servers, and vault');
-    this.mcpServersSearchInput = this.page.getByPlaceholder('Search MCP servers...');
+    this.mcpServersPanel = this.page.getByText('MCP Servers', { exact: true });
     this.fileAccessHeading = this.page.getByText('File System Access');
     this.firstCustomPathInput = this.page.getByPlaceholder('/path/to/allowed/directory').first();
     this.addPathButton = this.page.getByRole('button', { name: 'Add Another Path' });

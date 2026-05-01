@@ -13,7 +13,6 @@ import AgentWorkspaceCreateStepWorkspace from '/@/lib/agent-workspaces/AgentWork
 import type { CardSelectorOption } from '/@/lib/ui/CardSelector.svelte';
 import type { ChecklistItem } from '/@/lib/ui/ChecklistPanel.svelte';
 import FormPage from '/@/lib/ui/FormPage.svelte';
-import type { ScrollableCardItem } from '/@/lib/ui/ScrollableCardSelector.svelte';
 import WizardStepper from '/@/lib/ui/WizardStepper.svelte';
 import { handleNavigation } from '/@/navigation';
 import { mcpRemoteServerInfos } from '/@/stores/mcp-remote-servers';
@@ -94,7 +93,7 @@ let skillItems: ChecklistItem[] = $derived(
     group: s.managed ? 'Custom' : 'Pre-built',
   })),
 );
-let mcpItems: ScrollableCardItem[] = $derived(
+let mcpItems: ChecklistItem[] = $derived(
   $mcpRemoteServerInfos.map(m => ({ id: m.id, name: m.name, description: m.description })),
 );
 
