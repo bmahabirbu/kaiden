@@ -6,7 +6,6 @@ import { router } from 'tinro';
 import AgentWorkspaceDetailsFiles from '/@/lib/agent-workspaces/AgentWorkspaceDetailsFiles.svelte';
 import AgentWorkspaceDetailsOverview from '/@/lib/agent-workspaces/AgentWorkspaceDetailsOverview.svelte';
 import AgentWorkspaceDetailsSettings from '/@/lib/agent-workspaces/AgentWorkspaceDetailsSettings.svelte';
-import AgentWorkspaceDetailsTerminal from '/@/lib/agent-workspaces/AgentWorkspaceDetailsTerminal.svelte';
 import AgentWorkspaceTerminal from '/@/lib/agent-workspaces/AgentWorkspaceTerminal.svelte';
 import { withConfirmation } from '/@/lib/dialogs/messagebox-utils';
 import DetailsPage from '/@/lib/ui/DetailsPage.svelte';
@@ -118,16 +117,13 @@ function handleRemove(): void {
       <AgentWorkspaceDetailsOverview {workspaceSummary} {configuration} />
     </Route>
     <Route path="/terminal" breadcrumb="Terminal" navigationHint="tab">
-      <AgentWorkspaceDetailsTerminal />
+      <AgentWorkspaceTerminal workspaceId={workspaceId} />
     </Route>
     <Route path="/files" breadcrumb="Files" navigationHint="tab">
       <AgentWorkspaceDetailsFiles />
     </Route>
     <Route path="/settings" breadcrumb="Settings" navigationHint="tab">
       <AgentWorkspaceDetailsSettings />
-    </Route>
-    <Route path="/terminal" breadcrumb="Terminal" navigationHint="tab">
-      <AgentWorkspaceTerminal workspaceId={workspaceId} />
     </Route>
   {/snippet}
 </DetailsPage>
