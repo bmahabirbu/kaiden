@@ -28,6 +28,7 @@ import { HttpProxyAgent, HttpsProxyAgent } from 'hpagent';
 import { inject, injectable } from 'inversify';
 
 import { MCPPackage } from '/@/plugin/mcp/package/mcp-package.js';
+import type { CommandSpec } from '/@/plugin/mcp/package/mcp-spawner.js';
 import { formatArguments } from '/@/plugin/mcp/utils/arguments.js';
 import { formatKeyValueInputs } from '/@/plugin/mcp/utils/format-key-value-inputs.js';
 import { ProviderRegistry } from '/@/plugin/provider-registry.js';
@@ -271,6 +272,7 @@ export class MCPRegistry {
             environmentVariables: config.environmentVariables,
           });
 
+          const cmdSpec = spawner.buildCommandSpec();
           const transport = await spawner.spawn();
           await this.mcpManager.registerMCPClient(
             INTERNAL_PROVIDER_ID,
@@ -282,6 +284,7 @@ export class MCPRegistry {
             undefined,
             server.description,
             server.isValidSchema,
+            cmdSpec,
           );
         }
       }
@@ -447,6 +450,7 @@ export class MCPRegistry {
 
     let transport: Transport;
     let config: StorageConfigFormat;
+    let cmdSpec: CommandSpec | undefined;
 
     let url: string | undefined;
 
@@ -510,6 +514,7 @@ export class MCPRegistry {
           runtimeArguments: config.runtimeArguments,
           environmentVariables: config.environmentVariables,
         });
+        cmdSpec = spawner.buildCommandSpec();
         transport = await spawner.spawn();
         break;
       }
@@ -530,6 +535,7 @@ export class MCPRegistry {
       url,
       description,
       isValidSchema,
+      cmdSpec,
     );
 
     // persist configuration

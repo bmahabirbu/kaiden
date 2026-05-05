@@ -14,12 +14,15 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
 import type { IAsyncDisposable } from '/@api/async-disposable.js';
 
-import type { CommandSpec } from './mcp-spawner.js';
+import type { CommandSpec, WorkspaceRequirements } from './mcp-spawner.js';
 import { MCPSpawner } from './mcp-spawner.js';
 
 const UVX_COMMAND = 'uvx';
@@ -28,6 +31,29 @@ const UVX_COMMAND = 'uvx';
  * PyPiSpawner handles spawning Python-based MCP servers from PyPI packages.
  */
 export class PyPiSpawner extends MCPSpawner<'pypi'> {
+  static readonly command = UVX_COMMAND;
+
+  static getWorkspaceRequirements(): WorkspaceRequirements {
+    return {
+      hosts: ['pypi.org', 'files.pythonhosted.org'],
+      features: { './uv-feature': {} },
+      env: { UV_SYSTEM_CERTS: '1' },
+      ensureFeatures: async (configDir: string): Promise<void> => {
+        const featureDir = join(configDir, 'uv-feature');
+        await mkdir(featureDir, { recursive: true });
+        await writeFile(
+          join(featureDir, 'devcontainer-feature.json'),
+          JSON.stringify({ id: 'uv', version: '0.1.0', name: 'uv Python package manager' }, undefined, 2) + '\n',
+          'utf-8',
+        );
+        await writeFile(join(featureDir, 'install.sh'), '#!/bin/sh\npip install uv\n', {
+          encoding: 'utf-8',
+          mode: 0o755,
+        });
+      },
+    };
+  }
+
   #disposables: Array<IAsyncDisposable> = [];
 
   buildCommandSpec(): CommandSpec {

@@ -16,11 +16,63 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { describe, expect, test } from 'vitest';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { PyPiSpawner } from './pypi-spawner.js';
 
+vi.mock(import('node:fs/promises'));
+
+beforeEach(() => {
+  vi.resetAllMocks();
+});
+
 describe('PyPiSpawner', () => {
+  test('command is uvx', () => {
+    expect(PyPiSpawner.command).toBe('uvx');
+  });
+
+  describe('getWorkspaceRequirements', () => {
+    test('returns pypi hosts', () => {
+      const reqs = PyPiSpawner.getWorkspaceRequirements();
+      expect(reqs.hosts).toEqual(['pypi.org', 'files.pythonhosted.org']);
+    });
+
+    test('returns uv-feature', () => {
+      const reqs = PyPiSpawner.getWorkspaceRequirements();
+      expect(reqs.features).toEqual({ './uv-feature': {} });
+    });
+
+    test('returns UV_SYSTEM_CERTS env', () => {
+      const reqs = PyPiSpawner.getWorkspaceRequirements();
+      expect(reqs.env).toEqual({ UV_SYSTEM_CERTS: '1' });
+    });
+
+    test('provides ensureFeatures callback', () => {
+      const reqs = PyPiSpawner.getWorkspaceRequirements();
+      expect(reqs.ensureFeatures).toBeDefined();
+    });
+
+    test('ensureFeatures creates uv-feature directory and writes correct files', async () => {
+      const reqs = PyPiSpawner.getWorkspaceRequirements();
+      await reqs.ensureFeatures!('/config');
+
+      expect(mkdir).toHaveBeenCalledWith(join('/config', 'uv-feature'), { recursive: true });
+      expect(writeFile).toHaveBeenCalledWith(
+        join('/config', 'uv-feature', 'devcontainer-feature.json'),
+        JSON.stringify({ id: 'uv', version: '0.1.0', name: 'uv Python package manager' }, undefined, 2) + '\n',
+        'utf-8',
+      );
+      expect(writeFile).toHaveBeenCalledWith(
+        join('/config', 'uv-feature', 'install.sh'),
+        '#!/bin/sh\npip install uv\n',
+        { encoding: 'utf-8', mode: 0o755 },
+      );
+    });
+  });
+
   describe('buildCommandSpec', () => {
     test('uses uvx command with identifier==version', () => {
       const spawner = new PyPiSpawner({

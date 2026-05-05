@@ -20,12 +20,21 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
 import type { IAsyncDisposable } from '/@api/async-disposable.js';
 
-import type { CommandSpec } from './mcp-spawner.js';
+import type { CommandSpec, WorkspaceRequirements } from './mcp-spawner.js';
 import { MCPSpawner } from './mcp-spawner.js';
 
 const NPX_COMMAND = 'npx';
 
 export class NPMSpawner extends MCPSpawner<'npm'> {
+  static readonly command = NPX_COMMAND;
+
+  static getWorkspaceRequirements(): WorkspaceRequirements {
+    return {
+      hosts: ['registry.npmjs.org'],
+      features: { 'ghcr.io/devcontainers/features/node:1': { version: '22' } },
+    };
+  }
+
   #disposables: Array<IAsyncDisposable> = [];
 
   buildCommandSpec(): CommandSpec {

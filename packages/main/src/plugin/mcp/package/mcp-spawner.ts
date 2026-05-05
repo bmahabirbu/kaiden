@@ -19,6 +19,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { components } from '@openkaiden/mcp-registry-types';
 
 import type { IAsyncDisposable } from '/@api/async-disposable.js';
+import type { MCPCommandSpec } from '/@api/mcp/mcp-server-info.js';
 
 export type ResolvedServerPackage = Omit<
   components['schemas']['Package'],
@@ -29,10 +30,14 @@ export type ResolvedServerPackage = Omit<
   environmentVariables?: Record<string, string>;
 };
 
-export interface CommandSpec {
-  command: string;
-  args: string[];
+// Re-exported from the API layer so spawner internals use the same type as MCPRemoteServerInfo.
+export type CommandSpec = MCPCommandSpec;
+
+export interface WorkspaceRequirements {
+  hosts: string[];
+  features: Record<string, Record<string, unknown>>;
   env?: Record<string, string>;
+  ensureFeatures?: (configDir: string) => Promise<void>;
 }
 
 export abstract class MCPSpawner<T extends string = string> implements IAsyncDisposable {

@@ -19,19 +19,30 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { MCPPackage } from './mcp-package.js';
-import { NPMSpawner } from './npm-spawner.js';
-import { PyPiSpawner } from './pypi-spawner.js';
+import type { ResolvedServerPackage } from './mcp-spawner.js';
+import type { MCPSpawnerFactory } from './mcp-spawner-factory.js';
+import { mcpSpawnerFactoryRegistry } from './mcp-spawner-factory-registry.js';
 
-// Mock the spawner classes
-vi.mock(import('./npm-spawner.js'));
-vi.mock(import('./pypi-spawner.js'));
+vi.mock(import('./mcp-spawner-factory-registry.js'));
 
 describe('MCPPackage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
   });
 
-  test('should create NPMSpawner for npm registry type', () => {
+  test('should use factory from registry to create spawner', () => {
+    const mockSpawner = {
+      buildCommandSpec: vi.fn(),
+      spawn: vi.fn(),
+      asyncDispose: vi.fn(),
+    };
+    const mockFactory: MCPSpawnerFactory = {
+      command: 'npx',
+      getWorkspaceRequirements: vi.fn(),
+      create: vi.fn().mockReturnValue(mockSpawner),
+    };
+    vi.mocked(mcpSpawnerFactoryRegistry.get).mockReturnValue(mockFactory);
+
     const pack = {
       identifier: 'test-package',
       version: '1.0.0',
@@ -42,35 +53,30 @@ describe('MCPPackage', () => {
     const mcpPackage = new MCPPackage(pack);
 
     expect(mcpPackage).toBeDefined();
-    expect(vi.mocked(NPMSpawner)).toHaveBeenCalledWith(pack);
-    expect(vi.mocked(PyPiSpawner)).not.toHaveBeenCalled();
+    expect(mcpSpawnerFactoryRegistry.get).toHaveBeenCalledWith('npm');
+    expect(mockFactory.create).toHaveBeenCalledWith(pack);
   });
 
-  test('should create PyPiSpawner for pypi registry type', () => {
-    const pack = {
-      identifier: 'test-package',
-      version: '1.0.0',
-      registryType: 'pypi' as const,
-      transport: { type: 'stdio' as const },
-    };
-
-    const mcpPackage = new MCPPackage(pack);
-
-    expect(mcpPackage).toBeDefined();
-    expect(vi.mocked(PyPiSpawner)).toHaveBeenCalledWith(pack);
-    expect(vi.mocked(NPMSpawner)).not.toHaveBeenCalled();
-  });
-
-  test('should delegate buildCommandSpec to NPMSpawner', () => {
-    const pack = {
-      identifier: 'test-package',
-      version: '1.0.0',
-      registryType: 'npm' as const,
-      transport: { type: 'stdio' as const },
-    };
-
+  test('should delegate buildCommandSpec to spawner', () => {
     const mockSpec = { command: 'npx', args: ['test-package@1.0.0'] };
-    vi.mocked(NPMSpawner).prototype.buildCommandSpec = vi.fn().mockReturnValue(mockSpec);
+    const mockSpawner = {
+      buildCommandSpec: vi.fn().mockReturnValue(mockSpec),
+      spawn: vi.fn(),
+      asyncDispose: vi.fn(),
+    };
+    const mockFactory: MCPSpawnerFactory = {
+      command: 'npx',
+      getWorkspaceRequirements: vi.fn(),
+      create: vi.fn().mockReturnValue(mockSpawner),
+    };
+    vi.mocked(mcpSpawnerFactoryRegistry.get).mockReturnValue(mockFactory);
+
+    const pack = {
+      identifier: 'test-package',
+      version: '1.0.0',
+      registryType: 'npm' as const,
+      transport: { type: 'stdio' as const },
+    };
 
     const mcpPackage = new MCPPackage(pack);
     const result = mcpPackage.buildCommandSpec();
@@ -78,7 +84,20 @@ describe('MCPPackage', () => {
     expect(result).toBe(mockSpec);
   });
 
-  test('should delegate buildCommandSpec to PyPiSpawner', () => {
+  test('should delegate spawn to spawner', async () => {
+    const mockTransport = {};
+    const mockSpawner = {
+      buildCommandSpec: vi.fn(),
+      spawn: vi.fn().mockResolvedValue(mockTransport),
+      asyncDispose: vi.fn(),
+    };
+    const mockFactory: MCPSpawnerFactory = {
+      command: 'uvx',
+      getWorkspaceRequirements: vi.fn(),
+      create: vi.fn().mockReturnValue(mockSpawner),
+    };
+    vi.mocked(mcpSpawnerFactoryRegistry.get).mockReturnValue(mockFactory);
+
     const pack = {
       identifier: 'test-package',
       version: '1.0.0',
@@ -86,16 +105,25 @@ describe('MCPPackage', () => {
       transport: { type: 'stdio' as const },
     };
 
-    const mockSpec = { command: 'uvx', args: ['test-package==1.0.0'] };
-    vi.mocked(PyPiSpawner).prototype.buildCommandSpec = vi.fn().mockReturnValue(mockSpec);
-
     const mcpPackage = new MCPPackage(pack);
-    const result = mcpPackage.buildCommandSpec();
+    const result = await mcpPackage.spawn();
 
-    expect(result).toBe(mockSpec);
+    expect(result).toBe(mockTransport);
+  });
+
+  test('should throw error when registry_type is missing', () => {
+    const pack = {
+      identifier: 'test-package',
+      version: '1.0.0',
+      transport: { type: 'stdio' as const },
+    } as unknown as ResolvedServerPackage;
+
+    expect(() => new MCPPackage(pack)).toThrow('cannot determine how to spawn package: registry_type is missing');
   });
 
   test('should throw error for unsupported registry type', () => {
+    vi.mocked(mcpSpawnerFactoryRegistry.get).mockReturnValue(undefined);
+
     const pack = {
       identifier: 'test-package',
       version: '1.0.0',

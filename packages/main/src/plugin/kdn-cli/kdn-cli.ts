@@ -24,6 +24,8 @@ import type { components as workspaceComponents } from '@openkaiden/workspace-co
 import { inject, injectable } from 'inversify';
 
 import { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
+import type { WorkspaceRequirements } from '/@/plugin/mcp/package/mcp-spawner.js';
+import { mcpSpawnerFactoryRegistry } from '/@/plugin/mcp/package/mcp-spawner-factory-registry.js';
 import { Exec } from '/@/plugin/util/exec.js';
 import type {
   AgentWorkspaceCreateOptions,
@@ -129,27 +131,95 @@ export class KdnCli {
   }
 
   async writeWorkspaceConfig(options: AgentWorkspaceCreateOptions): Promise<void> {
-    if (!options.skills?.length && !options.secrets?.length && !options.network) {
+    const mcpServers = options.mcp?.servers;
+    const mcpCommands = options.mcp?.commands;
+    const hasSkills = !!options.skills?.length;
+    const hasMcp = !!mcpServers?.length || !!mcpCommands?.length;
+    if (!hasSkills && !options.secrets?.length && !options.network && !hasMcp) {
       return;
     }
 
     const configDir = join(options.sourcePath, '.kaiden');
     const configPath = join(configDir, 'workspace.json');
+    await mkdir(configDir, { recursive: true });
 
     let existing: WorkspaceConfiguration = {};
     try {
       const content = await readFile(configPath, 'utf-8');
       existing = JSON.parse(content) as WorkspaceConfiguration;
-    } catch {
-      // file doesn't exist yet — start fresh
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw err;
+      }
     }
 
-    existing.skills = options.skills;
+    if (hasSkills) {
+      existing.skills = options.skills;
+    }
     existing.network = options.network;
     existing.secrets = options.secrets;
 
-    await mkdir(configDir, { recursive: true });
-    await writeFile(configPath, JSON.stringify(existing, undefined, 2) + '\n', 'utf-8');
+    if (hasMcp) {
+      const reqsByCommand = new Map<string, WorkspaceRequirements | undefined>();
+      for (const c of mcpCommands ?? []) {
+        if (!reqsByCommand.has(c.command)) {
+          reqsByCommand.set(c.command, mcpSpawnerFactoryRegistry.getByCommand(c.command)?.getWorkspaceRequirements());
+        }
+      }
+
+      const mcp: WorkspaceConfiguration['mcp'] = {};
+      if (mcpServers?.length) {
+        mcp.servers = mcpServers.map(s => ({
+          name: s.name,
+          url: s.url,
+          ...(s.headers && Object.keys(s.headers).length > 0 ? { headers: s.headers } : {}),
+        }));
+      }
+      if (mcpCommands?.length) {
+        mcp.commands = mcpCommands.map(c => {
+          const reqs = reqsByCommand.get(c.command);
+          const env = { ...reqs?.env, ...c.env };
+          return {
+            name: c.name,
+            command: c.command,
+            ...(c.args?.length ? { args: c.args } : {}),
+            ...(Object.keys(env).length > 0 ? { env } : {}),
+          };
+        });
+      }
+      existing.mcp = mcp;
+
+      const requiredHosts: string[] = [];
+      for (const [, reqs] of reqsByCommand) {
+        if (!reqs) continue;
+        for (const [key, value] of Object.entries(reqs.features)) {
+          existing.features = {
+            ...existing.features,
+            [key]: existing.features?.[key] ?? value,
+          };
+        }
+        if (reqs.ensureFeatures) {
+          await reqs.ensureFeatures(configDir);
+        }
+        requiredHosts.push(...reqs.hosts);
+      }
+
+      const network = existing.network;
+      if (requiredHosts.length > 0 && network?.mode === 'deny' && Array.isArray(network.hosts)) {
+        const missingHosts = requiredHosts.filter(h => !network.hosts!.includes(h));
+        if (missingHosts.length > 0) {
+          existing.network = {
+            ...network,
+            mode: 'deny',
+            hosts: [...network.hosts!, ...missingHosts],
+          };
+        }
+      }
+    }
+
+    const output = JSON.stringify(existing, undefined, 2) + '\n';
+    console.log(`[KdnCli] workspace.json:\n${output}`);
+    await writeFile(configPath, output, 'utf-8');
   }
 
   async listWorkspaces(): Promise<AgentWorkspaceSummary[]> {

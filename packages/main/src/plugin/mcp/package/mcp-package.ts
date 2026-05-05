@@ -20,33 +20,16 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { IAsyncDisposable } from '/@api/async-disposable.js';
 
 import type { CommandSpec, MCPSpawner, ResolvedServerPackage } from './mcp-spawner.js';
-import { NPMSpawner } from './npm-spawner.js';
-import { PyPiSpawner } from './pypi-spawner.js';
+import { mcpSpawnerFactoryRegistry } from './mcp-spawner-factory-registry.js';
 
 export class MCPPackage implements IAsyncDisposable {
   readonly #spawner: MCPSpawner;
 
   constructor(pack: ResolvedServerPackage) {
-    // By destructuring `registry_type` and reconstructing the object, TypeScript can properly infer the narrowed type in each switch case.
-    const { registryType, ...rest } = pack;
-    if (!registryType) throw new Error('cannot determine how to spawn package: registry_type is missing');
-
-    switch (registryType) {
-      case 'npm':
-        this.#spawner = new NPMSpawner({
-          ...rest,
-          registryType: registryType,
-        });
-        break;
-      case 'pypi':
-        this.#spawner = new PyPiSpawner({
-          ...rest,
-          registryType,
-        });
-        break;
-      default:
-        throw new Error(`unsupported registry type: ${pack.registryType}`);
-    }
+    if (!pack.registryType) throw new Error('cannot determine how to spawn package: registry_type is missing');
+    const factory = mcpSpawnerFactoryRegistry.get(pack.registryType);
+    if (!factory) throw new Error(`unsupported registry type: ${pack.registryType}`);
+    this.#spawner = factory.create(pack);
   }
 
   buildCommandSpec(): CommandSpec {

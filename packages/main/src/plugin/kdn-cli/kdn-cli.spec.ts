@@ -69,6 +69,12 @@ function mockExecResult(stdout: string): RunResult {
   return { command: KAIDEN_CLI_PATH, stdout, stderr: '' };
 }
 
+function mockEnoent(): NodeJS.ErrnoException {
+  const err: NodeJS.ErrnoException = new Error('ENOENT');
+  err.code = 'ENOENT';
+  return err;
+}
+
 function mockRunError(overrides: Partial<RunError> = {}): RunError {
   const err = new Error(overrides.message ?? 'Command execution failed with exit code 1') as RunError;
   err.exitCode = overrides.exitCode ?? 1;
@@ -235,7 +241,7 @@ describe('create', () => {
 
   test('writes workspace.json with skills before calling kdn init', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(readFile).mockRejectedValue(mockEnoent());
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(JSON.stringify({ id: 'ws-new' })));
 
     await kdnCli.createWorkspace({
@@ -268,7 +274,7 @@ describe('create', () => {
 
   test('writes workspace.json with network before calling kdn init', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(readFile).mockRejectedValue(mockEnoent());
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(JSON.stringify({ id: 'ws-new' })));
 
     await kdnCli.createWorkspace({
@@ -283,7 +289,7 @@ describe('create', () => {
     expect(exec.exec).toHaveBeenCalled();
   });
 
-  test('does not write workspace.json when no skills or network provided', async () => {
+  test('does not write workspace.json when no skills, network, secrets, or mcp provided', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(JSON.stringify({ id: 'ws-new' })));
 
@@ -310,7 +316,7 @@ describe('create', () => {
 
   test('writes workspace.json with both skills and network', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(readFile).mockRejectedValue(mockEnoent());
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(JSON.stringify({ id: 'ws-new' })));
 
     await kdnCli.createWorkspace({
@@ -327,7 +333,7 @@ describe('create', () => {
 
   test('writes workspace.json with secrets before calling kdn init', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(readFile).mockRejectedValue(mockEnoent());
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(JSON.stringify({ id: 'ws-new' })));
 
     await kdnCli.createWorkspace({
@@ -340,15 +346,6 @@ describe('create', () => {
     const parsed = JSON.parse(writtenContent);
     expect(parsed.secrets).toEqual(['github-token', 'anthropic-key']);
     expect(exec.exec).toHaveBeenCalled();
-  });
-
-  test('does not write workspace.json when no skills or secrets provided', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    vi.mocked(exec.exec).mockResolvedValue(mockExecResult(JSON.stringify({ id: 'ws-new' })));
-
-    await kdnCli.createWorkspace(defaultOptions);
-
-    expect(writeFile).not.toHaveBeenCalled();
   });
 
   test('merges secrets into existing workspace.json preserving other fields', async () => {
@@ -369,7 +366,7 @@ describe('create', () => {
 
   test('writes workspace.json with both skills and secrets', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(readFile).mockRejectedValue(mockEnoent());
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(JSON.stringify({ id: 'ws-new' })));
 
     await kdnCli.createWorkspace({
@@ -382,6 +379,75 @@ describe('create', () => {
     const parsed = JSON.parse(writtenContent);
     expect(parsed.skills).toEqual(['/home/user/.kaiden/skills/kubernetes']);
     expect(parsed.secrets).toEqual(['github-token', 'anthropic-key']);
+  });
+
+  test('writes workspace.json with command-based MCP servers and adds Python feature for uvx', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(readFile).mockRejectedValue(mockEnoent());
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult(JSON.stringify({ id: 'ws-new' })));
+
+    await kdnCli.createWorkspace({
+      ...defaultOptions,
+      mcp: {
+        commands: [{ name: 'pypi-server', command: 'uvx', args: ['mcp-server==1.0.0'], env: { API_KEY: 'test' } }],
+      },
+    });
+
+    const calls = vi.mocked(writeFile).mock.calls;
+    const configCall = calls.find(c => String(c[0]).endsWith('workspace.json'));
+    const parsed = JSON.parse(configCall![1] as string);
+    expect(parsed.mcp.commands).toEqual([
+      {
+        name: 'pypi-server',
+        command: 'uvx',
+        args: ['mcp-server==1.0.0'],
+        env: { API_KEY: 'test', UV_SYSTEM_CERTS: '1' },
+      },
+    ]);
+    expect(parsed.features).toEqual({ './uv-feature': {} });
+    expect(parsed.network).toBeUndefined();
+  });
+
+  test('writes workspace.json with both remote and command-based MCP servers', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(readFile).mockRejectedValue(mockEnoent());
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult(JSON.stringify({ id: 'ws-new' })));
+
+    await kdnCli.createWorkspace({
+      ...defaultOptions,
+      mcp: {
+        servers: [{ name: 'github', url: 'https://mcp.github.com/sse' }],
+        commands: [{ name: 'playwright', command: 'npx', args: ['-y', '@playwright/mcp'] }],
+      },
+    });
+
+    const writtenContent = vi.mocked(writeFile).mock.calls[0]![1] as string;
+    const parsed = JSON.parse(writtenContent);
+    expect(parsed.mcp.servers).toEqual([{ name: 'github', url: 'https://mcp.github.com/sse' }]);
+    expect(parsed.mcp.commands).toEqual([{ name: 'playwright', command: 'npx', args: ['-y', '@playwright/mcp'] }]);
+    expect(parsed.features).toEqual({ 'ghcr.io/devcontainers/features/node:1': { version: '22' } });
+  });
+
+  test('preserves existing feature config rather than overwriting', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({
+        features: { './uv-feature': { version: '3.12' } },
+      }),
+    );
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult(JSON.stringify({ id: 'ws-new' })));
+
+    await kdnCli.createWorkspace({
+      ...defaultOptions,
+      mcp: {
+        commands: [{ name: 'pypi-server', command: 'uvx', args: ['mcp-server==1.0.0'] }],
+      },
+    });
+
+    const calls = vi.mocked(writeFile).mock.calls;
+    const configCall = calls.find(c => String(c[0]).endsWith('workspace.json'));
+    const parsed = JSON.parse(configCall![1] as string);
+    expect(parsed.features).toEqual({ './uv-feature': { version: '3.12' } });
   });
 });
 

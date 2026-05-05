@@ -21,6 +21,27 @@ import { describe, expect, test } from 'vitest';
 import { NPMSpawner } from './npm-spawner.js';
 
 describe('NPMSpawner', () => {
+  test('command is npx', () => {
+    expect(NPMSpawner.command).toBe('npx');
+  });
+
+  describe('getWorkspaceRequirements', () => {
+    test('returns npm registry host', () => {
+      const reqs = NPMSpawner.getWorkspaceRequirements();
+      expect(reqs.hosts).toEqual(['registry.npmjs.org']);
+    });
+
+    test('returns node devcontainer feature', () => {
+      const reqs = NPMSpawner.getWorkspaceRequirements();
+      expect(reqs.features).toEqual({ 'ghcr.io/devcontainers/features/node:1': { version: '22' } });
+    });
+
+    test('does not provide ensureFeatures callback', () => {
+      const reqs = NPMSpawner.getWorkspaceRequirements();
+      expect(reqs.ensureFeatures).toBeUndefined();
+    });
+  });
+
   describe('buildCommandSpec', () => {
     test('uses npx command with identifier@version', () => {
       const spawner = new NPMSpawner({
