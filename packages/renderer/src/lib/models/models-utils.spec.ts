@@ -73,7 +73,7 @@ test('getCatalogModels handles connections with no models', () => {
   expect(getCatalogModels([provider])).toEqual([]);
 });
 
-test('getInferenceConnectionSummaries returns summaries for each connection', () => {
+test('getInferenceConnectionSummaries returns one summary per provider with aggregated model count', () => {
   const provider = {
     id: 'openai',
     name: 'OpenAI',
@@ -85,7 +85,7 @@ test('getInferenceConnectionSummaries returns summaries for each connection', ()
   } as unknown as ProviderInfo;
 
   const result = getInferenceConnectionSummaries([provider]);
-  expect(result).toHaveLength(2);
+  expect(result).toHaveLength(1);
   expect(result[0]).toEqual({
     providerName: 'OpenAI',
     providerId: 'openai',
@@ -93,17 +93,7 @@ test('getInferenceConnectionSummaries returns summaries for each connection', ()
     connectionName: 'conn-1',
     connectionType: 'cloud',
     status: 'started',
-    modelCount: 2,
-    creationDisplayName: 'OpenAI',
-  });
-  expect(result[1]).toEqual({
-    providerName: 'OpenAI',
-    providerId: 'openai',
-    providerInternalId: 'internal-1',
-    connectionName: 'conn-2',
-    connectionType: 'self-hosted',
-    status: 'stopped',
-    modelCount: 1,
+    modelCount: 3,
     creationDisplayName: 'OpenAI',
   });
 });

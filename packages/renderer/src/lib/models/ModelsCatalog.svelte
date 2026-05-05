@@ -96,7 +96,7 @@ function filterBySearch(models: CatalogModelInfo[], term: string): CatalogModelI
       m.label.toLowerCase().includes(q) ||
       m.providerId.toLowerCase().includes(q) ||
       m.providerName.toLowerCase().includes(q) ||
-      m.connectionName.toLowerCase().includes(q),
+      (m.connectionName?.toLowerCase().includes(q) ?? false),
   );
 }
 
@@ -106,7 +106,7 @@ function filterConnectionsBySearch(conns: InferenceConnectionSummary[], term: st
   return conns.filter(
     c =>
       c.providerName.toLowerCase().includes(q) ||
-      c.connectionName.toLowerCase().includes(q) ||
+      (c.connectionName?.toLowerCase().includes(q) ?? false) ||
       (c.connectionType?.toLowerCase().includes(q) ?? false),
   );
 }

@@ -66,18 +66,19 @@ export function getInferenceConnectionSummaries(providerInfos: ProviderInfo[]): 
   const result: InferenceConnectionSummary[] = [];
   for (const provider of providerInfos) {
     if (provider.inferenceConnections.length > 0) {
-      for (const connection of provider.inferenceConnections) {
-        result.push({
-          providerName: provider.name,
-          providerId: provider.id,
-          providerInternalId: provider.internalId,
-          connectionName: connection.name,
-          connectionType: connection.type,
-          status: connection.status,
-          modelCount: connection.models.length,
-          creationDisplayName: provider.inferenceProviderConnectionCreationDisplayName ?? provider.name,
-        });
-      }
+      const started = provider.inferenceConnections.find(c => c.status === 'started');
+      const representative = started ?? provider.inferenceConnections[0];
+      const totalModels = provider.inferenceConnections.reduce((sum, c) => sum + c.models.length, 0);
+      result.push({
+        providerName: provider.name,
+        providerId: provider.id,
+        providerInternalId: provider.internalId,
+        connectionName: representative.name,
+        connectionType: representative.type,
+        status: representative.status,
+        modelCount: totalModels,
+        creationDisplayName: provider.inferenceProviderConnectionCreationDisplayName ?? provider.name,
+      });
     } else if (provider.inferenceProviderConnectionCreation) {
       result.push({
         providerName: provider.name,
