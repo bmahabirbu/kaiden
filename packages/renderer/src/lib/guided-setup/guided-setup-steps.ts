@@ -25,7 +25,7 @@ import type { DefaultWorkspaceModelSettings, DefaultWorkspaceSettings } from '/@
 import CodingAgentStep from './CodingAgentStep.svelte';
 import ModelStep from './ModelStep.svelte';
 
-export type CliAgent = 'opencode' | 'claude' | 'claude-vertex' | 'cursor' | 'goose';
+export type CliAgent = 'opencode' | 'openclaw' | 'claude' | 'claude-vertex' | 'cursor' | 'goose';
 
 export interface OnboardingState {
   agent: CliAgent;

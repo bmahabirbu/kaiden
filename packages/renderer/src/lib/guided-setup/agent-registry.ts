@@ -24,13 +24,14 @@ import type { Component } from 'svelte';
 import ClaudeCodeIcon from '/@/lib/images/agents/ClaudeCodeIcon.svelte';
 import CursorIcon from '/@/lib/images/agents/CursorIcon.svelte';
 import GooseIcon from '/@/lib/images/agents/GooseIcon.svelte';
+import OpenClawIcon from '/@/lib/images/agents/OpenClawIcon.svelte';
 import OpenCodeIcon from '/@/lib/images/agents/OpenCodeIcon.svelte';
 import VertexAIIcon from '/@/lib/images/agents/VertexAIIcon.svelte';
 
 import type { CliAgent } from './guided-setup-steps';
 import ClaudePanel from './panels/ClaudePanel.svelte';
 import ClaudeVertexPanel from './panels/ClaudeVertexPanel.svelte';
-import OpenCodePanel from './panels/OpenCodePanel.svelte';
+import OpenRuntimePanel from './panels/OpenRuntimePanel.svelte';
 
 export interface AgentDefinition {
   cliName: CliAgent;
@@ -70,7 +71,7 @@ export const agentDefinitions: AgentDefinition[] = [
     description:
       'Open-source agent on your machine — local models via Ollama or Ramalama, or cloud APIs (OpenAI, Gemini, and other providers OpenCode supports).',
     badge: 'Recommended',
-    panel: OpenCodePanel,
+    panel: OpenRuntimePanel,
   },
   {
     cliName: 'claude',
@@ -98,6 +99,15 @@ export const agentDefinitions: AgentDefinition[] = [
     panel: ClaudeVertexPanel,
     providerSelector: 'kaiden.vertex-ai:vertex-ai',
     runtimes: ['podman'],
+  },
+  {
+    cliName: 'openclaw',
+    title: 'OpenClaw',
+    description: 'Open-source autonomous AI agent — local models via Ollama or Ramalama, or cloud APIs.',
+    icon: faDesktop,
+    iconComponent: OpenClawIcon,
+    colorClass: 'bg-gradient-to-br from-red-600 to-red-700',
+    panel: OpenRuntimePanel,
   },
   {
     cliName: 'cursor',

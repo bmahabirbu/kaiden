@@ -5,6 +5,14 @@ import { Icon } from '@podman-desktop/ui-svelte/icons';
 
 import { fetchProviders, providerInfos } from '/@/stores/providers';
 
+import type { AgentDefinition } from '../agent-registry';
+
+interface Props {
+  definition?: AgentDefinition;
+}
+
+let { definition }: Props = $props();
+
 let checking = $state(false);
 
 let hasLocalInference = $derived(
@@ -33,7 +41,7 @@ function handleRetryProbe(): void {
 
 <div
   class="rounded-xl border border-(--pd-content-divider) bg-(--pd-content-card-inset-bg) p-6"
-  data-testid="opencode-panel">
+  data-testid="{definition?.cliName}-panel">
   <h3 class="text-xs font-bold uppercase tracking-wider text-(--pd-content-card-text) opacity-50 mb-3">
     Local Runtime
   </h3>
