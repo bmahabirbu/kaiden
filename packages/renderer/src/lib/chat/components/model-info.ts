@@ -24,5 +24,6 @@ export interface ModelInfo {
   type: InferenceProviderConnectionType;
   llmMetadata?: LLMMetadata;
   endpoint?: string;
+  hostNative?: boolean;
   label: string;
 }

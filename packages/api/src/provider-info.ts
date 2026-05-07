@@ -77,6 +77,7 @@ export interface ProviderInferenceConnectionInfo {
   type: InferenceProviderConnectionType;
   llmMetadata?: LLMMetadata;
   endpoint?: string;
+  hostNative?: boolean;
   status: ProviderConnectionStatus;
   lifecycleMethods?: LifecycleMethod[];
   models: Array<{

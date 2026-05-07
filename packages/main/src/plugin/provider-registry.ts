@@ -794,6 +794,7 @@ export class ProviderRegistry {
         type: connection.type,
         llmMetadata: connection.llmMetadata,
         endpoint: connection.endpoint,
+        hostNative: connection.hostNative,
         models: connection.models,
         status: connection.status(),
       };

@@ -102,6 +102,7 @@ export class OllamaExtension {
         const disposable = ollamaProvider.registerInferenceProviderConnection({
           name: 'ollama',
           type: 'local',
+          hostNative: true,
           llmMetadata: { name: 'ollama' },
           endpoint: 'http://localhost:11434/v1',
           sdk,

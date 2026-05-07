@@ -27,7 +27,9 @@ import {
   getInferenceConnectionSummaries,
   getInHouseCatalogModels,
   getInHouseConnectionSummaries,
+  getModelId,
   getModels,
+  rewriteHostNativeEndpoint,
 } from './models-utils';
 
 test('getModels returns empty array for providers without inference connections', () => {
@@ -335,4 +337,33 @@ test('getInHouseConnectionSummaries returns empty when no self-hosted providers'
   ] as unknown as ProviderInfo[];
 
   expect(getInHouseConnectionSummaries(providers)).toEqual([]);
+});
+
+test('rewriteHostNativeEndpoint rewrites localhost aliases to native-host.internal', () => {
+  expect(rewriteHostNativeEndpoint('http://localhost:11434/v1')).toBe('http://native-host.internal:11434/v1');
+  expect(rewriteHostNativeEndpoint('http://127.0.0.1:8080/v1')).toBe('http://native-host.internal:8080/v1');
+  expect(rewriteHostNativeEndpoint('http://192.168.1.50:11434/v1')).toBe('http://192.168.1.50:11434/v1');
+  expect(rewriteHostNativeEndpoint(undefined)).toBeUndefined();
+});
+
+test('getModelId rewrites endpoint only for hostNative models', () => {
+  const hostNative = {
+    providerId: 'ollama',
+    connectionName: 'ollama',
+    type: 'local' as const,
+    hostNative: true,
+    llmMetadata: { name: 'ollama' },
+    endpoint: 'http://localhost:11434/v1',
+    label: 'llama3',
+  };
+  const container = {
+    providerId: 'ramalama',
+    connectionName: 'port/8080',
+    type: 'local' as const,
+    llmMetadata: { name: 'openai' },
+    endpoint: 'http://localhost:8080',
+    label: 'granite',
+  };
+  expect(getModelId(hostNative)).toBe('ollama::llama3::http://native-host.internal:11434/v1');
+  expect(getModelId(container)).toBe('openai::granite::http://localhost:8080');
 });

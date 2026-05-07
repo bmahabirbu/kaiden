@@ -23,7 +23,7 @@ export function getModels(providerInfos: ProviderInfo[]): ModelInfo[] {
   return providerInfos.reduce(
     (accumulator, current) => {
       if (current.inferenceConnections.length > 0) {
-        for (const { name, type, llmMetadata, endpoint, models } of current.inferenceConnections) {
+        for (const { name, type, llmMetadata, endpoint, hostNative, models } of current.inferenceConnections) {
           accumulator.push(
             ...models.map((model: { label: string }) => ({
               providerId: current.id,
@@ -31,6 +31,7 @@ export function getModels(providerInfos: ProviderInfo[]): ModelInfo[] {
               type,
               llmMetadata: llmMetadata,
               endpoint,
+              hostNative,
               label: model.label,
             })),
           );
@@ -65,6 +66,8 @@ export function getCatalogModels(providerInfos: ProviderInfo[]): CatalogModelInf
           connectionName: connection.name,
           type: connection.type,
           llmMetadata: connection.llmMetadata,
+          endpoint: connection.endpoint,
+          hostNative: connection.hostNative,
           label: model.label,
           connectionStatus: connection.status,
         });
@@ -125,6 +128,24 @@ export function getInferenceConnectionSummaries(providerInfos: ProviderInfo[]): 
   return result;
 }
 
+const NATIVE_HOST = 'native-host.internal';
+const LOCALHOST_ALIASES = ['localhost', '127.0.0.1', '0.0.0.0', '[::1]', '::1'];
+
+export function rewriteHostNativeEndpoint(endpoint: string | undefined): string | undefined {
+  if (!endpoint) return endpoint;
+  try {
+    const url = new URL(endpoint);
+    if (LOCALHOST_ALIASES.includes(url.hostname.toLowerCase())) {
+      url.hostname = NATIVE_HOST;
+      return url.toString();
+    }
+  } catch {
+    // not a URL, return as-is
+  }
+  return endpoint;
+}
+
 export function getModelId(model: ModelInfo): string {
-  return `${model.llmMetadata?.name ?? ''}::${model.label}::${model.endpoint ?? ''}`;
+  const endpoint = model.hostNative ? rewriteHostNativeEndpoint(model.endpoint) : model.endpoint;
+  return `${model.llmMetadata?.name ?? ''}::${model.label}::${endpoint ?? ''}`;
 }

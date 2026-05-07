@@ -70,6 +70,9 @@ describe('OllamaExtension', () => {
     expect(vi.mocked(provider.createProvider)).toHaveBeenCalled();
     expect(extensionContext.subscriptions).toContain(ollamaProvider);
     expect(vi.mocked(ollamaProvider.registerInferenceProviderConnection)).toHaveBeenCalled();
+    expect(vi.mocked(ollamaProvider.registerInferenceProviderConnection)).toHaveBeenCalledWith(
+      expect.objectContaining({ hostNative: true }),
+    );
     expect(vi.mocked(ollamaProvider.updateStatus)).toHaveBeenCalledWith('started');
   });
 

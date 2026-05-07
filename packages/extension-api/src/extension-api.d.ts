@@ -659,6 +659,7 @@ declare module '@openkaiden/api' {
     type: InferenceProviderConnectionType;
     llmMetadata?: LLMMetadata;
     endpoint?: string;
+    hostNative?: boolean;
     sdk: AISDKInferenceProvider;
     credentials(): Record<string, string>;
     lifecycle?: ProviderConnectionLifecycle;
