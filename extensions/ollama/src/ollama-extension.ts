@@ -15,20 +15,43 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
+import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+import { createServer, request } from 'node:http';
+import { networkInterfaces } from 'node:os';
+
 import { type Disposable, type ExtensionContext, type Provider, provider } from '@openkaiden/api';
 import { createOllama } from 'ollama-ai-provider-v2';
+
+function getLocalIP(): string {
+  const nets = networkInterfaces();
+  for (const entries of Object.values(nets)) {
+    for (const entry of entries ?? []) {
+      if (entry.family === 'IPv4' && !entry.internal) {
+        return entry.address;
+      }
+    }
+  }
+  return '127.0.0.1';
+}
+
+const OLLAMA_HOST = '127.0.0.1';
+const OLLAMA_PORT = 11434;
 
 export class OllamaExtension {
   #extensionContext: ExtensionContext;
   #currentModels: string[] = [];
   #connectionDisposable: Disposable | undefined;
   #interval: NodeJS.Timeout | undefined;
+  #proxyServer: Server | undefined;
+  #proxyPort: number | undefined;
 
   constructor(extensionContext: ExtensionContext) {
     this.#extensionContext = extensionContext;
   }
 
   async activate(): Promise<void> {
+    await this.startProxy();
+
     const ollamaProvider = provider.createProvider({
       name: 'Ollama',
       status: 'unknown',
@@ -52,11 +75,52 @@ export class OllamaExtension {
     }, 30000);
   }
 
+  protected startProxy(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.#proxyServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+        const proxyReq = request(
+          {
+            hostname: OLLAMA_HOST,
+            port: OLLAMA_PORT,
+            path: req.url,
+            method: req.method,
+            headers: req.headers,
+          },
+          proxyRes => {
+            res.writeHead(proxyRes.statusCode ?? 502, proxyRes.headers);
+            proxyRes.pipe(res);
+          },
+        );
+        proxyReq.on('error', () => {
+          res.writeHead(502);
+          res.end();
+        });
+        req.pipe(proxyReq);
+      });
+
+      this.#proxyServer.listen(0, '0.0.0.0', () => {
+        const addr = this.#proxyServer!.address();
+        if (addr && typeof addr === 'object') {
+          this.#proxyPort = addr.port;
+        }
+        resolve();
+      });
+      this.#proxyServer.on('error', reject);
+    });
+  }
+
+  protected getEndpoint(): string {
+    if (this.#proxyPort) {
+      return `http://${getLocalIP()}:${this.#proxyPort}/v1`;
+    }
+    return `http://${OLLAMA_HOST}:${OLLAMA_PORT}/v1`;
+  }
+
   protected async updateModelsAndStatus(ollamaProvider: Provider): Promise<void> {
     let models: Array<{ name: string }> = [];
     let running = true;
     try {
-      const res = await fetch('http://localhost:11434/api/tags');
+      const res = await fetch(`http://${OLLAMA_HOST}:${OLLAMA_PORT}/api/tags`);
       if (!res.ok) {
         throw new Error(`HTTP error, status: ${res.status}`);
       }
@@ -98,12 +162,13 @@ export class OllamaExtension {
       }
       this.#currentModels = newModelNames;
       if (newModelNames.length > 0) {
+        const endpoint = this.getEndpoint();
         const sdk = createOllama();
         const disposable = ollamaProvider.registerInferenceProviderConnection({
           name: 'ollama',
           type: 'local',
           llmMetadata: { name: 'ollama' },
-          endpoint: 'http://localhost:11434/v1',
+          endpoint,
           sdk,
           status() {
             return 'started';
@@ -122,5 +187,10 @@ export class OllamaExtension {
   async deactivate(): Promise<void> {
     clearInterval(this.#interval);
     this.#currentModels = [];
+    if (this.#proxyServer) {
+      this.#proxyServer.close();
+      this.#proxyServer = undefined;
+      this.#proxyPort = undefined;
+    }
   }
 }

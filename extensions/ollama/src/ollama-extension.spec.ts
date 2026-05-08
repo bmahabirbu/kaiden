@@ -27,7 +27,6 @@ import { OllamaExtension } from './ollama-extension';
 vi.mock(import('@openkaiden/api'));
 vi.mock(import('ollama-ai-provider-v2'));
 
-// Create a TestOllamaExtension class to expose protected methods if needed
 class TestOllamaExtension extends OllamaExtension {
   public async updateModelsAndStatus(provider: Provider): Promise<void> {
     return super.updateModelsAndStatus(provider);
@@ -47,7 +46,6 @@ describe('OllamaExtension', () => {
       dispose: vi.fn(),
     } as unknown as Provider;
     vi.resetAllMocks();
-    vi.clearAllMocks();
     vi.mocked(provider.createProvider).mockReturnValue(ollamaProvider);
     extensionContext = { subscriptions: [] } as unknown as ExtensionContext;
     extension = new TestOllamaExtension(extensionContext);
@@ -58,9 +56,8 @@ describe('OllamaExtension', () => {
   });
 
   test('should create provider, register subscription, and update models on activate', async () => {
-    // use msw to mock fetch
     const handlers = [
-      http.get('http://localhost:11434/api/tags', () =>
+      http.get('http://127.0.0.1:11434/api/tags', () =>
         HttpResponse.json({ models: [{ name: 'm1' }, { name: 'm2' }] }),
       ),
     ];
@@ -74,10 +71,8 @@ describe('OllamaExtension', () => {
   });
 
   test('should set status to stopped if fetch fails', async () => {
-    // throw error on fetch
-    // Simulate network error by throwing
     const handlers = [
-      http.get('http://localhost:11434/api/tags', () => {
+      http.get('http://127.0.0.1:11434/api/tags', () => {
         throw new Error('fail');
       }),
     ];
@@ -91,7 +86,7 @@ describe('OllamaExtension', () => {
   test('should unregister and register new connection if models change', async () => {
     const models = [{ name: 'm1' }];
     const handlers = [
-      http.get('http://localhost:11434/api/tags', () => {
+      http.get('http://127.0.0.1:11434/api/tags', () => {
         return HttpResponse.json({ models });
       }),
     ];
@@ -99,9 +94,21 @@ describe('OllamaExtension', () => {
     server.listen();
     await extension.activate();
     expect(ollamaProvider.registerInferenceProviderConnection).toHaveBeenCalledTimes(1);
-    // Simulate timer, by calling updateModelsAndStatus directly another time with different models
     models.push({ name: 'm2' });
     await extension.updateModelsAndStatus(ollamaProvider);
     expect(ollamaProvider.registerInferenceProviderConnection).toHaveBeenCalledTimes(2);
+  });
+
+  test('should register endpoint with proxy host IP and port', async () => {
+    const handlers = [
+      http.get('http://127.0.0.1:11434/api/tags', () => HttpResponse.json({ models: [{ name: 'm1' }] })),
+    ];
+    server = setupServer(...handlers);
+    server.listen({ onUnhandledRequest: 'error' });
+    await extension.activate();
+    const call = vi.mocked(ollamaProvider.registerInferenceProviderConnection).mock.calls[0]![0];
+    expect(call.endpoint).toMatch(/^http:\/\/\d+\.\d+\.\d+\.\d+:\d+\/v1$/);
+    expect(call.endpoint).not.toContain(':11434');
+    await extension.deactivate();
   });
 });
