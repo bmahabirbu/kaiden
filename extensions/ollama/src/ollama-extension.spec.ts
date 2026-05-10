@@ -16,6 +16,9 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
+import type { NetworkInterfaceInfo } from 'node:os';
+import { networkInterfaces } from 'node:os';
+
 import type { ExtensionContext, Provider } from '@openkaiden/api';
 import { provider } from '@openkaiden/api';
 import { http, HttpResponse } from 'msw';
@@ -24,6 +27,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { OllamaExtension } from './ollama-extension';
 
+vi.mock(import('node:os'));
 vi.mock(import('@openkaiden/api'));
 vi.mock(import('ollama-ai-provider-v2'));
 
@@ -47,7 +51,9 @@ describe('OllamaExtension', () => {
       dispose: vi.fn(),
     } as unknown as Provider;
     vi.resetAllMocks();
-    vi.clearAllMocks();
+    vi.mocked(networkInterfaces).mockReturnValue({
+      eth0: [{ address: '192.168.1.100', family: 'IPv4', internal: false } as NetworkInterfaceInfo],
+    });
     vi.mocked(provider.createProvider).mockReturnValue(ollamaProvider);
     extensionContext = { subscriptions: [] } as unknown as ExtensionContext;
     extension = new TestOllamaExtension(extensionContext);
@@ -69,7 +75,9 @@ describe('OllamaExtension', () => {
     await extension.activate();
     expect(vi.mocked(provider.createProvider)).toHaveBeenCalled();
     expect(extensionContext.subscriptions).toContain(ollamaProvider);
-    expect(vi.mocked(ollamaProvider.registerInferenceProviderConnection)).toHaveBeenCalled();
+    expect(vi.mocked(ollamaProvider.registerInferenceProviderConnection)).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: 'http://192.168.1.100:11434/v1' }),
+    );
     expect(vi.mocked(ollamaProvider.updateStatus)).toHaveBeenCalledWith('started');
   });
 

@@ -15,8 +15,21 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
+import { networkInterfaces } from 'node:os';
+
 import { type Disposable, type ExtensionContext, type Provider, provider } from '@openkaiden/api';
 import { createOllama } from 'ollama-ai-provider-v2';
+
+function getLocalIP(): string {
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (entry.family === 'IPv4' && !entry.internal) {
+        return entry.address;
+      }
+    }
+  }
+  return 'localhost';
+}
 
 export class OllamaExtension {
   #extensionContext: ExtensionContext;
@@ -103,7 +116,7 @@ export class OllamaExtension {
           name: 'ollama',
           type: 'local',
           llmMetadata: { name: 'ollama' },
-          endpoint: 'http://localhost:11434/v1',
+          endpoint: `http://${getLocalIP()}:11434/v1`,
           sdk,
           status() {
             return 'started';
