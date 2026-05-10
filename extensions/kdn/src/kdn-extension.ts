@@ -48,7 +48,7 @@ export class KdnExtension {
     if (!binaryPath) {
       const systemResult = await this.findOnPath();
       if (systemResult) {
-        binaryPath = binaryName;
+        binaryPath = systemResult.path;
         version = systemResult.version;
         installationSource = 'external';
         console.log('kdn binary found in system PATH');
@@ -108,14 +108,23 @@ export class KdnExtension {
     }
   }
 
-  private async findOnPath(): Promise<{ version: string } | undefined> {
+  private async findOnPath(): Promise<{ version: string; path: string } | undefined> {
     try {
       const result = await extensionApi.process.exec('kdn', ['version']);
       const version = this.parseVersion(result.stdout || result.stderr);
-      if (version) return { version };
+      if (version) {
+        const resolvedPath = await this.resolveFromPath();
+        return { version, path: resolvedPath };
+      }
     } catch {
       // not on PATH
     }
     return undefined;
+  }
+
+  private async resolveFromPath(): Promise<string> {
+    const cmd = extensionApi.env.isWindows ? 'where' : 'which';
+    const result = await extensionApi.process.exec(cmd, ['kdn']);
+    return result.stdout.trim().split(/\r?\n/)[0];
   }
 }

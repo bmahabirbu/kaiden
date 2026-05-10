@@ -83,11 +83,17 @@ test('registers from extension storage when binary exists', async () => {
 
 test('registers from system PATH when not in extension storage', async () => {
   vi.mocked(existsSync).mockReturnValue(false);
-  vi.mocked(extensionApi.process.exec).mockResolvedValue({
-    command: 'kdn',
-    stdout: '',
-    stderr: 'kdn version 1.0.0',
-  });
+  vi.mocked(extensionApi.process.exec)
+    .mockResolvedValueOnce({
+      command: 'kdn',
+      stdout: '',
+      stderr: 'kdn version 1.0.0',
+    })
+    .mockResolvedValueOnce({
+      command: 'which',
+      stdout: '/usr/local/bin/kdn\n',
+      stderr: '',
+    });
   vi.mocked(extensionApi.cli.createCliTool).mockReturnValue({ dispose: vi.fn() } as never);
 
   await kdnExtension.activate();
@@ -96,7 +102,7 @@ test('registers from system PATH when not in extension storage', async () => {
     expect.objectContaining({
       name: 'kdn',
       version: '1.0.0',
-      path: 'kdn',
+      path: '/usr/local/bin/kdn',
       installationSource: 'external',
     }),
   );
