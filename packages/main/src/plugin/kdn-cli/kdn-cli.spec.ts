@@ -856,6 +856,29 @@ describe('stop', () => {
   });
 });
 
+describe('getWorkspacePort', () => {
+  test('executes podman port and returns http URL', async () => {
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult('127.0.0.1:56858'));
+
+    const result = await kdnCli.getWorkspacePort('clawer', 18789);
+
+    expect(exec.exec).toHaveBeenCalledWith('podman', ['port', 'clawer', '18789']);
+    expect(result).toBe('http://127.0.0.1:56858');
+  });
+
+  test('rejects when no port mapping found', async () => {
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
+
+    await expect(kdnCli.getWorkspacePort('clawer', 18789)).rejects.toThrow('No port mapping found');
+  });
+
+  test('rejects when podman command fails', async () => {
+    vi.mocked(exec.exec).mockRejectedValue(new Error('no container with name or ID "clawer" found'));
+
+    await expect(kdnCli.getWorkspacePort('clawer', 18789)).rejects.toThrow('no container with name or ID');
+  });
+});
+
 describe('createSecret', () => {
   const defaultOptions: SecretCreateOptions = {
     name: 'my-secret',

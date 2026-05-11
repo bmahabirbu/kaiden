@@ -374,6 +374,10 @@ export function initExposure(): void {
     return ipcInvoke('agent-workspace:stop', id);
   });
 
+  contextBridge.exposeInMainWorld('getAgentWorkspaceWebUIUrl', async (id: string): Promise<string> => {
+    return ipcInvoke('agent-workspace:webui-url', id);
+  });
+
   // Agent Workspace Terminal
   let onDataCallbacksShellInAgentWorkspaceId = 0;
   const onDataCallbacksShellInAgentWorkspace = new Map<

@@ -6,6 +6,7 @@ import { router } from 'tinro';
 import AgentWorkspaceDetailsOverview from '/@/lib/agent-workspaces/AgentWorkspaceDetailsOverview.svelte';
 import AgentWorkspaceDetailsSettings from '/@/lib/agent-workspaces/AgentWorkspaceDetailsSettings.svelte';
 import AgentWorkspaceTerminal from '/@/lib/agent-workspaces/AgentWorkspaceTerminal.svelte';
+import AgentWorkspaceWebUI from '/@/lib/agent-workspaces/AgentWorkspaceWebUI.svelte';
 import { withConfirmation } from '/@/lib/dialogs/messagebox-utils';
 import DetailsPage from '/@/lib/ui/DetailsPage.svelte';
 import ListItemButtonIcon from '/@/lib/ui/ListItemButtonIcon.svelte';
@@ -13,6 +14,7 @@ import { getTabUrl, isTabSelected } from '/@/lib/ui/Util';
 import Route from '/@/Route.svelte';
 import { removeTerminal } from '/@/stores/agent-workspace-terminal-store';
 import { agentWorkspaces, startAgentWorkspace, stopAgentWorkspace } from '/@/stores/agent-workspaces.svelte';
+import { agentWorkspaceRuntime } from '/@/stores/agentworkspace-runtime';
 
 interface Props {
   workspaceId: string;
@@ -32,6 +34,7 @@ const inProgress = $derived(status === 'starting' || status === 'stopping');
 let terminalReconnectExhausted = $state(false);
 let terminalReconnect: (() => void) | undefined = $state(undefined);
 const isOnTerminalTab = $derived(isTabSelected($router.path, 'terminal'));
+const showWebUI = $derived(workspaceSummary?.agent === 'openclaw' && $agentWorkspaceRuntime === 'podman');
 
 $effect(() => {
   if (status === 'stopped') {
@@ -130,6 +133,9 @@ function handleRemove(): void {
   {#snippet tabsSnippet()}
     <Tab title="Overview" selected={isTabSelected($router.path, 'overview')} url={getTabUrl($router.path, 'overview')} />
     <Tab title="Terminal" selected={isTabSelected($router.path, 'terminal')} url={getTabUrl($router.path, 'terminal')} />
+    {#if showWebUI}
+      <Tab title="WebUI" selected={isTabSelected($router.path, 'webui')} url={getTabUrl($router.path, 'webui')} />
+    {/if}
     <!-- <Tab title="Files" selected={isTabSelected($router.path, 'files')} url={getTabUrl($router.path, 'files')} /> -->
     <Tab title="Settings" selected={isTabSelected($router.path, 'settings')} url={getTabUrl($router.path, 'settings')} />
   {/snippet}
@@ -146,6 +152,13 @@ function handleRemove(): void {
         bind:reconnectExhausted={terminalReconnectExhausted}
         bind:reconnect={terminalReconnect} />
     </Route>
+    {#if showWebUI}
+      <Route path="/webui" breadcrumb="WebUI" navigationHint="tab">
+        <AgentWorkspaceWebUI
+          workspaceId={workspaceId}
+          isRunning={isRunning} />
+      </Route>
+    {/if}
     <!-- <Route path="/files" breadcrumb="Files" navigationHint="tab">
       <AgentWorkspaceDetailsFiles />
     </Route> -->

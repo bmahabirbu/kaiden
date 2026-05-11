@@ -337,6 +337,15 @@ export class AgentWorkspaceManager implements Disposable {
     return result;
   }
 
+  async getWebUIUrl(id: string): Promise<string> {
+    const workspaces = await this.list();
+    const workspace = workspaces.find(ws => ws.id === id);
+    if (!workspace) {
+      throw new Error(`workspace "${id}" not found`);
+    }
+    return this.kdnCli.getWorkspacePort(workspace.name, 18789);
+  }
+
   shellInAgentWorkspace(
     name: string,
     onData: (data: string) => void,
@@ -440,6 +449,10 @@ export class AgentWorkspaceManager implements Disposable {
 
     this.ipcHandle('agent-workspace:stop', async (_listener: unknown, id: string): Promise<AgentWorkspaceId> => {
       return this.stop(id);
+    });
+
+    this.ipcHandle('agent-workspace:webui-url', async (_listener: unknown, id: string): Promise<string> => {
+      return this.getWebUIUrl(id);
     });
 
     this.ipcHandle(

@@ -304,6 +304,19 @@ export class KdnCli {
     return this.execCLI<AgentWorkspaceId>(['workspace', 'stop', id]);
   }
 
+  async getWorkspacePort(name: string, containerPort: number): Promise<string> {
+    const result = await this.exec.exec('podman', ['port', name, String(containerPort)]);
+    const hostBinding = result.stdout
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean)
+      .at(0);
+    if (!hostBinding) {
+      throw new Error(`No port mapping found for container port ${containerPort}`);
+    }
+    return `http://${hostBinding}`;
+  }
+
   private async execCLI<T>(args: string[], options?: RunOptions): Promise<T> {
     const cliPath = this.getCliPath();
     const fullArgs = [...args, '--output', 'json'];
