@@ -16,7 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { type Writable, writable } from 'svelte/store';
+import { get, type Writable, writable } from 'svelte/store';
 
 import type { AgentWorkspaceSummary } from '/@api/agent-workspace-info';
 
@@ -38,7 +38,15 @@ export async function checkForUpdate(eventName: string): Promise<boolean> {
 }
 
 const listWorkspaces = async (): Promise<AgentWorkspaceSummaryUI[]> => {
-  return (await window.listAgentWorkspaces()) as AgentWorkspaceSummaryUI[];
+  const fetched = (await window.listAgentWorkspaces()) as AgentWorkspaceSummaryUI[];
+  const current = get(agentWorkspaces);
+  return fetched.map(ws => {
+    const existing = current.find(c => c.id === ws.id);
+    if (existing && (existing.state === 'starting' || existing.state === 'stopping')) {
+      return { ...ws, state: existing.state };
+    }
+    return ws;
+  });
 };
 
 export const agentWorkspacesEventStore = new EventStore<AgentWorkspaceSummaryUI[]>(

@@ -57,6 +57,7 @@ export class AgentWorkspaceManager implements Disposable {
     { write: (param: string) => void; resize: (w: number, h: number) => void }
   >();
   private readonly terminalProcesses = new Map<number, IPty>();
+  private readonly terminalWorkspaceIds = new Map<number, string>();
 
   constructor(
     @inject(ApiSenderType)
@@ -260,8 +261,26 @@ export class AgentWorkspaceManager implements Disposable {
 
   async stop(id: string): Promise<AgentWorkspaceId> {
     const result = await this.kdnCli.stopWorkspace(id);
+    this.killTerminalsForWorkspace(id);
     this.apiSender.send('agent-workspace-update');
     return result;
+  }
+
+  private killTerminalsForWorkspace(workspaceId: string): void {
+    for (const [onDataId, wsId] of [...this.terminalWorkspaceIds.entries()]) {
+      if (wsId !== workspaceId) continue;
+      const proc = this.terminalProcesses.get(onDataId);
+      if (proc) {
+        try {
+          proc.kill();
+        } catch {
+          /* already exited */
+        }
+      }
+      this.terminalProcesses.delete(onDataId);
+      this.terminalCallbacks.delete(onDataId);
+      this.terminalWorkspaceIds.delete(onDataId);
+    }
   }
 
   shellInAgentWorkspace(
@@ -375,10 +394,12 @@ export class AgentWorkspaceManager implements Disposable {
             this.webContents.send('agent-workspace:terminal-onEnd', onDataId);
             this.terminalCallbacks.delete(onDataId);
             this.terminalProcesses.delete(onDataId);
+            this.terminalWorkspaceIds.delete(onDataId);
           },
         );
         this.terminalCallbacks.set(onDataId, { write: invocation.write, resize: invocation.resize });
         this.terminalProcesses.set(onDataId, invocation.ptyProcess);
+        this.terminalWorkspaceIds.set(onDataId, id);
         return onDataId;
       },
     );
@@ -414,6 +435,7 @@ export class AgentWorkspaceManager implements Disposable {
       }
       this.terminalProcesses.delete(onDataId);
       this.terminalCallbacks.delete(onDataId);
+      this.terminalWorkspaceIds.delete(onDataId);
     });
 
     this.watchInstancesFile();
@@ -443,5 +465,6 @@ export class AgentWorkspaceManager implements Disposable {
     }
     this.terminalProcesses.clear();
     this.terminalCallbacks.clear();
+    this.terminalWorkspaceIds.clear();
   }
 }

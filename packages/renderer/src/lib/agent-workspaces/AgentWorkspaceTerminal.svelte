@@ -137,10 +137,18 @@ function createDataCallback(): (data: string) => void {
 }
 
 function receiveEndCallback(): void {
-  if (!sendCallbackId) return;
-
+  const callbackId = sendCallbackId;
   sendCallbackId = undefined;
-  registerTerminal({ workspaceId, callbackId: undefined, terminal: serializeAddon?.serialize() ?? '' });
+
+  let content = '';
+  try {
+    content = serializeAddon?.serialize() ?? '';
+  } catch {
+    /* addon disposed */
+  }
+  registerTerminal({ workspaceId, callbackId: undefined, terminal: content });
+
+  if (!callbackId) return;
 
   if (reconnecting) {
     scheduleReconnect();
@@ -207,7 +215,7 @@ async function refreshTerminal(): Promise<void> {
     scrollback,
   });
 
-  if (existingTerminal) {
+  if (existingTerminal?.callbackId !== undefined) {
     shellTerminal.options = { fontSize, lineHeight };
     shellTerminal.write(existingTerminal.terminal);
   }

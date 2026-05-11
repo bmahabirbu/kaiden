@@ -806,6 +806,66 @@ describe('stop', () => {
 
     await expect(manager.stop('unknown-id')).rejects.toThrow('workspace not found: unknown-id');
   });
+
+  test('kills terminal processes belonging to the stopped workspace', async () => {
+    vi.mocked(kdnCli.listWorkspaces).mockResolvedValue(TEST_SUMMARIES);
+    vi.mocked(kdnCli.stopWorkspace).mockResolvedValue({ id: 'ws-2' });
+
+    const mockPty = {
+      onData: vi.fn(() => ({ dispose: vi.fn() })),
+      onExit: vi.fn(() => ({ dispose: vi.fn() })),
+      write: vi.fn(),
+      resize: vi.fn(),
+      kill: vi.fn(),
+      pid: 123,
+    } as unknown as IPty;
+    vi.mocked(spawn).mockReturnValue(mockPty);
+
+    const terminalHandler = vi
+      .mocked(ipcHandle)
+      .mock.calls.find(call => call[0] === 'agent-workspace:terminal')?.[1] as (
+      _listener: unknown,
+      id: string,
+      onDataId: number,
+    ) => Promise<number>;
+    expect(terminalHandler).toBeDefined();
+
+    await terminalHandler({}, 'ws-2', 42);
+
+    await manager.stop('ws-2');
+
+    expect(mockPty.kill).toHaveBeenCalled();
+  });
+
+  test('does not kill terminals belonging to other workspaces on stop', async () => {
+    vi.mocked(kdnCli.listWorkspaces).mockResolvedValue(TEST_SUMMARIES);
+    vi.mocked(kdnCli.stopWorkspace).mockResolvedValue({ id: 'ws-1' });
+
+    const mockPty = {
+      onData: vi.fn(() => ({ dispose: vi.fn() })),
+      onExit: vi.fn(() => ({ dispose: vi.fn() })),
+      write: vi.fn(),
+      resize: vi.fn(),
+      kill: vi.fn(),
+      pid: 456,
+    } as unknown as IPty;
+    vi.mocked(spawn).mockReturnValue(mockPty);
+
+    const terminalHandler = vi
+      .mocked(ipcHandle)
+      .mock.calls.find(call => call[0] === 'agent-workspace:terminal')?.[1] as (
+      _listener: unknown,
+      id: string,
+      onDataId: number,
+    ) => Promise<number>;
+    expect(terminalHandler).toBeDefined();
+
+    await terminalHandler({}, 'ws-2', 99);
+
+    await manager.stop('ws-1');
+
+    expect(mockPty.kill).not.toHaveBeenCalled();
+  });
 });
 
 describe('shellInAgentWorkspace', () => {
