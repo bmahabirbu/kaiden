@@ -261,26 +261,8 @@ export class AgentWorkspaceManager implements Disposable {
 
   async stop(id: string): Promise<AgentWorkspaceId> {
     const result = await this.kdnCli.stopWorkspace(id);
-    this.killTerminalsForWorkspace(id);
     this.apiSender.send('agent-workspace-update');
     return result;
-  }
-
-  private killTerminalsForWorkspace(workspaceId: string): void {
-    for (const [onDataId, wsId] of [...this.terminalWorkspaceIds.entries()]) {
-      if (wsId !== workspaceId) continue;
-      const proc = this.terminalProcesses.get(onDataId);
-      if (proc) {
-        try {
-          proc.kill();
-        } catch {
-          /* already exited */
-        }
-      }
-      this.terminalProcesses.delete(onDataId);
-      this.terminalCallbacks.delete(onDataId);
-      this.terminalWorkspaceIds.delete(onDataId);
-    }
   }
 
   shellInAgentWorkspace(

@@ -10,6 +10,7 @@ import DetailsPage from '/@/lib/ui/DetailsPage.svelte';
 import ListItemButtonIcon from '/@/lib/ui/ListItemButtonIcon.svelte';
 import { getTabUrl, isTabSelected } from '/@/lib/ui/Util';
 import Route from '/@/Route.svelte';
+import { removeTerminal } from '/@/stores/agent-workspace-terminal-store';
 import { agentWorkspaces, startAgentWorkspace, stopAgentWorkspace } from '/@/stores/agent-workspaces.svelte';
 
 interface Props {
@@ -30,6 +31,12 @@ const inProgress = $derived(status === 'starting' || status === 'stopping');
 let terminalReconnectExhausted = $state(false);
 let terminalReconnect: (() => void) | undefined = $state(undefined);
 const isOnTerminalTab = $derived(isTabSelected($router.path, 'terminal'));
+
+$effect(() => {
+  if (status === 'stopped') {
+    removeTerminal(workspaceId);
+  }
+});
 
 $effect(() => {
   configurationError = undefined;

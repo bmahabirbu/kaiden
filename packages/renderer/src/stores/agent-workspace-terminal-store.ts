@@ -60,3 +60,7 @@ export function getExistingTerminal(workspaceId: string): TerminalOfAgentWorkspa
   const terminals = get(agentWorkspaceTerminals);
   return terminals.find(terminal => terminal.workspaceId === workspaceId);
 }
+
+export function removeTerminal(workspaceId: string): void {
+  agentWorkspaceTerminals.update(list => list.filter(t => t.workspaceId !== workspaceId));
+}
