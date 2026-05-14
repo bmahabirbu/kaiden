@@ -20,7 +20,6 @@ import { createWriteStream, existsSync } from 'node:fs';
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, normalize } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { parseArgs as nodeParseArgs } from 'node:util';
 
 import AdmZip from 'adm-zip';
 import * as tar from 'tar';
@@ -165,32 +164,4 @@ export async function downloadKdn(
 
   await writeFile(versionFile, versionMarker, { encoding: 'utf-8' });
   console.log(`kdn ${version} for ${platform}/${arch} ready`);
-}
-
-function parseArgs(args: string[]): { output: string; platform: string; arch: string } {
-  const { values } = nodeParseArgs({
-    args,
-    options: {
-      output: { type: 'string' },
-      platform: { type: 'string' },
-      arch: { type: 'string' },
-    },
-    strict: true,
-  });
-
-  if (!values.output || !isAbsolute(values.output)) throw new Error('--output must be an absolute path');
-  if (!values.platform) throw new Error('missing --platform');
-  if (!values.arch) throw new Error('missing --arch');
-
-  return { output: values.output, platform: values.platform, arch: values.arch };
-}
-
-if (!process.env['VITEST']) {
-  const { output, platform, arch } = parseArgs(process.argv.slice(2));
-  getLatestRelease()
-    .then(({ version, digests }) => downloadKdn(version, platform, arch, output, digests))
-    .catch((error: unknown) => {
-      console.error(error);
-      process.exit(1);
-    });
 }

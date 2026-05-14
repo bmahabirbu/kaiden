@@ -115,6 +115,11 @@ jobs:
         with:
           model: ${{ inputs.inference_model }}
 
+      - name: Download KDN binaries
+        run: pnpm download:kdn:all
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run Smoke E2E tests in ${{ inputs.mode == 'prod' && 'Production' || 'Development' }} Mode
         shell: bash
         env:

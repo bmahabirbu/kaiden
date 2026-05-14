@@ -37,6 +37,13 @@ if (fs.existsSync(builtinDirectory)) {
 
 const zip = new AdmZip();
 zip.addLocalFolder(path.resolve(__dirname, '../'));
+zip.deleteFile('assets/');
+zip
+  .getEntries()
+  .filter(e => e.entryName.startsWith('assets/'))
+  .forEach(e => {
+    zip.deleteFile(e.entryName);
+  });
 zip.writeZip(destFile);
 
 // create unzipped built-in

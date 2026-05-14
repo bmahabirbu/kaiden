@@ -41,13 +41,13 @@ const config = {
     assetsDir: '.',
     minify: process.env.MODE === 'production' ? 'esbuild' : false,
     lib: {
-      entry: ['src/extension.ts', 'src/kdn-download.ts'],
+      entry: ['src/extension.ts'],
       formats: ['cjs'],
     },
     rollupOptions: {
       external: ['@openkaiden/api', ...builtinModules.flatMap(p => [p, `node:${p}`])],
       output: {
-        entryFileNames: '[name].js',
+        entryFileNames: '[name].cjs',
       },
     },
     emptyOutDir: true,
