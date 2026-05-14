@@ -20,7 +20,7 @@ import type { NetworkInterfaceInfo } from 'node:os';
 import { networkInterfaces } from 'node:os';
 
 import type { ExtensionContext, Provider } from '@openkaiden/api';
-import { provider } from '@openkaiden/api';
+import { env, provider } from '@openkaiden/api';
 import { http, HttpResponse } from 'msw';
 import { setupServer, type SetupServerApi } from 'msw/node';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -63,8 +63,8 @@ describe('OllamaExtension', () => {
     server?.close();
   });
 
-  test('should create provider, register subscription, and update models on activate', async () => {
-    // use msw to mock fetch
+  test('should use local IP endpoint on Windows', async () => {
+    vi.mocked(env).isWindows = true;
     const handlers = [
       http.get('http://localhost:11434/api/tags', () =>
         HttpResponse.json({ models: [{ name: 'm1' }, { name: 'm2' }] }),
@@ -79,6 +79,21 @@ describe('OllamaExtension', () => {
       expect.objectContaining({ endpoint: 'http://192.168.1.100:11434/v1' }),
     );
     expect(vi.mocked(ollamaProvider.updateStatus)).toHaveBeenCalledWith('started');
+  });
+
+  test('should use localhost endpoint on macOS/Linux', async () => {
+    vi.mocked(env).isWindows = false;
+    const handlers = [
+      http.get('http://localhost:11434/api/tags', () =>
+        HttpResponse.json({ models: [{ name: 'm1' }, { name: 'm2' }] }),
+      ),
+    ];
+    server = setupServer(...handlers);
+    server.listen({ onUnhandledRequest: 'error' });
+    await extension.activate();
+    expect(vi.mocked(ollamaProvider.registerInferenceProviderConnection)).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: 'http://localhost:11434/v1' }),
+    );
   });
 
   test('should set status to stopped if fetch fails', async () => {

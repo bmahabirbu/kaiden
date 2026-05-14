@@ -17,14 +17,19 @@
 
 import { networkInterfaces } from 'node:os';
 
-import { type Disposable, type ExtensionContext, type Provider, provider } from '@openkaiden/api';
+import { type Disposable, env, type ExtensionContext, type Provider, provider } from '@openkaiden/api';
 import { createOllama } from 'ollama-ai-provider-v2';
 
-function getLocalIP(): string {
-  for (const entries of Object.values(networkInterfaces())) {
-    for (const entry of entries ?? []) {
-      if (entry.family === 'IPv4' && !entry.internal) {
-        return entry.address;
+function getContainerReachableHost(): string {
+  if (env.isWindows) {
+    // WSL2: host.containers.internal doesn't reach Windows loopback.
+    // Use the first non-internal address (the WSL2 gateway-facing NIC).
+    // Requires OLLAMA_HOST=0.0.0.0 on the Windows side.
+    for (const entries of Object.values(networkInterfaces())) {
+      for (const entry of entries ?? []) {
+        if (!entry.internal) {
+          return entry.family === 'IPv6' ? `[${entry.address}]` : entry.address;
+        }
       }
     }
   }
@@ -116,7 +121,7 @@ export class OllamaExtension {
           name: 'ollama',
           type: 'local',
           llmMetadata: { name: 'ollama' },
-          endpoint: `http://${getLocalIP()}:11434/v1`,
+          endpoint: `http://${getContainerReachableHost()}:11434/v1`,
           sdk,
           status() {
             return 'started';
