@@ -856,26 +856,26 @@ describe('stop', () => {
   });
 });
 
-describe('getWorkspacePort', () => {
-  test('executes podman port and returns http URL', async () => {
-    vi.mocked(exec.exec).mockResolvedValue(mockExecResult('127.0.0.1:56858'));
+describe('getWorkspaceUrl', () => {
+  test('executes kdn workspace open --url and returns URL', async () => {
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult('http://127.0.0.1:49460\n'));
 
-    const result = await kdnCli.getWorkspacePort('clawer', 18789);
+    const result = await kdnCli.getWorkspaceUrl('clawer');
 
-    expect(exec.exec).toHaveBeenCalledWith('podman', ['port', 'clawer', '18789']);
-    expect(result).toBe('http://127.0.0.1:56858');
+    expect(exec.exec).toHaveBeenCalledWith(KAIDEN_CLI_PATH, ['workspace', 'open', 'clawer', '--url']);
+    expect(result).toBe('http://127.0.0.1:49460');
   });
 
-  test('rejects when no port mapping found', async () => {
+  test('rejects when no URL returned', async () => {
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
 
-    await expect(kdnCli.getWorkspacePort('clawer', 18789)).rejects.toThrow('No port mapping found');
+    await expect(kdnCli.getWorkspaceUrl('clawer')).rejects.toThrow('No URL returned for workspace "clawer"');
   });
 
-  test('rejects when podman command fails', async () => {
-    vi.mocked(exec.exec).mockRejectedValue(new Error('no container with name or ID "clawer" found'));
+  test('rejects when kdn command fails', async () => {
+    vi.mocked(exec.exec).mockRejectedValue(new Error('workspace "clawer" not found'));
 
-    await expect(kdnCli.getWorkspacePort('clawer', 18789)).rejects.toThrow('no container with name or ID');
+    await expect(kdnCli.getWorkspaceUrl('clawer')).rejects.toThrow('workspace "clawer" not found');
   });
 });
 

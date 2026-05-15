@@ -14,7 +14,6 @@ import { getTabUrl, isTabSelected } from '/@/lib/ui/Util';
 import Route from '/@/Route.svelte';
 import { removeTerminal } from '/@/stores/agent-workspace-terminal-store';
 import { agentWorkspaces, startAgentWorkspace, stopAgentWorkspace } from '/@/stores/agent-workspaces.svelte';
-import { agentWorkspaceRuntime } from '/@/stores/agentworkspace-runtime';
 
 interface Props {
   workspaceId: string;
@@ -34,7 +33,7 @@ const inProgress = $derived(status === 'starting' || status === 'stopping');
 let terminalReconnectExhausted = $state(false);
 let terminalReconnect: (() => void) | undefined = $state(undefined);
 const isOnTerminalTab = $derived(isTabSelected($router.path, 'terminal'));
-const showWebUI = $derived(workspaceSummary?.agent === 'openclaw' && $agentWorkspaceRuntime === 'podman');
+const showWebUI = $derived(workspaceSummary?.agent === 'openclaw');
 
 $effect(() => {
   if (status === 'stopped') {

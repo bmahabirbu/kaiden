@@ -24,13 +24,11 @@ import { router } from 'tinro';
 import { beforeEach, expect, test, vi } from 'vitest';
 
 import { agentWorkspaces } from '/@/stores/agent-workspaces.svelte';
-import * as agentWorkspaceRuntimeStore from '/@/stores/agentworkspace-runtime';
 import type { AgentWorkspaceConfiguration, AgentWorkspaceSummary } from '/@api/agent-workspace-info';
 
 import AgentWorkspaceDetails from './AgentWorkspaceDetails.svelte';
 
 vi.mock(import('tinro'));
-vi.mock(import('/@/stores/agentworkspace-runtime'));
 
 const routerStore = writable({
   path: '/agent-workspaces/ws-1/overview',
@@ -69,7 +67,6 @@ beforeEach(() => {
   vi.mocked(window.stopAgentWorkspace).mockResolvedValue({ id: 'ws-1' });
   vi.mocked(window.showMessageBox).mockResolvedValue({ response: 1 });
   vi.mocked(window.removeAgentWorkspace).mockResolvedValue({ id: 'ws-1' });
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('podman');
   agentWorkspaces.set([{ ...workspaceSummary }]);
 });
 
@@ -413,9 +410,8 @@ test('Expect settings tab is present', async () => {
   });
 });
 
-test('Expect WebUI tab is shown for openclaw agent with podman runtime', async () => {
+test('Expect WebUI tab is shown for openclaw agent', async () => {
   agentWorkspaces.set([{ ...workspaceSummary, agent: 'openclaw' }]);
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('podman');
 
   render(AgentWorkspaceDetails, { workspaceId: 'ws-1' });
 
@@ -426,17 +422,6 @@ test('Expect WebUI tab is shown for openclaw agent with podman runtime', async (
 
 test('Expect WebUI tab is not shown for non-openclaw agent', async () => {
   agentWorkspaces.set([{ ...workspaceSummary, agent: 'claude' }]);
-
-  render(AgentWorkspaceDetails, { workspaceId: 'ws-1' });
-
-  await waitFor(() => {
-    expect(screen.queryByText('WebUI')).not.toBeInTheDocument();
-  });
-});
-
-test('Expect WebUI tab is not shown for openclaw with openshell runtime', async () => {
-  agentWorkspaces.set([{ ...workspaceSummary, agent: 'openclaw' }]);
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('openshell');
 
   render(AgentWorkspaceDetails, { workspaceId: 'ws-1' });
 

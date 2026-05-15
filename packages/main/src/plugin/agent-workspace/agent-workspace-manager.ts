@@ -343,7 +343,7 @@ export class AgentWorkspaceManager implements Disposable {
     if (!workspace) {
       throw new Error(`workspace "${id}" not found`);
     }
-    return this.kdnCli.getWorkspacePort(workspace.name, 18789);
+    return this.kdnCli.getWorkspaceUrl(workspace.name);
   }
 
   shellInAgentWorkspace(
