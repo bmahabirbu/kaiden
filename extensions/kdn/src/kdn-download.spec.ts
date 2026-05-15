@@ -24,7 +24,7 @@ import { PassThrough } from 'node:stream';
 import * as tar from 'tar';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { downloadKdn, getLatestRelease } from './kdn-download';
+import { downloadKdn, getAvailableVersions, getLatestRelease } from './kdn-download';
 import { sha256 } from './sha256';
 
 const getEntriesMock = vi.fn();
@@ -182,5 +182,116 @@ describe('getLatestRelease', () => {
     expect(release.digests.get('kdn_1.2.3_linux_amd64.tar.gz')).toBe('abc123');
     expect(release.digests.get('kdn_1.2.3_darwin_arm64.tar.gz')).toBe('def456');
     expect(release.digests.has('no-digest-asset.txt')).toBe(false);
+  });
+
+  test('passes signal to fetch', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => ({ tag_name: 'v1.0.0', assets: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
+
+    await getLatestRelease(controller.signal);
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ signal: controller.signal }));
+  });
+});
+
+describe('downloadKdn signal', () => {
+  test('passes signal through to fetch calls', async () => {
+    const fetchMock: ReturnType<typeof vi.fn> = vi.fn(() => Promise.resolve({ ok: true, body: new PassThrough() }));
+    vi.stubGlobal('fetch', fetchMock);
+    const digests = new Map([['kdn_0.5.0_linux_amd64.tar.gz', 'abc123']]);
+
+    vi.mocked(tar.extract).mockImplementation(async (opts: { cwd?: string }) => {
+      fileMap.set(normPath(path.join(opts.cwd ?? '', 'kdn')), true);
+    });
+
+    const controller = new AbortController();
+    await downloadKdn('0.5.0', 'linux', 'x64', '/output', digests, controller.signal);
+
+    for (const call of fetchMock.mock.calls) {
+      expect(call[1]).toEqual(expect.objectContaining({ signal: controller.signal }));
+    }
+  });
+});
+
+describe('getAvailableVersions', () => {
+  test('filters by platform/arch asset and excludes prereleases and legacy names', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => [
+          {
+            tag_name: 'v0.6.0',
+            name: 'kdn v0.6.0',
+            prerelease: false,
+            assets: [{ name: 'kdn_0.6.0_linux_amd64.tar.gz' }],
+          },
+          {
+            tag_name: 'v0.6.0-rc1',
+            name: 'kdn v0.6.0-rc1',
+            prerelease: true,
+            assets: [{ name: 'kdn_0.6.0-rc1_linux_amd64.tar.gz' }],
+          },
+          {
+            tag_name: 'v0.5.0',
+            name: 'kdn v0.5.0',
+            prerelease: false,
+            assets: [{ name: 'kdn_0.5.0_linux_amd64.tar.gz' }],
+          },
+          {
+            tag_name: 'v0.4.0',
+            name: null,
+            prerelease: false,
+            assets: [{ name: 'kortex-cli_0.4.0_linux_amd64.tar.gz' }],
+          },
+        ],
+      }),
+    );
+
+    const versions = await getAvailableVersions('linux', 'x64');
+
+    expect(versions).toEqual([
+      { label: 'kdn v0.6.0', tag: '0.6.0' },
+      { label: 'kdn v0.5.0', tag: '0.5.0' },
+    ]);
+  });
+
+  test('excludes releases missing the target platform archive', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => [
+          {
+            tag_name: 'v0.6.0',
+            name: 'kdn v0.6.0',
+            prerelease: false,
+            assets: [{ name: 'kdn_0.6.0_linux_amd64.tar.gz' }],
+          },
+        ],
+      }),
+    );
+
+    const versions = await getAvailableVersions('win32', 'x64');
+
+    expect(versions).toEqual([]);
+  });
+
+  test('limits to 5 versions', async () => {
+    const releases = Array.from({ length: 10 }, (_, i) => ({
+      tag_name: `v0.${10 - i}.0`,
+      name: `kdn v0.${10 - i}.0`,
+      prerelease: false,
+      assets: [{ name: `kdn_0.${10 - i}.0_linux_amd64.tar.gz` }],
+    }));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => releases }));
+
+    const versions = await getAvailableVersions('linux', 'x64');
+
+    expect(versions).toHaveLength(5);
   });
 });

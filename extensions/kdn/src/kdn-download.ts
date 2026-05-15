@@ -34,7 +34,7 @@ interface ReleaseInfo {
   digests: Map<string, string>;
 }
 
-export async function getLatestRelease(): Promise<ReleaseInfo> {
+export async function getLatestRelease(signal?: AbortSignal): Promise<ReleaseInfo> {
   const headers: Record<string, string> = { Accept: 'application/vnd.github.v3+json' };
   const token = process.env['GITHUB_TOKEN'];
   if (token) {
@@ -43,6 +43,7 @@ export async function getLatestRelease(): Promise<ReleaseInfo> {
   const res = await fetch(`https://api.github.com/repos/${KDN_REPO}/releases/latest`, {
     headers,
     redirect: 'follow',
+    signal,
   });
   if (!res.ok) {
     throw new Error(`failed to fetch latest kdn release: ${res.status} ${res.statusText}`);
@@ -58,11 +59,84 @@ export async function getLatestRelease(): Promise<ReleaseInfo> {
   return { version, digests };
 }
 
+export async function getReleaseByTag(version: string, signal?: AbortSignal): Promise<ReleaseInfo> {
+  const headers: Record<string, string> = { Accept: 'application/vnd.github.v3+json' };
+  const token = process.env['GITHUB_TOKEN'];
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const res = await fetch(`https://api.github.com/repos/${KDN_REPO}/releases/tags/v${version}`, {
+    headers,
+    redirect: 'follow',
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`failed to fetch kdn release v${version}: ${res.status} ${res.statusText}`);
+  }
+  const data = (await res.json()) as { tag_name: string; assets: { name: string; digest: string | null }[] };
+  const digests = new Map<string, string>();
+  for (const asset of data.assets) {
+    if (asset.digest) {
+      digests.set(asset.name, asset.digest.replace(/^sha256:/, ''));
+    }
+  }
+  return { version: data.tag_name.replace(/^v/, ''), digests };
+}
+
+interface KdnRelease {
+  label: string;
+  tag: string;
+}
+
 const PLATFORM_MAP: Record<string, string> = { darwin: 'darwin', linux: 'linux', win32: 'windows' };
 const ARCH_MAP: Record<string, string> = { x64: 'amd64', arm64: 'arm64' };
 
-export async function download(url: string, dest: string): Promise<void> {
-  const res = await fetch(url, { redirect: 'follow' });
+export async function getAvailableVersions(
+  platform: string,
+  arch: string,
+  signal?: AbortSignal,
+): Promise<KdnRelease[]> {
+  const kdnPlatform = PLATFORM_MAP[platform];
+  const kdnArch = ARCH_MAP[arch];
+  if (!kdnPlatform || !kdnArch) return [];
+
+  const ext = platform === 'win32' ? 'zip' : 'tar.gz';
+
+  const headers: Record<string, string> = { Accept: 'application/vnd.github.v3+json' };
+  const token = process.env['GITHUB_TOKEN'];
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const res = await fetch(`https://api.github.com/repos/${KDN_REPO}/releases`, {
+    headers,
+    redirect: 'follow',
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`failed to fetch kdn releases: ${res.status} ${res.statusText}`);
+  }
+  const data = (await res.json()) as Array<{
+    tag_name: string;
+    name: string | null;
+    prerelease: boolean;
+    assets: Array<{ name: string }>;
+  }>;
+  return data
+    .filter(r => !r.prerelease)
+    .filter(r => {
+      const version = r.tag_name.replace(/^v/, '');
+      const expectedAsset = `kdn_${version}_${kdnPlatform}_${kdnArch}.${ext}`;
+      return r.assets.some(a => a.name === expectedAsset);
+    })
+    .slice(0, 5)
+    .map(r => ({
+      label: r.name ?? r.tag_name,
+      tag: r.tag_name.replace(/^v/, ''),
+    }));
+}
+
+export async function download(url: string, dest: string, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(url, { redirect: 'follow', signal });
   if (!res.ok || !res.body) {
     throw new Error(`failed to download ${url}: ${res.status} ${res.statusText}`);
   }
@@ -122,6 +196,7 @@ export async function downloadKdn(
   arch: string,
   outputDir: string,
   digests: Map<string, string>,
+  signal?: AbortSignal,
 ): Promise<void> {
   const versionFile = join(outputDir, '.kdn-version');
   const versionMarker = `${version}-${platform}-${arch}`;
@@ -148,7 +223,7 @@ export async function downloadKdn(
   const archivePath = join(outputDir, assetFileName);
 
   console.log(`downloading kdn ${version} for ${platform}/${arch}...`);
-  await download(url, archivePath);
+  await download(url, archivePath, signal);
   await verifyChecksum(digests, assetFileName, archivePath);
 
   console.log(`extracting to ${outputDir}...`);

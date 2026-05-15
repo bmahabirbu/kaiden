@@ -14,13 +14,16 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- ***********************************************************************/
+ **********************************************************************/
 
 import { existsSync } from 'node:fs';
+import { arch } from 'node:os';
 import { join } from 'node:path';
 
 import type { CliToolInstallationSource, ExtensionContext } from '@openkaiden/api';
 import * as extensionApi from '@openkaiden/api';
+
+import { downloadKdn, getAvailableVersions, getReleaseByTag } from './kdn-download';
 
 export class KdnExtension {
   constructor(private readonly extensionContext: ExtensionContext) {}
@@ -92,6 +95,16 @@ export class KdnExtension {
       throw new Error('kdn CLI not found in custom path, extension storage, PATH, or bundled resources');
     }
 
+    this.registerCliTool(binaryPath, version, installationSource);
+  }
+
+  async deactivate(): Promise<void> {}
+
+  private registerCliTool(
+    binaryPath: string,
+    version: string | undefined,
+    installationSource: CliToolInstallationSource,
+  ): void {
     const cliTool = extensionApi.cli.createCliTool({
       name: 'kdn',
       displayName: 'kdn',
@@ -102,9 +115,48 @@ export class KdnExtension {
       installationSource,
     });
     this.extensionContext.subscriptions.push(cliTool);
-  }
 
-  async deactivate(): Promise<void> {}
+    if (installationSource === 'extension') {
+      const binDir = join(this.extensionContext.storagePath, 'bin');
+      const binaryName = extensionApi.env.isWindows ? 'kdn.exe' : 'kdn';
+      const localBinaryPath = join(binDir, binaryName);
+      let currentVersion = version;
+      let versionToUpdate: string | undefined;
+
+      const updater = cliTool.registerUpdate({
+        selectVersion: async (): Promise<string> => {
+          const releases = await getAvailableVersions(process.platform, arch());
+          const filtered = releases.filter(r => r.tag !== currentVersion);
+          const selected = await extensionApi.window.showQuickPick(filtered, {
+            placeHolder: 'Select kdn version to install',
+          });
+          if (!selected) {
+            throw new Error('No version selected');
+          }
+          versionToUpdate = selected.tag;
+          return versionToUpdate;
+        },
+        doUpdate: async (): Promise<void> => {
+          if (!versionToUpdate) {
+            throw new Error('No version selected for update');
+          }
+          const { digests } = await getReleaseByTag(versionToUpdate);
+          await downloadKdn(versionToUpdate, process.platform, arch(), binDir, digests);
+          const newVersion = await this.getVersion(localBinaryPath);
+          if (!newVersion) {
+            throw new Error('failed to determine version after update');
+          }
+          cliTool.updateVersion({
+            version: newVersion,
+            path: localBinaryPath,
+          });
+          currentVersion = newVersion;
+          versionToUpdate = undefined;
+        },
+      });
+      this.extensionContext.subscriptions.push(updater);
+    }
+  }
 
   private getCustomBinaryPath(): string | undefined {
     return extensionApi.configuration.getConfiguration('kdn').get<string>('binary.path') ?? undefined;
