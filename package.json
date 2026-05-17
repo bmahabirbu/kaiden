@@ -22,8 +22,6 @@
     "build:extensions:docling": "cd ./extensions/docling && pnpm run build",
     "build:extensions:gemini": "cd ./extensions/gemini && pnpm run build",
     "build:extensions:kdn": "cd ./extensions/kdn && pnpm run build",
-    "download:kdn": "cd ./extensions/kdn && pnpm run download",
-    "download:kdn:all": "cd ./extensions/kdn && pnpm run download:all",
     "build:extensions:mcp-registries": "cd ./extensions/mcp-registries && pnpm run build",
     "build:extensions:mistral": "cd ./extensions/mistral && pnpm run build",
     "build:extensions:milvus": "cd ./extensions/milvus && pnpm run build",

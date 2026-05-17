@@ -52,11 +52,6 @@ jobs:
       - name: Execute pnpm
         run: pnpm install
 
-      - name: Download KDN binaries
-        run: pnpm download:kdn:all
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Run Build
         timeout-minutes: 20
         run: pnpm compile:pull-request
@@ -116,11 +111,6 @@ jobs:
           flatpak remote-add --if-not-exists flathub --user https://flathub.org/repo/flathub.flatpakrepo
           flatpak install flathub --user -y org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
 
-      - name: Download KDN binaries
-        run: pnpm download:kdn:all
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Run Build
         timeout-minutes: 20
         run: pnpm compile:pull-request
@@ -160,11 +150,6 @@ jobs:
 
       - name: Execute pnpm
         run: pnpm install
-
-      - name: Download KDN binaries
-        run: pnpm download:kdn:all
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Build
         timeout-minutes: 40

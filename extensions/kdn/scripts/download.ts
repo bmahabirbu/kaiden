@@ -54,7 +54,7 @@ if (values.all) {
   console.error('--platform and --arch must be specified together');
   process.exit(1);
 } else {
-  targets = [{ platform: process.platform, arch: process.arch }];
+  targets = SUPPORTED_TARGETS.filter(t => t.platform === process.platform);
 }
 
 const { version, digests } = await getLatestRelease();

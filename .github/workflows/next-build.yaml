@@ -153,11 +153,6 @@ jobs:
           echo "AZURE_KEY_VAULT_TENANT_ID=${{secrets.AZURE_KEY_VAULT_TENANT_ID}}" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "AZURE_KEY_VAULT_URL=${{secrets.AZURE_KEY_VAULT_URL}}" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Download KDN binaries
-        run: pnpm download:kdn:all
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Run Build
         timeout-minutes: 40
         run: pnpm compile:next

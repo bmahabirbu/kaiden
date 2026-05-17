@@ -27,7 +27,7 @@
     }
   },
   "scripts": {
-    "build": "vite build && node ./scripts/build.cjs",
+    "build": "vite build && tsx ./scripts/download.ts && node ./scripts/build.cjs",
     "download": "tsx ./scripts/download.ts",
     "download:all": "tsx ./scripts/download.ts --all",
     "test": "vitest run --coverage",
