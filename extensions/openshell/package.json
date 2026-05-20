@@ -1,6 +1,6 @@
 {
   "name": "openshell",
-  "displayName": "openshell",
+  "displayName": "OpenShell",
   "description": "Downloads and registers the openshell CLI binary for managing sandboxed workspaces.",
   "version": "0.2.0-next",
   "icon": "icon.png",
@@ -13,14 +13,14 @@
   "source": "./src/extension.ts",
   "contributes": {
     "configuration": {
-      "title": "openshell",
+      "title": "OpenShell",
       "properties": {
         "openshell.binary.path": {
           "type": "string",
           "format": "file",
           "scope": "DEFAULT",
           "default": "",
-          "description": "Custom path to openshell binary (Default is blank)"
+          "description": "Custom path to OpenShell binary (Default is blank)"
         }
       }
     }

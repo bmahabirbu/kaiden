@@ -26,24 +26,27 @@ import * as tar from 'tar';
 import { sha256 } from './sha256';
 
 const OPENSHELL_REPO = 'NVIDIA/OpenShell';
+const OPENSHELL_VERSION = '0.0.44';
+const REQUEST_TIMEOUT_MS = 30_000;
 
 interface ReleaseInfo {
   version: string;
   digests: Map<string, string>;
 }
 
-export async function getLatestRelease(): Promise<ReleaseInfo> {
+export async function getRelease(): Promise<ReleaseInfo> {
   const headers: Record<string, string> = { Accept: 'application/vnd.github.v3+json' };
   const token = process.env['GITHUB_TOKEN'];
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  const res = await fetch(`https://api.github.com/repos/${OPENSHELL_REPO}/releases/latest`, {
+  const res = await fetch(`https://api.github.com/repos/${OPENSHELL_REPO}/releases/tags/v${OPENSHELL_VERSION}`, {
     headers,
     redirect: 'follow',
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {
-    throw new Error(`failed to fetch latest openshell release: ${res.status} ${res.statusText}`);
+    throw new Error(`failed to fetch openshell release v${OPENSHELL_VERSION}: ${res.status} ${res.statusText}`);
   }
   const data = (await res.json()) as { tag_name: string; assets: { name: string; digest: string | null }[] };
   const version = data.tag_name.replace(/^v/, '');
@@ -60,7 +63,7 @@ const PLATFORM_MAP: Record<string, string> = { darwin: 'apple-darwin', linux: 'u
 const ARCH_MAP: Record<string, string> = { x64: 'x86_64', arm64: 'aarch64' };
 
 export async function download(url: string, dest: string): Promise<void> {
-  const res = await fetch(url, { redirect: 'follow' });
+  const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
   if (!res.ok || !res.body) {
     throw new Error(`failed to download ${url}: ${res.status} ${res.statusText}`);
   }

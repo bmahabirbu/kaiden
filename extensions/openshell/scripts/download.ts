@@ -21,7 +21,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
-import { getLatestRelease, downloadOpenshell } from '../src/openshell-download';
+import { getRelease, downloadOpenshell } from '../src/openshell-download';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSETS_DIR = resolve(__dirname, '..', 'assets');
@@ -60,7 +60,7 @@ if (values.all) {
   console.error('--platform and --arch must be specified together');
   process.exit(1);
 } else {
-  targets = SUPPORTED_TARGETS.filter(t => t.platform === process.platform);
+  targets = SUPPORTED_TARGETS.filter(t => t.platform === process.platform && t.arch === process.arch);
 }
 
 if (targets.length === 0) {
@@ -69,8 +69,8 @@ if (targets.length === 0) {
 }
 
 (async () => {
-  const { version, digests } = await getLatestRelease();
-  console.log(`openshell latest release: v${version}`);
+  const { version, digests } = await getRelease();
+  console.log(`openshell release: v${version}`);
 
   for (const { platform, arch } of targets) {
     const outputDir = resolve(ASSETS_DIR, `${platform}-${arch}`);

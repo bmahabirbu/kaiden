@@ -94,7 +94,7 @@ export class OpenshellExtension {
 
     const cliTool = extensionApi.cli.createCliTool({
       name: 'openshell',
-      displayName: 'openshell',
+      displayName: 'OpenShell',
       markdownDescription: 'OpenShell CLI for managing sandboxed workspaces',
       images: {},
       version,
