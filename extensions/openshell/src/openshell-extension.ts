@@ -89,7 +89,8 @@ export class OpenshellExtension {
     }
 
     if (!binaryPath) {
-      throw new Error('openshell CLI not found in custom path, extension storage, PATH, or bundled resources');
+      console.warn('[openshell] CLI not found, skipping registration');
+      return;
     }
 
     const cliTool = extensionApi.cli.createCliTool({

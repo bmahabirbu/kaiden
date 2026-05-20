@@ -62,7 +62,7 @@ export async function getRelease(): Promise<ReleaseInfo> {
 const PLATFORM_MAP: Record<string, string> = { darwin: 'apple-darwin', linux: 'unknown-linux-musl' };
 const ARCH_MAP: Record<string, string> = { x64: 'x86_64', arm64: 'aarch64' };
 
-export async function download(url: string, dest: string): Promise<void> {
+async function download(url: string, dest: string): Promise<void> {
   const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
   if (!res.ok || !res.body) {
     throw new Error(`failed to download ${url}: ${res.status} ${res.statusText}`);
@@ -70,11 +70,7 @@ export async function download(url: string, dest: string): Promise<void> {
   await pipeline(res.body, createWriteStream(dest));
 }
 
-export async function verifyChecksum(
-  digests: Map<string, string>,
-  assetFileName: string,
-  filePath: string,
-): Promise<void> {
+async function verifyChecksum(digests: Map<string, string>, assetFileName: string, filePath: string): Promise<void> {
   const expected = digests.get(assetFileName);
   if (!expected) {
     throw new Error(`no digest found for ${assetFileName} in release assets`);
@@ -95,16 +91,12 @@ function isSafePath(entryName: string): boolean {
   return !normalized.startsWith('..') && !isAbsolute(normalized);
 }
 
-export async function extract(archive: string, outDir: string): Promise<void> {
-  if (archive.endsWith('.tar.gz')) {
-    await tar.extract({
-      file: archive,
-      cwd: outDir,
-      filter: (path: string) => isSafePath(path),
-    });
-  } else {
-    throw new Error(`unsupported archive: ${archive}`);
-  }
+async function extract(archive: string, outDir: string): Promise<void> {
+  await tar.extract({
+    file: archive,
+    cwd: outDir,
+    filter: (path: string) => isSafePath(path),
+  });
 }
 
 export async function downloadOpenshell(
