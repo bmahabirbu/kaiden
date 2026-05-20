@@ -126,7 +126,9 @@ const config = {
     if (kdnArch) {
       const kdnAssetsDir = path.join('extensions', 'kdn', 'assets', `${context.electronPlatformName}-${kdnArch}`);
       if (!fs.existsSync(kdnAssetsDir)) {
-        throw new Error(`KDN assets not found at ${kdnAssetsDir}. Run "pnpm build:extensions:kdn" before packaging.`);
+        throw new Error(
+          `KDN assets not found at ${kdnAssetsDir}. Run "pnpm --filter kdn download" (or "pnpm --filter kdn download:all") before packaging.`,
+        );
       }
       context.packager.config.extraResources.push({
         from: kdnAssetsDir,

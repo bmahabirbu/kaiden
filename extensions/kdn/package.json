@@ -4,13 +4,12 @@
   "description": "Downloads and registers the kdn CLI binary for managing agent workspaces.",
   "version": "0.2.0-next",
   "icon": "icon.png",
-  "type": "module",
   "publisher": "kaiden",
   "license": "Apache-2.0",
   "engines": {
     "kaiden": "^0.0.1"
   },
-  "main": "./dist/extension.cjs",
+  "main": "./dist/extension.js",
   "source": "./src/extension.ts",
   "contributes": {
     "configuration": {
@@ -27,7 +26,7 @@
     }
   },
   "scripts": {
-    "build": "vite build && tsx ./scripts/download.ts && node ./scripts/build.cjs",
+    "build": "vite build && tsx ./scripts/download.ts && node ./scripts/build.js",
     "download": "tsx ./scripts/download.ts",
     "download:all": "tsx ./scripts/download.ts --all",
     "test": "vitest run --coverage",

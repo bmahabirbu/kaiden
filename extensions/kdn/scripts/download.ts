@@ -49,7 +49,15 @@ let targets: { platform: string; arch: string }[];
 if (values.all) {
   targets = SUPPORTED_TARGETS;
 } else if (values.platform && values.arch) {
-  targets = [{ platform: values.platform, arch: values.arch }];
+  const requested = { platform: values.platform, arch: values.arch };
+  const isSupported = SUPPORTED_TARGETS.some(t => t.platform === requested.platform && t.arch === requested.arch);
+  if (!isSupported) {
+    console.error(
+      `Unsupported target "${requested.platform}-${requested.arch}". Use --all or one of: ${SUPPORTED_TARGETS.map(t => `${t.platform}-${t.arch}`).join(', ')}`,
+    );
+    process.exit(1);
+  }
+  targets = [requested];
 } else if (values.platform || values.arch) {
   console.error('--platform and --arch must be specified together');
   process.exit(1);
@@ -57,10 +65,19 @@ if (values.all) {
   targets = SUPPORTED_TARGETS.filter(t => t.platform === process.platform);
 }
 
-const { version, digests } = await getLatestRelease();
-console.log(`kdn latest release: v${version}`);
-
-for (const { platform, arch } of targets) {
-  const outputDir = resolve(ASSETS_DIR, `${platform}-${arch}`);
-  await downloadKdn(version, platform, arch, outputDir, digests);
+if (targets.length === 0) {
+  console.error(
+    `No supported KDN target for host platform "${process.platform}". Use --all or pass --platform and --arch.`,
+  );
+  process.exit(1);
 }
+
+(async () => {
+  const { version, digests } = await getLatestRelease();
+  console.log(`kdn latest release: v${version}`);
+
+  for (const { platform, arch } of targets) {
+    const outputDir = resolve(ASSETS_DIR, `${platform}-${arch}`);
+    await downloadKdn(version, platform, arch, outputDir, digests);
+  }
+})();

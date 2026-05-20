@@ -47,7 +47,7 @@ const config = {
     rollupOptions: {
       external: ['@openkaiden/api', ...builtinModules.flatMap(p => [p, `node:${p}`])],
       output: {
-        entryFileNames: '[name].cjs',
+        entryFileNames: '[name].js',
       },
     },
     emptyOutDir: true,
