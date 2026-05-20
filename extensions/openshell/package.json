@@ -1,0 +1,47 @@
+{
+  "name": "openshell",
+  "displayName": "openshell",
+  "description": "Downloads and registers the openshell CLI binary for managing sandboxed workspaces.",
+  "version": "0.2.0-next",
+  "icon": "icon.png",
+  "publisher": "kaiden",
+  "license": "Apache-2.0",
+  "engines": {
+    "kaiden": "^0.0.1"
+  },
+  "main": "./dist/extension.js",
+  "source": "./src/extension.ts",
+  "contributes": {
+    "configuration": {
+      "title": "openshell",
+      "properties": {
+        "openshell.binary.path": {
+          "type": "string",
+          "format": "file",
+          "scope": "DEFAULT",
+          "default": "",
+          "description": "Custom path to openshell binary (Default is blank)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "vite build && tsx ./scripts/download.ts && node ./scripts/build.js",
+    "download": "tsx ./scripts/download.ts",
+    "download:all": "tsx ./scripts/download.ts --all",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest watch --coverage",
+    "watch": "vite build --watch"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "tar": "^7.5.3"
+  },
+  "devDependencies": {
+    "@openkaiden/api": "workspace:*",
+    "mkdirp": "^3.0.1",
+    "tsx": "^4.19.4",
+    "vite": "^7.1.2",
+    "vitest": "^4.0.10"
+  }
+}

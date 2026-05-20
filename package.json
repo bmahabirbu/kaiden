@@ -15,7 +15,7 @@
   "scripts": {
     "build": "pnpm run build:main && pnpm run build:preload && pnpm run build:preload-webview && npm run build:preload:types && pnpm run build:renderer && pnpm run build:extensions",
     "build:main": "cd ./packages/main && vite build",
-    "build:extensions": "pnpm run build:extensions:claude && pnpm run build:extensions:container && pnpm run build:extensions:cursor && pnpm run build:extensions:docling && pnpm run build:extensions:gemini && pnpm run build:extensions:kdn && pnpm run build:extensions:mcp-registries && pnpm run build:extensions:mistral && pnpm run build:extensions:milvus && pnpm run build:extensions:ollama && pnpm run build:extensions:openai-compatible && pnpm run build:extensions:openshift-ai && pnpm run build:extensions:ramalama && pnpm run build:extensions:vertex-ai",
+    "build:extensions": "pnpm run build:extensions:claude && pnpm run build:extensions:container && pnpm run build:extensions:cursor && pnpm run build:extensions:docling && pnpm run build:extensions:gemini && pnpm run build:extensions:kdn && pnpm run build:extensions:mcp-registries && pnpm run build:extensions:mistral && pnpm run build:extensions:milvus && pnpm run build:extensions:ollama && pnpm run build:extensions:openshell && pnpm run build:extensions:openai-compatible && pnpm run build:extensions:openshift-ai && pnpm run build:extensions:ramalama && pnpm run build:extensions:vertex-ai",
     "build:extensions:claude": "cd ./extensions/claude && pnpm run build",
     "build:extensions:container": "cd ./extensions/container/packages/extension && pnpm run build",
     "build:extensions:cursor": "cd ./extensions/cursor && pnpm run build",
@@ -26,6 +26,7 @@
     "build:extensions:mistral": "cd ./extensions/mistral && pnpm run build",
     "build:extensions:milvus": "cd ./extensions/milvus && pnpm run build",
     "build:extensions:ollama": "cd ./extensions/ollama && pnpm run build",
+    "build:extensions:openshell": "cd ./extensions/openshell && pnpm run build",
     "build:extensions:openai-compatible": "cd ./extensions/openai-compatible && pnpm run build",
     "build:extensions:openshift-ai": "cd ./extensions/openshift-ai && pnpm run build",
     "build:extensions:ramalama": "cd ./extensions/ramalama && pnpm run build",
