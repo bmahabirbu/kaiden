@@ -15,6 +15,7 @@ import FlowDetails from '/@/lib/flows/FlowDetails.svelte';
 import FlowList from '/@/lib/flows/FlowList.svelte';
 import KubernetesRoot from '/@/lib/kube/KubernetesRoot.svelte';
 import MCPDetails from '/@/lib/mcp/MCPDetails.svelte';
+import ProjectList from '/@/lib/projects/ProjectList.svelte';
 import RAGEnvironmentDetails from '/@/lib/rag/RAGEnvironmentDetails.svelte';
 import RAGEnvironmentList from '/@/lib/rag/RAGEnvironmentList.svelte';
 import PinActions from '/@/lib/statusbar/PinActions.svelte';
@@ -227,6 +228,10 @@ tablePersistence.storage = new PodmanDesktopStoragePersist();
           <Route path="/:id/*" breadcrumb="Workspace Details" let:meta navigationHint="details">
             <AgentWorkspaceDetails workspaceId={decodeURIComponent(meta.params.id)} />
           </Route>
+        </Route>
+
+        <Route path="/projects" breadcrumb="Projects" navigationHint="root">
+          <ProjectList />
         </Route>
 
         <Route path="/flows/*" breadcrumb="Flows" navigationHint="root" firstmatch>

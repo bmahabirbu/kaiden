@@ -206,5 +206,8 @@ export const handleNavigation = (request: InferredNavigationRequest<NavigationPa
     case NavigationPage.SECRET_VAULT_DETAILS:
       router.goto(`/secret-vault/${encodeURIComponent(request.parameters.id)}/summary`);
       break;
+    case NavigationPage.PROJECTS:
+      router.goto('/projects');
+      break;
   }
 };
