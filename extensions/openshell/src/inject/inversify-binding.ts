@@ -17,43 +17,35 @@
  ***********************************************************************/
 
 import type { ExtensionContext } from '@openkaiden/api';
-import type { Container } from 'inversify';
+import { Container } from 'inversify';
 
-import { InversifyBinding } from '/@/inject/inversify-binding';
+import { ExtensionContextSymbol } from '/@/inject/symbol';
+import { managersModule } from '/@/manager/_manager-module';
 import { OpenshellCliManager } from '/@/manager/openshell-cli-manager';
 
-export class OpenshellExtension {
-  #extensionContext: ExtensionContext;
-
-  #inversifyBinding: InversifyBinding | undefined;
+export class InversifyBinding {
   #container: Container | undefined;
-  #openshellCliManager: OpenshellCliManager | undefined;
+
+  readonly #extensionContext: ExtensionContext;
 
   constructor(extensionContext: ExtensionContext) {
     this.#extensionContext = extensionContext;
   }
 
-  async activate(): Promise<void> {
-    this.#inversifyBinding = new InversifyBinding(this.#extensionContext);
-    this.#container = await this.#inversifyBinding.initBindings();
+  public async initBindings(): Promise<Container> {
+    this.#container = new Container();
 
-    try {
-      this.#openshellCliManager = await this.getContainer()?.getAsync(OpenshellCliManager);
-    } catch (e) {
-      console.error('Error while creating the OpenShell CLI manager', e);
-      throw e;
-    }
+    this.#container.bind(ExtensionContextSymbol).toConstantValue(this.#extensionContext);
 
-    await this.#openshellCliManager?.init();
-  }
+    await this.#container.load(managersModule);
 
-  protected getContainer(): Container | undefined {
+    await this.#container.getAsync(OpenshellCliManager);
     return this.#container;
   }
 
-  async deactivate(): Promise<void> {
-    await this.#inversifyBinding?.dispose();
-    this.#openshellCliManager?.dispose();
-    this.#openshellCliManager = undefined;
+  async dispose(): Promise<void> {
+    if (this.#container) {
+      await this.#container.unbindAll();
+    }
   }
 }

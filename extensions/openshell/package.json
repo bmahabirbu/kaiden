@@ -31,6 +31,9 @@
     "test:watch": "vitest watch --coverage",
     "watch": "vite build --watch"
   },
+  "dependencies": {
+    "inversify": "^7.10.4"
+  },
   "devDependencies": {
     "@openkaiden/api": "workspace:*",
     "vite": "^7.1.2",
