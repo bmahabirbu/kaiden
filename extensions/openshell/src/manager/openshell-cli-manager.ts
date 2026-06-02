@@ -24,6 +24,7 @@ import * as extensionApi from '@openkaiden/api';
 import { inject, injectable } from 'inversify';
 
 import { ExtensionContextSymbol } from '/@/inject/symbol';
+import { OpenshellInstaller } from '/@/openshell-installer';
 
 interface BinaryDiscoveryResult {
   path: string;
@@ -50,7 +51,10 @@ export class OpenshellCliManager implements Disposable {
     }
 
     this.#registeredPath = cliResult.path;
-    this.registerCliTool('openshell', 'OpenShell', 'OpenShell CLI for managing sandboxed workspaces', cliResult);
+    const cliTool = this.registerCliTool('openshell', 'OpenShell', 'OpenShell CLI for managing sandboxed workspaces', cliResult);
+
+    const installer = new OpenshellInstaller();
+    this.extensionContext.subscriptions.push(cliTool.registerInstaller(installer));
 
     const gatewayResult = await this.discoverGatewayBinary(cliResult.path);
     if (gatewayResult) {
@@ -72,7 +76,7 @@ export class OpenshellCliManager implements Disposable {
     displayName: string,
     markdownDescription: string,
     result: BinaryDiscoveryResult,
-  ): void {
+  ): extensionApi.CliTool {
     const cliTool = extensionApi.cli.createCliTool({
       name,
       displayName,
@@ -84,6 +88,7 @@ export class OpenshellCliManager implements Disposable {
     });
     this.extensionContext.subscriptions.push(cliTool);
     console.log(`[${name}] registered at ${result.path} (v${result.version})`);
+    return cliTool;
   }
 
   private async discoverBinary(binaryBaseName: string, configKey: string): Promise<BinaryDiscoveryResult | undefined> {

@@ -27,6 +27,10 @@ function getKdnOutputDir(platform, arch) {
   return path.resolve('./kdn-binary', `${platform}-${arch}`);
 }
 
+function getOpenshellOutputDir() {
+  return path.resolve('./openshell-binary');
+}
+
 if (process.env.VITE_APP_VERSION === undefined) {
   const now = new Date();
   process.env.VITE_APP_VERSION = `${now.getUTCFullYear() - 2000}.${now.getUTCMonth() + 1}.${now.getUTCDate()}-${
@@ -151,6 +155,42 @@ async function downloadKdn(context) {
 }
 
 /**
+ * Downloads the OpenShell install script for bundling.
+ * Fetches the latest install.sh from the NVIDIA/OpenShell repo.
+ */
+async function downloadOpenshell(context) {
+  const downloadScript = path.join('extensions', 'openshell', 'dist', 'openshell-download.js');
+  if (!fs.existsSync(downloadScript)) {
+    throw new Error(`${downloadScript} not found. Run "pnpm run build:extensions:openshell" before packaging.`);
+  }
+
+  const outputDir = getOpenshellOutputDir();
+
+  await new Promise((resolve, reject) => {
+    execFile(
+      'node',
+      [downloadScript, `--output=${outputDir}`],
+      { maxBuffer: 10 * 1024 * 1024, timeout: 5 * 60 * 1000 },
+      (error, stdout, stderr) => {
+        if (stdout) console.log(stdout);
+        if (stderr) console.error(stderr);
+        if (error) {
+          reject(new Error(`OpenShell install script download failed: ${stderr || error.message}`));
+        } else {
+          resolve();
+        }
+      },
+    );
+  });
+
+  context.packager.config.extraResources.push({
+    from: outputDir,
+    to: 'openshell',
+    filter: ['!.openshell-version'],
+  });
+}
+
+/**
  * @type {import('electron-builder').Configuration}
  * @see https://www.electron.build/configuration/configuration
  */
@@ -173,6 +213,9 @@ const config = {
 
     // download & bundle kdn CLI binary
     await downloadKdn(context);
+
+    // download & bundle OpenShell install script
+    await downloadOpenshell(context);
 
     // include product.json
     context.packager.config.extraResources.push({
