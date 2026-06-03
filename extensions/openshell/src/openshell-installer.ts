@@ -16,9 +16,6 @@
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
 
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-
 import type { CliToolInstaller, Logger } from '@openkaiden/api';
 import * as extensionApi from '@openkaiden/api';
 
@@ -36,22 +33,14 @@ export class OpenshellInstaller implements CliToolInstaller {
   }
 
   async doInstall(logger: Logger): Promise<void> {
-    const scriptPath = this.findInstallScript();
-
-    if (scriptPath) {
-      logger.log(`Using bundled install script: ${scriptPath}`);
-    } else {
-      logger.log('Bundled install script not found, will use upstream installer directly');
+    if (!extensionApi.env.isMac && !extensionApi.env.isLinux) {
+      throw new Error('OpenShell install is not supported on this platform');
     }
 
-    logger.log('Installing OpenShell...');
+    logger.log('Installing OpenShell via upstream installer...');
 
     try {
-      if (scriptPath) {
-        await extensionApi.process.exec('sh', [scriptPath], { logger, isAdmin: true });
-      } else {
-        await this.installFromUpstream(logger);
-      }
+      await this.installFromUpstream(logger);
       logger.log('OpenShell installation completed successfully');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -90,17 +79,6 @@ export class OpenshellInstaller implements CliToolInstaller {
     }
     const data = (await res.json()) as { tag_name: string };
     return data.tag_name.replace(/^v/, '');
-  }
-
-  private findInstallScript(): string | undefined {
-    const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
-    if (resourcesPath) {
-      const bundledPath = join(resourcesPath, 'openshell', 'install.sh');
-      if (existsSync(bundledPath)) {
-        return bundledPath;
-      }
-    }
-    return undefined;
   }
 
   private async installFromUpstream(logger: Logger): Promise<void> {

@@ -41,7 +41,7 @@ const config = {
     assetsDir: '.',
     minify: process.env.MODE === 'production' ? 'esbuild' : false,
     lib: {
-      entry: ['src/extension.ts', 'src/openshell-download.ts'],
+      entry: ['src/extension.ts'],
       formats: ['cjs'],
     },
     rollupOptions: {

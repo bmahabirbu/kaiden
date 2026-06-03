@@ -26,16 +26,20 @@
     }
   },
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && tsx ./scripts/download.ts",
+    "download": "tsx ./scripts/download.ts",
+    "download:all": "tsx ./scripts/download.ts --all",
     "test": "vitest run --coverage",
     "test:watch": "vitest watch --coverage",
     "watch": "vite build --watch"
   },
   "dependencies": {
-    "inversify": "^7.10.4"
+    "inversify": "^7.10.4",
+    "tar": "^7.5.3"
   },
   "devDependencies": {
     "@openkaiden/api": "workspace:*",
+    "tsx": "^4.19.4",
     "vite": "^7.1.2",
     "vitest": "^4.0.10"
   }
