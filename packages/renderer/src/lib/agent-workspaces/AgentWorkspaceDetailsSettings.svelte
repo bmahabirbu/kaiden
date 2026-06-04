@@ -590,7 +590,7 @@ function handleDeleteWorkspace(): void {
             Advanced configuration options for this workspace.
           </p>
 
-          <div class="bg-[var(--pd-content-card-bg)] border border-[var(--pd-danger-action-text,#f87171)] border-opacity-30 rounded-lg p-6">
+          <div class="bg-[var(--pd-content-card-bg)] border border-[color-mix(in_srgb,var(--pd-danger-action-text,#f87171)_30%,transparent)] rounded-lg p-6">
             <div class="mb-5">
               <h3 class="text-[15px] font-semibold text-[var(--pd-danger-action-text,#f87171)] mb-1">Danger Zone</h3>
               <p class="text-[13px] text-[var(--pd-content-text)] opacity-60 m-0">Irreversible and destructive actions</p>
