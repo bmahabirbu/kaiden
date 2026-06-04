@@ -51,7 +51,12 @@ export class OpenshellCliManager implements Disposable {
     }
 
     this.#registeredPath = cliResult.path;
-    const cliTool = this.registerCliTool('openshell', 'OpenShell', 'OpenShell CLI for managing sandboxed workspaces', cliResult);
+    const cliTool = this.registerCliTool(
+      'openshell',
+      'OpenShell',
+      'OpenShell CLI for managing sandboxed workspaces',
+      cliResult,
+    );
 
     const installer = new OpenshellInstaller();
     this.extensionContext.subscriptions.push(cliTool.registerInstaller(installer));

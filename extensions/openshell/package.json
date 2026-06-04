@@ -3,6 +3,7 @@
   "displayName": "OpenShell",
   "description": "Registers the openshell CLI binary for managing sandboxed workspaces.",
   "version": "0.2.0-next",
+  "openshellVersion": "0.0.55",
   "icon": "icon.png",
   "publisher": "kaiden",
   "license": "Apache-2.0",

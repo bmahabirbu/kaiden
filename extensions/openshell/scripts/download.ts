@@ -17,11 +17,12 @@
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
 
+import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
-import { getLatestRelease, downloadOpenshellBinaries } from '../src/openshell-download';
+import { getRelease, downloadOpenshellBinaries } from '../src/openshell-download';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSETS_DIR = resolve(__dirname, '..', 'assets');
@@ -71,8 +72,16 @@ if (targets.length === 0) {
 }
 
 (async () => {
-  const { version, digests } = await getLatestRelease();
-  console.log(`openshell latest release: v${version}`);
+  const pkgPath = resolve(__dirname, '..', 'package.json');
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { openshellVersion: string };
+  const pinnedVersion = pkg.openshellVersion;
+  if (!pinnedVersion) {
+    console.error('missing "openshellVersion" in package.json');
+    process.exit(1);
+  }
+
+  const { version, digests } = await getRelease(pinnedVersion);
+  console.log(`openshell pinned release: v${version}`);
 
   for (const { platform, arch } of targets) {
     const outputDir = resolve(ASSETS_DIR, `${platform}-${arch}`);

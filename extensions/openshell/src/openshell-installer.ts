@@ -20,14 +20,15 @@ import type { CliToolInstaller, Logger } from '@openkaiden/api';
 import * as extensionApi from '@openkaiden/api';
 
 const OPENSHELL_REPO = 'NVIDIA/OpenShell';
-const INSTALL_SCRIPT_URL = `https://raw.githubusercontent.com/${OPENSHELL_REPO}/main/install.sh`;
+const OPENSHELL_VERSION = '0.0.55';
+const INSTALL_SCRIPT_URL = `https://raw.githubusercontent.com/${OPENSHELL_REPO}/v${OPENSHELL_VERSION}/install.sh`;
 
 export class OpenshellInstaller implements CliToolInstaller {
   private selectedVersion: string | undefined;
 
   async selectVersion(latest?: boolean): Promise<string> {
     if (latest || !this.selectedVersion) {
-      this.selectedVersion = await this.fetchLatestVersion();
+      this.selectedVersion = await this.fetchPinnedVersion();
     }
     return this.selectedVersion;
   }
@@ -68,14 +69,14 @@ export class OpenshellInstaller implements CliToolInstaller {
     }
   }
 
-  private async fetchLatestVersion(): Promise<string> {
+  private async fetchPinnedVersion(): Promise<string> {
     const headers: Record<string, string> = { Accept: 'application/vnd.github.v3+json' };
-    const res = await fetch(`https://api.github.com/repos/${OPENSHELL_REPO}/releases/latest`, {
+    const res = await fetch(`https://api.github.com/repos/${OPENSHELL_REPO}/releases/tags/v${OPENSHELL_VERSION}`, {
       headers,
       redirect: 'follow',
     });
     if (!res.ok) {
-      throw new Error(`failed to fetch latest OpenShell release: ${res.status} ${res.statusText}`);
+      throw new Error(`failed to fetch OpenShell release v${OPENSHELL_VERSION}: ${res.status} ${res.statusText}`);
     }
     const data = (await res.json()) as { tag_name: string };
     return data.tag_name.replace(/^v/, '');

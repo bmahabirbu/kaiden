@@ -53,6 +53,11 @@ const ASSET_MAP: Record<string, AssetSpec[]> = {
       binaryName: 'openshell-sandbox',
       subdir: 'linux-arm64',
     },
+    {
+      component: 'openshell-driver-vm',
+      assetName: 'openshell-driver-vm-aarch64-apple-darwin.tar.gz',
+      binaryName: 'openshell-driver-vm',
+    },
   ],
   'linux-x64': [
     { component: 'openshell', assetName: 'openshell-x86_64-unknown-linux-musl.tar.gz', binaryName: 'openshell' },
@@ -65,6 +70,11 @@ const ASSET_MAP: Record<string, AssetSpec[]> = {
       component: 'openshell-sandbox',
       assetName: 'openshell-sandbox-x86_64-unknown-linux-gnu.tar.gz',
       binaryName: 'openshell-sandbox',
+    },
+    {
+      component: 'openshell-driver-vm',
+      assetName: 'openshell-driver-vm-x86_64-unknown-linux-gnu.tar.gz',
+      binaryName: 'openshell-driver-vm',
     },
   ],
   'linux-arm64': [
@@ -79,31 +89,36 @@ const ASSET_MAP: Record<string, AssetSpec[]> = {
       assetName: 'openshell-sandbox-aarch64-unknown-linux-gnu.tar.gz',
       binaryName: 'openshell-sandbox',
     },
+    {
+      component: 'openshell-driver-vm',
+      assetName: 'openshell-driver-vm-aarch64-unknown-linux-gnu.tar.gz',
+      binaryName: 'openshell-driver-vm',
+    },
   ],
 };
 
-export async function getLatestRelease(): Promise<ReleaseInfo> {
+export async function getRelease(version: string): Promise<ReleaseInfo> {
   const headers: Record<string, string> = { Accept: 'application/vnd.github.v3+json' };
   const token = process.env['GITHUB_TOKEN'];
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  const res = await fetch(`https://api.github.com/repos/${OPENSHELL_REPO}/releases/latest`, {
+  const res = await fetch(`https://api.github.com/repos/${OPENSHELL_REPO}/releases/tags/v${version}`, {
     headers,
     redirect: 'follow',
   });
   if (!res.ok) {
-    throw new Error(`failed to fetch latest OpenShell release: ${res.status} ${res.statusText}`);
+    throw new Error(`failed to fetch OpenShell release v${version}: ${res.status} ${res.statusText}`);
   }
   const data = (await res.json()) as { tag_name: string; assets: { name: string; digest: string | null }[] };
-  const version = data.tag_name.replace(/^v/, '');
+  const resolvedVersion = data.tag_name.replace(/^v/, '');
   const digests = new Map<string, string>();
   for (const asset of data.assets) {
     if (asset.digest) {
       digests.set(asset.name, asset.digest.replace(/^sha256:/, ''));
     }
   }
-  return { version, digests };
+  return { version: resolvedVersion, digests };
 }
 
 export async function download(url: string, dest: string): Promise<void> {
