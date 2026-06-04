@@ -7,6 +7,7 @@ import AgentWorkspaceCreateStepFileSystem, {
   type CustomMount,
 } from '/@/lib/agent-workspaces/AgentWorkspaceCreateStepFileSystem.svelte';
 import AgentWorkspaceCreateStepNetworking from '/@/lib/agent-workspaces/AgentWorkspaceCreateStepNetworking.svelte';
+import { withConfirmation } from '/@/lib/dialogs/messagebox-utils';
 import type { ChecklistItem } from '/@/lib/ui/ChecklistPanel.svelte';
 import ChecklistPanel from '/@/lib/ui/ChecklistPanel.svelte';
 import { handleNavigation } from '/@/navigation';
@@ -435,6 +436,20 @@ function navigateToSkills(): void {
 function navigateToMcp(): void {
   router.goto('/mcps');
 }
+
+function handleDeleteWorkspace(): void {
+  withConfirmation(
+    async () => {
+      try {
+        await window.removeAgentWorkspace(workspaceId);
+        router.goto('/agent-workspaces');
+      } catch (error: unknown) {
+        console.error('Failed to remove agent workspace', error);
+      }
+    },
+    `remove workspace ${workspaceSummary?.name ?? workspaceId}`,
+  );
+}
 </script>
 
 <div class="flex flex-row w-full h-full">
@@ -569,6 +584,34 @@ function navigateToMcp(): void {
             onAddCustomHost={addCustomHost}
             onRemoveCustomHost={removeCustomHost}
             onUpdateCustomHost={updateCustomHost} />
+
+        {:else if activeSection === 'advanced'}
+          <p class="text-sm text-[var(--pd-content-text)] mb-7">
+            Advanced configuration options for this workspace.
+          </p>
+
+          <div class="bg-[var(--pd-content-card-bg)] border border-[var(--pd-danger-action-text,#f87171)] border-opacity-30 rounded-lg p-6">
+            <div class="mb-5">
+              <h3 class="text-[15px] font-semibold text-[var(--pd-danger-action-text,#f87171)] mb-1">Danger Zone</h3>
+              <p class="text-[13px] text-[var(--pd-content-text)] opacity-60 m-0">Irreversible and destructive actions</p>
+            </div>
+            <div class="flex items-center justify-between py-4">
+              <div class="flex-1">
+                <div class="text-sm font-medium text-[var(--pd-content-card-header-text)]">Delete Workspace</div>
+                <div class="text-xs text-[var(--pd-content-text)] opacity-60">Permanently delete this workspace and all its data</div>
+              </div>
+              <button
+                class="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[13px] font-medium cursor-pointer transition-all duration-200
+                  bg-[color-mix(in_srgb,var(--pd-danger-action-text,#f87171)_15%,transparent)]
+                  border border-[color-mix(in_srgb,var(--pd-danger-action-text,#f87171)_30%,transparent)]
+                  text-[var(--pd-danger-action-text,#f87171)]
+                  hover:bg-[color-mix(in_srgb,var(--pd-danger-action-text,#f87171)_25%,transparent)]"
+                aria-label="Delete workspace"
+                onclick={handleDeleteWorkspace}>
+                Delete
+              </button>
+            </div>
+          </div>
 
         {:else}
           <p class="text-sm text-[var(--pd-content-text)] mb-7">
