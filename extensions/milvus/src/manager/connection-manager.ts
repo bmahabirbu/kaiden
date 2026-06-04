@@ -227,14 +227,16 @@ export class ConnectionManager implements Disposable {
 
     logger?.log(`Connection name: ${name}`);
 
+    const safeName = name.replace(/[^a-zA-Z0-9_.-]/g, '-').replace(/^[^a-zA-Z0-9]/, 'x');
+
     // Create storage folder for this Milvus instance
-    const storagePath = join(this.extensionContext.storagePath, name);
+    const storagePath = join(this.extensionContext.storagePath, safeName);
     logger?.log(`Storage path: ${storagePath}`);
 
     // Ensure storage directory exists
     await mkdir(storagePath, { recursive: true });
     const { etcdConfigFile, userConfigFile } = await this.configHelper.createConfigFile(storagePath);
-    const containerName = `milvus-${name}`;
+    const containerName = `milvus-${safeName}`;
 
     logger?.log('Using podman CLI to create container...');
 
@@ -273,12 +275,12 @@ export class ConnectionManager implements Disposable {
           `${userConfigFile}:/milvus/configs/user.yaml:Z`,
         ],
       },
-      Labels: { 'ai.openkaiden.milvus.name': name, 'ai.openkaiden.milvus.port': port.toString() },
+      Labels: { 'ai.openkaiden.milvus.name': safeName, 'ai.openkaiden.milvus.port': port.toString() },
     };
     const container = await dockerode.createContainer(createContainerOptions);
     await container.start();
     logger?.log(`Container created and started with ID: ${container.id}`);
-    this.registerConnection({ path: containerConnection.path, id: container.id, name, port, running: true });
+    this.registerConnection({ path: containerConnection.path, id: container.id, name: safeName, port, running: true });
 
     logger?.log(`Milvus RAG connection '${name}' created successfully`);
   }

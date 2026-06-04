@@ -324,6 +324,24 @@ describe('ConnectionManager', () => {
     expect(containerMock.start).toHaveBeenCalled();
   });
 
+  test('factory should sanitize name with spaces for container naming', async () => {
+    const params = {
+      'milvus.name': 'my milvus db',
+    };
+
+    vi.mocked(Dockerode.prototype.getImage).mockReturnValue(new Dockerode.Image({}, 'image123'));
+    await connectionManager.factory(params);
+
+    expect(Dockerode.prototype.createContainer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'milvus-my-milvus-db',
+        Labels: expect.objectContaining({
+          'ai.openkaiden.milvus.name': 'my-milvus-db',
+        }),
+      }),
+    );
+  });
+
   test('factory should throw error when name parameter is missing', async () => {
     const params = {};
 
