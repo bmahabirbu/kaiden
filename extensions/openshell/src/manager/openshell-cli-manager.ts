@@ -16,7 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import type { CliToolInstallationSource, Disposable, ExtensionContext } from '@openkaiden/api';
@@ -44,22 +44,32 @@ export class OpenshellCliManager implements Disposable {
   }
 
   async init(): Promise<void> {
+    const packageJsonPath = join(this.extensionContext.extensionUri.fsPath, 'package.json');
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+    const installer = new OpenshellInstaller(packageJson.openshellVersion, this.extensionContext.storagePath);
+
     const cliResult = await this.discoverBinary('openshell', 'openshell.binary.path');
-    if (!cliResult) {
-      console.warn('[openshell] CLI not found, skipping registration');
-      return;
+    const registration: BinaryDiscoveryResult = cliResult ?? {
+      path: extensionApi.env.isWindows ? 'openshell.exe' : 'openshell',
+      version: await installer.selectVersion(),
+      installationSource: 'external',
+    };
+
+    if (cliResult) {
+      this.#registeredPath = cliResult.path;
+    } else {
+      console.warn('[openshell] CLI not found, registering installer-only entry');
     }
 
-    this.#registeredPath = cliResult.path;
     const cliTool = this.registerCliTool(
       'openshell',
       'OpenShell',
       'OpenShell CLI for managing sandboxed workspaces',
-      cliResult,
+      registration,
     );
 
-    const installer = new OpenshellInstaller();
     this.extensionContext.subscriptions.push(cliTool.registerInstaller(installer));
+    if (!cliResult) return;
 
     const gatewayResult = await this.discoverGatewayBinary(cliResult.path);
     if (gatewayResult) {

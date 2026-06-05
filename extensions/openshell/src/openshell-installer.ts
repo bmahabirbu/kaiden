@@ -16,15 +16,22 @@
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
 
+import { join } from 'node:path';
+
 import type { CliToolInstaller, Logger } from '@openkaiden/api';
 import * as extensionApi from '@openkaiden/api';
 
-const OPENSHELL_REPO = 'NVIDIA/OpenShell';
-const OPENSHELL_VERSION = '0.0.55';
-const INSTALL_SCRIPT_URL = `https://raw.githubusercontent.com/${OPENSHELL_REPO}/v${OPENSHELL_VERSION}/install.sh`;
+import { downloadOpenshellBinaries, getRelease } from './openshell-download';
 
 export class OpenshellInstaller implements CliToolInstaller {
   private selectedVersion: string | undefined;
+  readonly #openshellVersion: string;
+  readonly #storagePath: string;
+
+  constructor(openshellVersion: string, storagePath: string) {
+    this.#openshellVersion = openshellVersion;
+    this.#storagePath = storagePath;
+  }
 
   async selectVersion(latest?: boolean): Promise<string> {
     if (latest || !this.selectedVersion) {
@@ -38,10 +45,16 @@ export class OpenshellInstaller implements CliToolInstaller {
       throw new Error('OpenShell install is not supported on this platform');
     }
 
-    logger.log('Installing OpenShell via upstream installer...');
+    const version = this.selectedVersion ?? this.#openshellVersion;
+    const platform = extensionApi.env.isMac ? 'darwin' : 'linux';
+    const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+    const binDir = join(this.#storagePath, 'bin');
+
+    logger.log(`Installing OpenShell ${version} for ${platform}/${arch}...`);
 
     try {
-      await this.installFromUpstream(logger);
+      const release = await getRelease(version);
+      await downloadOpenshellBinaries(release.version, platform, arch, binDir, release.digests);
       logger.log('OpenShell installation completed successfully');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -70,26 +83,8 @@ export class OpenshellInstaller implements CliToolInstaller {
   }
 
   private async fetchPinnedVersion(): Promise<string> {
-    const headers: Record<string, string> = { Accept: 'application/vnd.github.v3+json' };
-    const res = await fetch(`https://api.github.com/repos/${OPENSHELL_REPO}/releases/tags/v${OPENSHELL_VERSION}`, {
-      headers,
-      redirect: 'follow',
-    });
-    if (!res.ok) {
-      throw new Error(`failed to fetch OpenShell release v${OPENSHELL_VERSION}: ${res.status} ${res.statusText}`);
-    }
-    const data = (await res.json()) as { tag_name: string };
-    return data.tag_name.replace(/^v/, '');
-  }
-
-  private async installFromUpstream(logger: Logger): Promise<void> {
-    logger.log(`Downloading install script from ${INSTALL_SCRIPT_URL}`);
-    const res = await fetch(INSTALL_SCRIPT_URL, { redirect: 'follow' });
-    if (!res.ok || !res.body) {
-      throw new Error(`failed to download install.sh: ${res.status} ${res.statusText}`);
-    }
-    const script = await res.text();
-    await extensionApi.process.exec('sh', ['-c', script], { logger, isAdmin: true });
+    const release = await getRelease(this.#openshellVersion);
+    return release.version;
   }
 
   private async uninstallLinux(logger: Logger): Promise<void> {
@@ -104,7 +99,10 @@ export class OpenshellInstaller implements CliToolInstaller {
 
     const hasApt = await this.hasCommand('apt-get');
     if (hasApt) {
-      await extensionApi.process.exec('apt-get', ['remove', '-y', 'openshell'], { logger, isAdmin: true });
+      await extensionApi.process.exec('apt-get', ['remove', '-y', 'openshell', 'openshell-gateway'], {
+        logger,
+        isAdmin: true,
+      });
       return;
     }
 
