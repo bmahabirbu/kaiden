@@ -439,7 +439,11 @@ function navigateToMcp(): void {
 
 function handleDeleteWorkspace(): void {
   withConfirmation(
-    async () => {
+    async (err?: unknown) => {
+      if (err) {
+        console.error('Confirmation dialog failed', err);
+        return;
+      }
       try {
         await window.removeAgentWorkspace(workspaceId);
         router.goto('/agent-workspaces');
@@ -600,16 +604,7 @@ function handleDeleteWorkspace(): void {
                 <div class="text-sm font-medium text-[var(--pd-content-card-header-text)]">Delete Workspace</div>
                 <div class="text-xs text-[var(--pd-content-text)] opacity-60">Permanently delete this workspace and all its data</div>
               </div>
-              <button
-                class="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[13px] font-medium cursor-pointer transition-all duration-200
-                  bg-[color-mix(in_srgb,var(--pd-danger-action-text,#f87171)_15%,transparent)]
-                  border border-[color-mix(in_srgb,var(--pd-danger-action-text,#f87171)_30%,transparent)]
-                  text-[var(--pd-danger-action-text,#f87171)]
-                  hover:bg-[color-mix(in_srgb,var(--pd-danger-action-text,#f87171)_25%,transparent)]"
-                aria-label="Delete workspace"
-                onclick={handleDeleteWorkspace}>
-                Delete
-              </button>
+              <Button type="danger" aria-label="Delete workspace" onclick={handleDeleteWorkspace}>Delete</Button>
             </div>
           </div>
 

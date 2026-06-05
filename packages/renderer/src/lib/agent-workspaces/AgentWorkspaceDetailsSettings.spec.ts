@@ -23,6 +23,7 @@ import { writable } from 'svelte/store';
 import { router } from 'tinro';
 import { beforeEach, expect, test, vi } from 'vitest';
 
+import { withConfirmation } from '/@/lib/dialogs/messagebox-utils';
 import * as agentWorkspaceRuntimeStore from '/@/stores/agentworkspace-runtime';
 import * as mcpStore from '/@/stores/mcp-remote-servers';
 import * as ragStore from '/@/stores/rag-environments';
@@ -40,6 +41,7 @@ vi.mock(import('/@/stores/rag-environments'));
 vi.mock(import('/@/navigation'));
 vi.mock(import('/@/stores/mcp-remote-servers'));
 vi.mock(import('/@/stores/agentworkspace-runtime'));
+vi.mock(import('/@/lib/dialogs/messagebox-utils'));
 
 const routerStore = writable({
   path: '/agent-workspaces/ws-1/settings',
@@ -1059,4 +1061,63 @@ test('Expect error dialog shown when network save fails', async () => {
       message: expect.stringContaining('server error'),
     }),
   );
+});
+
+// --- Advanced / Danger Zone section tests ---
+
+test('Expect Advanced section shows danger zone with delete button', async () => {
+  render(AgentWorkspaceDetailsSettings, { workspaceId: 'ws-1', workspaceSummary, configuration });
+
+  await fireEvent.click(screen.getByRole('link', { name: 'Advanced' }));
+
+  expect(screen.getByText('Danger Zone')).toBeInTheDocument();
+  expect(screen.getByText('Irreversible and destructive actions')).toBeInTheDocument();
+  expect(screen.getByText('Delete Workspace')).toBeInTheDocument();
+  expect(screen.getByText('Permanently delete this workspace and all its data')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Delete workspace' })).toBeInTheDocument();
+});
+
+test('Expect clicking Delete calls withConfirmation', async () => {
+  render(AgentWorkspaceDetailsSettings, { workspaceId: 'ws-1', workspaceSummary, configuration });
+
+  await fireEvent.click(screen.getByRole('link', { name: 'Advanced' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Delete workspace' }));
+
+  expect(withConfirmation).toHaveBeenCalledWith(expect.any(Function), 'remove workspace api-refactor');
+});
+
+test('Expect delete confirmation calls removeAgentWorkspace and navigates', async () => {
+  vi.mocked(withConfirmation).mockImplementation(fn => fn());
+  vi.mocked(window.removeAgentWorkspace).mockResolvedValue({ id: 'ws-1' });
+
+  render(AgentWorkspaceDetailsSettings, { workspaceId: 'ws-1', workspaceSummary, configuration });
+
+  await fireEvent.click(screen.getByRole('link', { name: 'Advanced' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Delete workspace' }));
+
+  expect(window.removeAgentWorkspace).toHaveBeenCalledWith('ws-1');
+  await vi.waitFor(() => {
+    expect(router.goto).toHaveBeenCalledWith('/agent-workspaces');
+  });
+});
+
+test('Expect delete confirmation uses workspace ID when name is unavailable', async () => {
+  render(AgentWorkspaceDetailsSettings, { workspaceId: 'ws-1', workspaceSummary: undefined, configuration: {} });
+
+  await fireEvent.click(screen.getByRole('link', { name: 'Advanced' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Delete workspace' }));
+
+  expect(withConfirmation).toHaveBeenCalledWith(expect.any(Function), 'remove workspace ws-1');
+});
+
+test('Expect delete does not proceed when confirmation dialog fails', async () => {
+  vi.mocked(withConfirmation).mockImplementation(fn => fn(new Error('dialog error')));
+
+  render(AgentWorkspaceDetailsSettings, { workspaceId: 'ws-1', workspaceSummary, configuration });
+
+  await fireEvent.click(screen.getByRole('link', { name: 'Advanced' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Delete workspace' }));
+
+  expect(window.removeAgentWorkspace).not.toHaveBeenCalled();
+  expect(router.goto).not.toHaveBeenCalled();
 });
