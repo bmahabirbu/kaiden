@@ -34,6 +34,31 @@
           "format": "file",
           "scope": "InferenceProviderConnectionFactory",
           "description": "Path to gcloud credentials file (e.g. ~/.config/gcloud/application_default_credentials.json)"
+        },
+        "vertex-ai.connection._type": {
+          "type": "string",
+          "scope": "InferenceProviderConnection",
+          "description": "Vertex AI provider type",
+          "hidden": true
+        },
+        "vertex-ai.connection.token": {
+          "type": "string",
+          "scope": "InferenceProviderConnection",
+          "description": "Credentials secret reference",
+          "format": "password",
+          "hidden": true
+        },
+        "vertex-ai.connection.VERTEX_AI_PROJECT_ID": {
+          "type": "string",
+          "scope": "InferenceProviderConnection",
+          "description": "Google Cloud project ID",
+          "hidden": true
+        },
+        "vertex-ai.connection.VERTEX_AI_REGION": {
+          "type": "string",
+          "scope": "InferenceProviderConnection",
+          "description": "Google Cloud region",
+          "hidden": true
         }
       }
     }

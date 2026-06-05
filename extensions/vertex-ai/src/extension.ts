@@ -17,7 +17,7 @@
  ***********************************************************************/
 
 import type { ExtensionContext } from '@openkaiden/api';
-import { provider } from '@openkaiden/api';
+import { configuration, provider } from '@openkaiden/api';
 
 import { VertexAi } from './vertex-ai';
 
@@ -26,7 +26,7 @@ let vertexAi: VertexAi | undefined;
 export async function activate(extensionContext: ExtensionContext): Promise<void> {
   console.log('starting vertex-ai extension');
 
-  vertexAi = new VertexAi(provider, extensionContext.secrets);
+  vertexAi = new VertexAi(provider, extensionContext.secrets, configuration);
   extensionContext.subscriptions.push(vertexAi);
 
   await vertexAi.init();
