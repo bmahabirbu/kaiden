@@ -22,12 +22,21 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { createVertexAnthropic } from '@ai-sdk/google-vertex/anthropic';
-import type { Disposable, Logger, Provider, provider as ProviderAPI, SecretStorage } from '@openkaiden/api';
+import type {
+  Configuration,
+  configuration as ConfigurationAPI,
+  Disposable,
+  Logger,
+  Provider,
+  provider as ProviderAPI,
+  SecretStorage,
+} from '@openkaiden/api';
 import { assert, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import {
   CONNECTIONS_KEY,
   FALLBACK_MODELS,
+  PROVIDER_ID,
   type StoredConnection,
   VertexAi,
   type VertexAiConnectionConfig,
@@ -57,6 +66,19 @@ const SECRET_STORAGE_MOCK: SecretStorage = {
   delete: vi.fn(),
   onDidChange: vi.fn(),
 };
+
+const CONFIG_UPDATE_MOCK = vi.fn();
+
+const CONFIGURATION_MOCK: Configuration = {
+  get: vi.fn(),
+  has: vi.fn(),
+  update: CONFIG_UPDATE_MOCK,
+} as unknown as Configuration;
+
+const CONFIGURATION_API_MOCK: typeof ConfigurationAPI = {
+  getConfiguration: vi.fn().mockReturnValue(CONFIGURATION_MOCK),
+  onDidChangeConfiguration: vi.fn(),
+} as unknown as typeof ConfigurationAPI;
 
 const VALID_CREDENTIALS = JSON.stringify({
   client_id: 'test-client-id.apps.googleusercontent.com',
@@ -107,12 +129,13 @@ beforeEach(() => {
   vi.mocked(homedir).mockReturnValue('/home/testuser');
   vi.mocked(readFile).mockResolvedValue(VALID_CREDENTIALS);
   vi.mocked(access).mockResolvedValue(undefined);
+  vi.mocked(CONFIGURATION_API_MOCK.getConfiguration).mockReturnValue(CONFIGURATION_MOCK);
 
   mockFetchResponses();
 });
 
 function createVertexAi(): VertexAi {
-  return new VertexAi(PROVIDER_API_MOCK, SECRET_STORAGE_MOCK);
+  return new VertexAi(PROVIDER_API_MOCK, SECRET_STORAGE_MOCK, CONFIGURATION_API_MOCK);
 }
 
 describe('init', () => {
@@ -522,7 +545,6 @@ describe('factory', () => {
       'vertex-ai.factory.credentialsFile': '/home/user/.config/gcloud/application_default_credentials.json',
     });
 
-    expect(SECRET_STORAGE_MOCK.store).toHaveBeenCalledOnce();
     const expected: StoredConnection[] = [
       {
         id: 'fake-uuid-1',
@@ -590,17 +612,74 @@ describe('connection delete lifecycle', () => {
     mDelete = lifecycle.delete;
   });
 
-  test('should remove config from storage on delete', async () => {
+  test('calling delete should update secrets, clear configuration, and dispose provider inference connection', async () => {
     await mDelete();
 
-    expect(SECRET_STORAGE_MOCK.store).toHaveBeenCalledTimes(2);
-    // Second store call is the removal (filtered list)
-    expect(SECRET_STORAGE_MOCK.store).toHaveBeenNthCalledWith(2, CONNECTIONS_KEY, '[]');
+    expect(SECRET_STORAGE_MOCK.delete).toHaveBeenCalledWith(`${PROVIDER_ID}:fake-uuid-1:token`);
+
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('vertex-ai.connection._type', undefined);
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('vertex-ai.connection.token', undefined);
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('vertex-ai.connection.VERTEX_AI_PROJECT_ID', undefined);
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('vertex-ai.connection.VERTEX_AI_REGION', undefined);
+
+    expect(disposeMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe('workspace configuration', () => {
+  beforeEach(async () => {
+    vi.mocked(PROVIDER_MOCK.registerInferenceProviderConnection).mockReturnValue({
+      dispose: vi.fn(),
+    });
   });
 
-  test('should dispose provider inference connection on delete', async () => {
-    await mDelete();
-    expect(disposeMock).toHaveBeenCalledOnce();
+  test('should store per-connection secret and set configuration after registration', async () => {
+    const vertexAi = createVertexAi();
+    await vertexAi.init();
+
+    const mock = vi.mocked(PROVIDER_MOCK.setInferenceProviderConnectionFactory);
+    const create = mock.mock.calls[0][0].create;
+
+    await create({
+      'vertex-ai.factory.projectId': 'my-project',
+      'vertex-ai.factory.region': 'us-east5',
+      'vertex-ai.factory.credentialsFile': '/home/user/.config/gcloud/application_default_credentials.json',
+    });
+
+    expect(SECRET_STORAGE_MOCK.store).toHaveBeenCalledWith(
+      `${PROVIDER_ID}:fake-uuid-1:token`,
+      '/home/user/.config/gcloud/application_default_credentials.json',
+    );
+
+    const connection = vi.mocked(PROVIDER_MOCK.registerInferenceProviderConnection).mock.calls[0][0];
+    expect(CONFIGURATION_API_MOCK.getConfiguration).toHaveBeenCalledWith(undefined, connection);
+
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('vertex-ai.connection._type', PROVIDER_ID);
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('vertex-ai.connection.token', `${PROVIDER_ID}:fake-uuid-1:token`);
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('vertex-ai.connection.VERTEX_AI_PROJECT_ID', 'my-project');
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('vertex-ai.connection.VERTEX_AI_REGION', 'us-east5');
+  });
+
+  test('should set workspace configuration for each restored connection', async () => {
+    const stored: StoredConnection[] = [
+      { id: 'id-1', projectId: 'proj-a', region: 'us-east5', credentialsFile: '/path/a' },
+      { id: 'id-2', projectId: 'proj-b', region: 'europe-west1', credentialsFile: '/path/b' },
+    ];
+    vi.mocked(SECRET_STORAGE_MOCK.get).mockResolvedValue(JSON.stringify(stored));
+
+    const vertexAi = createVertexAi();
+    await vertexAi.init();
+
+    expect(SECRET_STORAGE_MOCK.store).toHaveBeenCalledWith(`${PROVIDER_ID}:id-1:token`, '/path/a');
+    expect(SECRET_STORAGE_MOCK.store).toHaveBeenCalledWith(`${PROVIDER_ID}:id-2:token`, '/path/b');
+
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('vertex-ai.connection._type', PROVIDER_ID);
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('vertex-ai.connection.token', `${PROVIDER_ID}:id-1:token`);
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('vertex-ai.connection.token', `${PROVIDER_ID}:id-2:token`);
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('vertex-ai.connection.VERTEX_AI_PROJECT_ID', 'proj-a');
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('vertex-ai.connection.VERTEX_AI_PROJECT_ID', 'proj-b');
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('vertex-ai.connection.VERTEX_AI_REGION', 'us-east5');
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('vertex-ai.connection.VERTEX_AI_REGION', 'europe-west1');
   });
 });
 

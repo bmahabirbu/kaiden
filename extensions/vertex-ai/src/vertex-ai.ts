@@ -23,8 +23,10 @@ import { join } from 'node:path';
 
 import { createVertexAnthropic } from '@ai-sdk/google-vertex/anthropic';
 import type {
+  configuration as ConfigurationAPI,
   Disposable,
   InferenceModel,
+  InferenceProviderConnection,
   Provider,
   provider as ProviderAPI,
   ProviderConnectionStatus,
@@ -32,6 +34,7 @@ import type {
 } from '@openkaiden/api';
 
 export const CONNECTIONS_KEY = 'vertex-ai:connections';
+export const PROVIDER_ID = 'vertex-ai';
 const FETCH_TIMEOUT_MS = 30_000;
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 export interface VertexAiConnectionConfig {
@@ -101,6 +104,7 @@ export class VertexAi implements Disposable {
   constructor(
     private readonly providerAPI: typeof ProviderAPI,
     private readonly secrets: SecretStorage,
+    private readonly configurationAPI: typeof ConfigurationAPI,
   ) {}
 
   async init(): Promise<void> {
@@ -268,10 +272,35 @@ export class VertexAi implements Disposable {
     }
   }
 
-  /**
-   * Registers a connection using pre-validated models (factory path)
-   * or by fetching them fresh with graceful degradation (restore path).
-   */
+  private getSecretName(connectionId: string): string {
+    return `${PROVIDER_ID}:${connectionId}:token`;
+  }
+
+  private async setConnectionConfiguration(
+    connection: InferenceProviderConnection,
+    config: VertexAiConnectionConfig,
+  ): Promise<void> {
+    const secretName = this.getSecretName(connection.id);
+    await this.secrets.store(secretName, config.credentialsFile);
+
+    const cfg = this.configurationAPI.getConfiguration(undefined, connection);
+    await cfg.update('vertex-ai.connection._type', PROVIDER_ID);
+    await cfg.update('vertex-ai.connection.token', secretName);
+    await cfg.update('vertex-ai.connection.VERTEX_AI_PROJECT_ID', config.projectId);
+    await cfg.update('vertex-ai.connection.VERTEX_AI_REGION', config.region);
+  }
+
+  private async clearConnectionConfiguration(connection: InferenceProviderConnection): Promise<void> {
+    const secretName = this.getSecretName(connection.id);
+    await this.secrets.delete(secretName);
+
+    const cfg = this.configurationAPI.getConfiguration(undefined, connection);
+    await cfg.update('vertex-ai.connection._type', undefined);
+    await cfg.update('vertex-ai.connection.token', undefined);
+    await cfg.update('vertex-ai.connection.VERTEX_AI_PROJECT_ID', undefined);
+    await cfg.update('vertex-ai.connection.VERTEX_AI_REGION', undefined);
+  }
+
   private async registerInferenceProviderConnection(
     id: string,
     config: VertexAiConnectionConfig,
@@ -288,12 +317,6 @@ export class VertexAi implements Disposable {
         keyFilename: credFile,
       },
     });
-
-    const clean = async (): Promise<void> => {
-      this.connections.get(id)?.dispose();
-      this.connections.delete(id);
-      await this.removeConnection(id);
-    };
 
     const status: ProviderConnectionStatus = 'unknown';
     let models: InferenceModel[];
@@ -318,7 +341,7 @@ export class VertexAi implements Disposable {
       }
     }
 
-    const connectionDisposable = this.provider.registerInferenceProviderConnection({
+    const connection: InferenceProviderConnection = {
       id,
       name: `${config.projectId} (${config.region})`,
       type: 'cloud',
@@ -330,7 +353,12 @@ export class VertexAi implements Disposable {
         return status;
       },
       lifecycle: {
-        delete: clean.bind(this),
+        delete: async (): Promise<void> => {
+          await this.clearConnectionConfiguration(connection);
+          this.connections.get(id)?.dispose();
+          this.connections.delete(id);
+          await this.removeConnection(id);
+        },
       },
       models,
       credentials(): Record<string, string> {
@@ -340,8 +368,18 @@ export class VertexAi implements Disposable {
           credentialsFile: config.credentialsFile,
         };
       },
-    });
+    };
+
+    const connectionDisposable = this.provider.registerInferenceProviderConnection(connection);
     this.connections.set(id, connectionDisposable);
+
+    try {
+      await this.setConnectionConfiguration(connection, config);
+    } catch (error) {
+      connectionDisposable.dispose();
+      this.connections.delete(id);
+      throw error;
+    }
   }
 
   /**
