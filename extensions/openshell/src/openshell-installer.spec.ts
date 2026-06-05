@@ -16,6 +16,8 @@
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
 
+import { join } from 'node:path';
+
 import type { Logger } from '@openkaiden/api';
 import { env } from '@openkaiden/api';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -83,7 +85,7 @@ describe('OpenshellInstaller', () => {
         '0.0.55',
         'linux',
         expect.any(String),
-        '/tmp/storage/bin',
+        join('/tmp/storage', 'bin'),
         expect.any(Map),
       );
       expect(logger.log).toHaveBeenCalledWith('OpenShell installation completed successfully');
@@ -100,7 +102,7 @@ describe('OpenshellInstaller', () => {
         '0.0.55',
         'darwin',
         expect.any(String),
-        '/tmp/storage/bin',
+        join('/tmp/storage', 'bin'),
         expect.any(Map),
       );
     });

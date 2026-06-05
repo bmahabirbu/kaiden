@@ -3,7 +3,7 @@
   "displayName": "OpenShell",
   "description": "Registers the openshell CLI binary for managing sandboxed workspaces.",
   "version": "0.2.0-next",
-  "openshellVersion": "0.0.55",
+  "openshellVersion": "0.0.57",
   "icon": "icon.png",
   "publisher": "kaiden",
   "license": "Apache-2.0",
@@ -27,7 +27,7 @@
     }
   },
   "scripts": {
-    "build": "vite build && tsx ./scripts/download.ts",
+    "build": "vite build && tsx ./scripts/download.ts --all",
     "download": "tsx ./scripts/download.ts",
     "download:all": "tsx ./scripts/download.ts --all",
     "test": "vitest run --coverage",
