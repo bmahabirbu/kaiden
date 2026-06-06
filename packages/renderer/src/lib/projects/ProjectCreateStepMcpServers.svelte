@@ -1,0 +1,139 @@
+<script lang="ts">
+import { faServer } from '@fortawesome/free-solid-svg-icons';
+import { Icon } from '@podman-desktop/ui-svelte/icons';
+
+export interface McpServerItem {
+  id: string;
+  name: string;
+  description?: string;
+  recommended?: boolean;
+}
+
+interface Props {
+  mcpItems: McpServerItem[];
+  selectedMcpIds: string[];
+}
+
+let { mcpItems, selectedMcpIds = $bindable() }: Props = $props();
+
+const recommendedItems = $derived(mcpItems.filter(m => m.recommended));
+const availableItems = $derived(mcpItems.filter(m => !m.recommended));
+
+function isSelected(id: string): boolean {
+  return selectedMcpIds.includes(id);
+}
+
+function toggle(id: string): void {
+  if (isSelected(id)) {
+    selectedMcpIds = selectedMcpIds.filter(s => s !== id);
+  } else {
+    selectedMcpIds = [...selectedMcpIds, id];
+  }
+}
+</script>
+
+<div class="flex flex-col gap-5">
+  <p class="text-sm text-[var(--pd-content-card-text)] opacity-70 leading-relaxed">
+    Based on your project analysis, we recommend the following MCP servers. Select the ones you want to enable for this
+    project.
+  </p>
+
+  {#if mcpItems.length === 0}
+    <div
+      class="rounded-xl border border-[var(--pd-content-card-border)] bg-[var(--pd-content-card-bg)] px-5 py-8 text-center text-sm text-[var(--pd-content-card-text)] opacity-50 italic">
+      No MCP servers available. Set up servers in the MCP section first.
+    </div>
+  {:else}
+    {#if recommendedItems.length > 0}
+      <div class="flex flex-col gap-2">
+        <span
+          class="text-[11px] font-semibold uppercase tracking-wider text-[var(--pd-table-header-text)]"
+          >Recommended</span>
+        {#each recommendedItems as item (item.id)}
+          <label
+            class="flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors cursor-pointer
+              {isSelected(item.id)
+              ? 'bg-[var(--pd-content-card-hover-inset-bg)] border-[var(--pd-button-primary-bg)]'
+              : 'bg-[var(--pd-content-card-bg)] border-[var(--pd-content-card-border)] hover:bg-[var(--pd-content-card-hover-inset-bg)]'}">
+            <input
+              type="checkbox"
+              class="sr-only"
+              checked={isSelected(item.id)}
+              onchange={(): void => toggle(item.id)}
+              aria-label={item.name} />
+            <span
+              class="flex-shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center pointer-events-none
+                {isSelected(item.id) ? 'bg-[var(--pd-button-primary-bg)] border-[var(--pd-button-primary-bg)]' : 'border-[var(--pd-content-card-border)]'}"
+              aria-hidden="true">
+              {#if isSelected(item.id)}
+                <svg class="w-2.5 h-2.5 text-white" viewBox="0 0 10 8" fill="none">
+                  <path d="M1 4l3 3 5-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              {/if}
+            </span>
+            <div
+              class="w-9 h-9 rounded-[9px] flex items-center justify-center flex-shrink-0 bg-[var(--pd-label-quaternary-bg)] text-[var(--pd-label-quaternary-text)]">
+              <Icon icon={faServer} class="text-base" />
+            </div>
+            <div class="flex-1 min-w-0 text-left">
+              <div class="text-sm font-medium text-[var(--pd-table-body-text-highlight)]">{item.name}</div>
+              {#if item.description}
+                <div class="text-xs text-[var(--pd-table-body-text)] mt-px">{item.description}</div>
+              {/if}
+            </div>
+            <span
+              class="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md flex-shrink-0
+                bg-[var(--pd-status-running)]/15 text-[var(--pd-status-running)]"
+              >Recommended</span>
+          </label>
+        {/each}
+      </div>
+    {/if}
+
+    {#if availableItems.length > 0}
+      <div class="flex flex-col gap-2">
+        <span
+          class="text-[11px] font-semibold uppercase tracking-wider text-[var(--pd-table-header-text)]"
+          >Available</span>
+        {#each availableItems as item (item.id)}
+          <label
+            class="flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors cursor-pointer
+              {isSelected(item.id)
+              ? 'bg-[var(--pd-content-card-hover-inset-bg)] border-[var(--pd-button-primary-bg)]'
+              : 'bg-[var(--pd-content-card-bg)] border-[var(--pd-content-card-border)] hover:bg-[var(--pd-content-card-hover-inset-bg)]'}">
+            <input
+              type="checkbox"
+              class="sr-only"
+              checked={isSelected(item.id)}
+              onchange={(): void => toggle(item.id)}
+              aria-label={item.name} />
+            <span
+              class="flex-shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center pointer-events-none
+                {isSelected(item.id) ? 'bg-[var(--pd-button-primary-bg)] border-[var(--pd-button-primary-bg)]' : 'border-[var(--pd-content-card-border)]'}"
+              aria-hidden="true">
+              {#if isSelected(item.id)}
+                <svg class="w-2.5 h-2.5 text-white" viewBox="0 0 10 8" fill="none">
+                  <path d="M1 4l3 3 5-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              {/if}
+            </span>
+            <div
+              class="w-9 h-9 rounded-[9px] flex items-center justify-center flex-shrink-0 bg-[var(--pd-label-quaternary-bg)] text-[var(--pd-label-quaternary-text)]">
+              <Icon icon={faServer} class="text-base" />
+            </div>
+            <div class="flex-1 min-w-0 text-left">
+              <div class="text-sm font-medium text-[var(--pd-table-body-text-highlight)]">{item.name}</div>
+              {#if item.description}
+                <div class="text-xs text-[var(--pd-table-body-text)] mt-px">{item.description}</div>
+              {/if}
+            </div>
+            <span
+              class="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md flex-shrink-0
+                bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-[var(--pd-content-card-text)] opacity-60"
+              >Optional</span>
+          </label>
+        {/each}
+      </div>
+    {/if}
+  {/if}
+</div>
