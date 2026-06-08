@@ -151,7 +151,7 @@ describe('downloadOpenshellBinaries', () => {
     );
   });
 
-  test('handles darwin-arm64 with subdir for sandbox', async () => {
+  test('handles darwin-arm64', async () => {
     stubFetch();
     const digests = new Map([
       ['openshell-aarch64-apple-darwin.tar.gz', 'abc123'],
@@ -164,13 +164,12 @@ describe('downloadOpenshellBinaries', () => {
       const cwd = opts.cwd ?? '';
       fileMap.set(normPath(path.join(cwd, 'openshell')), true);
       fileMap.set(normPath(path.join(cwd, 'openshell-gateway')), true);
-      fileMap.set(normPath(path.join(cwd, 'openshell-sandbox')), true);
       fileMap.set(normPath(path.join(cwd, 'openshell-driver-vm')), true);
     });
 
     await downloadOpenshellBinaries('0.0.55', 'darwin', 'arm64', '/output', digests);
 
-    expect(mkdir).toHaveBeenCalledWith(expect.stringContaining('linux-arm64'), { recursive: true });
+    expect(mkdir).toHaveBeenCalledWith('/output', { recursive: true });
   });
 });
 

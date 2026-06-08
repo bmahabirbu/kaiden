@@ -27,8 +27,8 @@ import { ExtensionContextSymbol } from '/@/inject/symbol';
 import { OpenshellInstaller } from '/@/openshell-installer';
 
 interface BinaryDiscoveryResult {
-  path: string;
-  version: string;
+  path?: string;
+  version?: string;
   installationSource: CliToolInstallationSource;
 }
 
@@ -46,16 +46,13 @@ export class OpenshellCliManager implements Disposable {
   async init(): Promise<void> {
     const packageJsonPath = join(this.extensionContext.extensionUri.fsPath, 'package.json');
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-    const installer = new OpenshellInstaller(packageJson.openshellVersion, this.extensionContext.storagePath);
 
     const cliResult = await this.discoverBinary('openshell', 'openshell.binary.path');
     const registration: BinaryDiscoveryResult = cliResult ?? {
-      path: extensionApi.env.isWindows ? 'openshell.exe' : 'openshell',
-      version: await installer.selectVersion(),
-      installationSource: 'external',
+      installationSource: 'extension',
     };
 
-    if (cliResult) {
+    if (cliResult?.path) {
       this.#registeredPath = cliResult.path;
     } else {
       console.warn('[openshell] CLI not found, registering installer-only entry');
@@ -67,21 +64,10 @@ export class OpenshellCliManager implements Disposable {
       'OpenShell CLI for managing sandboxed workspaces',
       registration,
     );
+    const installer = new OpenshellInstaller(cliTool, packageJson.openshellVersion, this.extensionContext.storagePath);
 
     this.extensionContext.subscriptions.push(cliTool.registerInstaller(installer));
     if (!cliResult) return;
-
-    const gatewayResult = await this.discoverGatewayBinary(cliResult.path);
-    if (gatewayResult) {
-      this.registerCliTool(
-        'openshell-gateway',
-        'OpenShell Gateway',
-        'OpenShell Gateway server for sandbox orchestration',
-        gatewayResult,
-      );
-    } else {
-      console.warn('[openshell-gateway] binary not found, skipping registration');
-    }
   }
 
   dispose(): void {}

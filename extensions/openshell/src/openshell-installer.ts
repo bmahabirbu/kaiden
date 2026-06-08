@@ -16,19 +16,22 @@
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
 
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { CliToolInstaller, Logger } from '@openkaiden/api';
+import type { CliTool, CliToolInstaller, Logger } from '@openkaiden/api';
 import * as extensionApi from '@openkaiden/api';
 
 import { downloadOpenshellBinaries, getRelease } from './openshell-download';
 
 export class OpenshellInstaller implements CliToolInstaller {
   private selectedVersion: string | undefined;
+  readonly #cliTool: CliTool;
   readonly #openshellVersion: string;
   readonly #storagePath: string;
 
-  constructor(openshellVersion: string, storagePath: string) {
+  constructor(cliTool: extensionApi.CliTool, openshellVersion: string, storagePath: string) {
+    this.#cliTool = cliTool;
     this.#openshellVersion = openshellVersion;
     this.#storagePath = storagePath;
   }
@@ -56,6 +59,10 @@ export class OpenshellInstaller implements CliToolInstaller {
       const release = await getRelease(version);
       await downloadOpenshellBinaries(release.version, platform, arch, binDir, release.digests);
       logger.log('OpenShell installation completed successfully');
+      this.#cliTool.updateVersion({
+        version: release.version,
+        path: join(binDir, extensionApi.env.isWindows ? 'openshell.exe' : 'openshell'),
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error(`OpenShell installation failed: ${message}`);
@@ -67,12 +74,9 @@ export class OpenshellInstaller implements CliToolInstaller {
     logger.log('Uninstalling OpenShell...');
 
     try {
-      if (extensionApi.env.isMac) {
-        await extensionApi.process.exec('brew', ['uninstall', 'openshell'], { logger });
-      } else if (extensionApi.env.isLinux) {
-        await this.uninstallLinux(logger);
-      } else {
-        throw new Error('OpenShell uninstall is not supported on this platform');
+      if (extensionApi.env.isMac || extensionApi.env.isLinux) {
+        const binDir = join(this.#storagePath, 'bin');
+        await rm(binDir, { recursive: true, force: true });
       }
       logger.log('OpenShell uninstalled successfully');
     } catch (error: unknown) {
@@ -85,34 +89,6 @@ export class OpenshellInstaller implements CliToolInstaller {
   private async fetchPinnedVersion(): Promise<string> {
     const release = await getRelease(this.#openshellVersion);
     return release.version;
-  }
-
-  private async uninstallLinux(logger: Logger): Promise<void> {
-    const hasDnf = await this.hasCommand('dnf');
-    if (hasDnf) {
-      await extensionApi.process.exec('dnf', ['remove', '-y', 'openshell', 'openshell-gateway'], {
-        logger,
-        isAdmin: true,
-      });
-      return;
-    }
-
-    const hasApt = await this.hasCommand('apt-get');
-    if (hasApt) {
-      await extensionApi.process.exec('apt-get', ['remove', '-y', 'openshell', 'openshell-gateway'], {
-        logger,
-        isAdmin: true,
-      });
-      return;
-    }
-
-    const hasRpm = await this.hasCommand('rpm');
-    if (hasRpm) {
-      await extensionApi.process.exec('rpm', ['-e', 'openshell', 'openshell-gateway'], { logger, isAdmin: true });
-      return;
-    }
-
-    throw new Error('no supported package manager found (dnf, apt-get, rpm)');
   }
 
   private async hasCommand(cmd: string): Promise<boolean> {

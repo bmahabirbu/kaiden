@@ -18,7 +18,7 @@
 
 import { join } from 'node:path';
 
-import type { Logger } from '@openkaiden/api';
+import type { CliTool, Logger } from '@openkaiden/api';
 import { env } from '@openkaiden/api';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
@@ -33,6 +33,10 @@ const logger: Logger = {
   warn: vi.fn(),
 };
 
+const cliTool: CliTool = {
+  updateVersion: vi.fn(),
+} as unknown as CliTool;
+
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(getRelease).mockResolvedValue({
@@ -45,7 +49,7 @@ beforeEach(() => {
 describe('OpenshellInstaller', () => {
   describe('selectVersion', () => {
     test('returns pinned version from release', async () => {
-      const installer = new OpenshellInstaller('0.0.55', '/tmp/storage');
+      const installer = new OpenshellInstaller(cliTool, '0.0.55', '/tmp/storage');
 
       const version = await installer.selectVersion();
 
@@ -54,7 +58,7 @@ describe('OpenshellInstaller', () => {
     });
 
     test('caches version on subsequent calls', async () => {
-      const installer = new OpenshellInstaller('0.0.55', '/tmp/storage');
+      const installer = new OpenshellInstaller(cliTool, '0.0.55', '/tmp/storage');
 
       await installer.selectVersion();
       await installer.selectVersion();
@@ -63,7 +67,7 @@ describe('OpenshellInstaller', () => {
     });
 
     test('re-fetches when latest is true', async () => {
-      const installer = new OpenshellInstaller('0.0.55', '/tmp/storage');
+      const installer = new OpenshellInstaller(cliTool, '0.0.55', '/tmp/storage');
 
       await installer.selectVersion();
       await installer.selectVersion(true);
@@ -77,7 +81,7 @@ describe('OpenshellInstaller', () => {
       vi.mocked(env).isMac = false;
       vi.mocked(env).isLinux = true;
 
-      const installer = new OpenshellInstaller('0.0.55', '/tmp/storage');
+      const installer = new OpenshellInstaller(cliTool, '0.0.55', '/tmp/storage');
       await installer.doInstall(logger);
 
       expect(getRelease).toHaveBeenCalledWith('0.0.55');
@@ -89,13 +93,17 @@ describe('OpenshellInstaller', () => {
         expect.any(Map),
       );
       expect(logger.log).toHaveBeenCalledWith('OpenShell installation completed successfully');
+      expect(cliTool.updateVersion).toHaveBeenCalledWith({
+        version: '0.0.55',
+        path: join('/tmp/storage', 'bin', 'openshell'),
+      });
     });
 
     test('downloads binaries for mac', async () => {
       vi.mocked(env).isMac = true;
       vi.mocked(env).isLinux = false;
 
-      const installer = new OpenshellInstaller('0.0.55', '/tmp/storage');
+      const installer = new OpenshellInstaller(cliTool, '0.0.55', '/tmp/storage');
       await installer.doInstall(logger);
 
       expect(downloadOpenshellBinaries).toHaveBeenCalledWith(
@@ -105,13 +113,17 @@ describe('OpenshellInstaller', () => {
         join('/tmp/storage', 'bin'),
         expect.any(Map),
       );
+      expect(cliTool.updateVersion).toHaveBeenCalledWith({
+        version: '0.0.55',
+        path: join('/tmp/storage', 'bin', 'openshell'),
+      });
     });
 
     test('uses selected version when available', async () => {
       vi.mocked(env).isMac = false;
       vi.mocked(env).isLinux = true;
 
-      const installer = new OpenshellInstaller('0.0.55', '/tmp/storage');
+      const installer = new OpenshellInstaller(cliTool, '0.0.55', '/tmp/storage');
       await installer.selectVersion();
       await installer.doInstall(logger);
 
@@ -122,7 +134,7 @@ describe('OpenshellInstaller', () => {
       vi.mocked(env).isMac = false;
       vi.mocked(env).isLinux = false;
 
-      const installer = new OpenshellInstaller('0.0.55', '/tmp/storage');
+      const installer = new OpenshellInstaller(cliTool, '0.0.55', '/tmp/storage');
       await expect(installer.doInstall(logger)).rejects.toThrow('not supported on this platform');
     });
 
@@ -131,7 +143,7 @@ describe('OpenshellInstaller', () => {
       vi.mocked(env).isLinux = true;
       vi.mocked(downloadOpenshellBinaries).mockRejectedValue(new Error('network error'));
 
-      const installer = new OpenshellInstaller('0.0.55', '/tmp/storage');
+      const installer = new OpenshellInstaller(cliTool, '0.0.55', '/tmp/storage');
       await expect(installer.doInstall(logger)).rejects.toThrow('network error');
       expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('network error'));
     });

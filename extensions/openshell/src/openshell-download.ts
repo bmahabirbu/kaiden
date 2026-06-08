@@ -48,12 +48,6 @@ const ASSET_MAP: Record<string, AssetSpec[]> = {
       binaryName: 'openshell-gateway',
     },
     {
-      component: 'openshell-sandbox',
-      assetName: 'openshell-sandbox-aarch64-unknown-linux-gnu.tar.gz',
-      binaryName: 'openshell-sandbox',
-      subdir: 'linux-arm64',
-    },
-    {
       component: 'openshell-driver-vm',
       assetName: 'openshell-driver-vm-aarch64-apple-darwin.tar.gz',
       binaryName: 'openshell-driver-vm',
