@@ -50,6 +50,7 @@ export interface CreateSandboxOptions {
   memory?: string;
   providers?: string[];
   labels?: Record<string, string>;
+  uploads?: Array<{ local: string; remote: string }>;
   command?: string[];
 }
 

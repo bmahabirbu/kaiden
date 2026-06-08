@@ -139,6 +139,11 @@ export class OpenshellCli {
         args.push('--label', `${key}=${value}`);
       }
     }
+    if (options.uploads) {
+      for (const upload of options.uploads) {
+        args.push('--upload', `${upload.local}:${upload.remote}`);
+      }
+    }
     if (options.command?.length) {
       args.push('--', ...options.command);
     }

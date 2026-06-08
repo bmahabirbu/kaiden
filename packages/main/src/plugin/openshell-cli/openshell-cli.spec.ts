@@ -187,6 +187,62 @@ describe('createSandbox', () => {
     ]);
   });
 
+  test('includes single --upload flag when provided', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
+
+    await openshellCli.createSandbox({
+      uploads: [{ local: '.agents/skills', remote: '.agents/skills' }],
+    });
+
+    expect(exec.exec).toHaveBeenCalledWith(OPENSHELL_CLI_PATH, [
+      'sandbox',
+      'create',
+      '--upload',
+      '.agents/skills:.agents/skills',
+    ]);
+  });
+
+  test('includes multiple --upload flags when provided', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
+
+    await openshellCli.createSandbox({
+      uploads: [
+        { local: '.agents/skills/generate-sandbox-policy', remote: '.agents/skills/generate-sandbox-policy' },
+        { local: '.agents/skills/openshell-cli', remote: '.agents/skills/openshell-cli' },
+      ],
+    });
+
+    expect(exec.exec).toHaveBeenCalledWith(OPENSHELL_CLI_PATH, [
+      'sandbox',
+      'create',
+      '--upload',
+      '.agents/skills/generate-sandbox-policy:.agents/skills/generate-sandbox-policy',
+      '--upload',
+      '.agents/skills/openshell-cli:.agents/skills/openshell-cli',
+    ]);
+  });
+
+  test('places --upload flags before -- command separator', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
+
+    await openshellCli.createSandbox({
+      uploads: [{ local: '.agents/skills', remote: '.agents/skills' }],
+      command: ['bash'],
+    });
+
+    expect(exec.exec).toHaveBeenCalledWith(OPENSHELL_CLI_PATH, [
+      'sandbox',
+      'create',
+      '--upload',
+      '.agents/skills:.agents/skills',
+      '--',
+      'bash',
+    ]);
+  });
+
   test('appends command after -- separator', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
