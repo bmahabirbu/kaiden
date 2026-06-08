@@ -1,5 +1,6 @@
 <script lang="ts">
 import { faServer } from '@fortawesome/free-solid-svg-icons';
+import { Checkbox } from '@podman-desktop/ui-svelte';
 import { Icon } from '@podman-desktop/ui-svelte/icons';
 
 export interface McpServerItem {
@@ -50,27 +51,16 @@ function toggle(id: string): void {
           class="text-[11px] font-semibold uppercase tracking-wider text-[var(--pd-table-header-text)]"
           >Recommended</span>
         {#each recommendedItems as item (item.id)}
-          <label
+          <button
             class="flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors cursor-pointer
               {isSelected(item.id)
               ? 'bg-[var(--pd-content-card-hover-inset-bg)] border-[var(--pd-button-primary-bg)]'
-              : 'bg-[var(--pd-content-card-bg)] border-[var(--pd-content-card-border)] hover:bg-[var(--pd-content-card-hover-inset-bg)]'}">
-            <input
-              type="checkbox"
-              class="sr-only"
-              checked={isSelected(item.id)}
-              onchange={(): void => toggle(item.id)}
-              aria-label={item.name} />
-            <span
-              class="flex-shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center pointer-events-none
-                {isSelected(item.id) ? 'bg-[var(--pd-button-primary-bg)] border-[var(--pd-button-primary-bg)]' : 'border-[var(--pd-content-card-border)]'}"
-              aria-hidden="true">
-              {#if isSelected(item.id)}
-                <svg class="w-2.5 h-2.5 text-white" viewBox="0 0 10 8" fill="none">
-                  <path d="M1 4l3 3 5-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              {/if}
-            </span>
+              : 'bg-[var(--pd-content-card-bg)] border-[var(--pd-content-card-border)] hover:bg-[var(--pd-content-card-hover-inset-bg)]'}"
+            onclick={(): void => toggle(item.id)}
+            aria-label={item.name}>
+            <div class="flex-shrink-0" onclick={(e): void => e.stopPropagation()}>
+              <Checkbox checked={isSelected(item.id)} title={item.name} onclick={(): void => toggle(item.id)} />
+            </div>
             <div
               class="w-9 h-9 rounded-[9px] flex items-center justify-center flex-shrink-0 bg-[var(--pd-label-quaternary-bg)] text-[var(--pd-label-quaternary-text)]">
               <Icon icon={faServer} class="text-base" />
@@ -85,7 +75,7 @@ function toggle(id: string): void {
               class="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md flex-shrink-0
                 bg-[var(--pd-status-running)]/15 text-[var(--pd-status-running)]"
               >Recommended</span>
-          </label>
+          </button>
         {/each}
       </div>
     {/if}
@@ -96,27 +86,16 @@ function toggle(id: string): void {
           class="text-[11px] font-semibold uppercase tracking-wider text-[var(--pd-table-header-text)]"
           >Available</span>
         {#each availableItems as item (item.id)}
-          <label
+          <button
             class="flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors cursor-pointer
               {isSelected(item.id)
               ? 'bg-[var(--pd-content-card-hover-inset-bg)] border-[var(--pd-button-primary-bg)]'
-              : 'bg-[var(--pd-content-card-bg)] border-[var(--pd-content-card-border)] hover:bg-[var(--pd-content-card-hover-inset-bg)]'}">
-            <input
-              type="checkbox"
-              class="sr-only"
-              checked={isSelected(item.id)}
-              onchange={(): void => toggle(item.id)}
-              aria-label={item.name} />
-            <span
-              class="flex-shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center pointer-events-none
-                {isSelected(item.id) ? 'bg-[var(--pd-button-primary-bg)] border-[var(--pd-button-primary-bg)]' : 'border-[var(--pd-content-card-border)]'}"
-              aria-hidden="true">
-              {#if isSelected(item.id)}
-                <svg class="w-2.5 h-2.5 text-white" viewBox="0 0 10 8" fill="none">
-                  <path d="M1 4l3 3 5-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              {/if}
-            </span>
+              : 'bg-[var(--pd-content-card-bg)] border-[var(--pd-content-card-border)] hover:bg-[var(--pd-content-card-hover-inset-bg)]'}"
+            onclick={(): void => toggle(item.id)}
+            aria-label={item.name}>
+            <div class="flex-shrink-0" onclick={(e): void => e.stopPropagation()}>
+              <Checkbox checked={isSelected(item.id)} title={item.name} onclick={(): void => toggle(item.id)} />
+            </div>
             <div
               class="w-9 h-9 rounded-[9px] flex items-center justify-center flex-shrink-0 bg-[var(--pd-label-quaternary-bg)] text-[var(--pd-label-quaternary-text)]">
               <Icon icon={faServer} class="text-base" />
@@ -131,7 +110,7 @@ function toggle(id: string): void {
               class="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md flex-shrink-0
                 bg-[var(--pd-content-card-bg)] border border-[var(--pd-content-card-border)] text-[var(--pd-content-card-text)] opacity-60"
               >Optional</span>
-          </label>
+          </button>
         {/each}
       </div>
     {/if}

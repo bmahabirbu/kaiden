@@ -10,6 +10,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { Icon } from '@podman-desktop/ui-svelte/icons';
 
+import { mcpRemoteServerInfos } from '/@/stores/mcp-remote-servers';
 import type { WorkspaceProjectInfo } from '/@api/workspace-project-info';
 
 interface Props {
@@ -19,6 +20,10 @@ interface Props {
 let { project }: Props = $props();
 
 const networkLabel = $derived(project.network.mode === 'allow' ? 'Unrestricted' : 'Deny All');
+
+function mcpServerName(id: string): string {
+  return $mcpRemoteServerInfos.find(s => s.id === id)?.name ?? id;
+}
 
 const filesystemBadge = $derived.by((): string => {
   const mounts = project.filesystem.mounts;
@@ -135,7 +140,7 @@ const filesystemBadge = $derived.by((): string => {
                   class="w-7 h-7 rounded-md flex items-center justify-center shrink-0 bg-[var(--pd-link)]/15 text-[var(--pd-link)]">
                   <Icon icon={faServer} size="sm" />
                 </div>
-                <span class="flex-1 min-w-0 text-[13px] font-medium text-[var(--pd-content-card-header-text)] truncate">{server}</span>
+                <span class="flex-1 min-w-0 text-[13px] font-medium text-[var(--pd-content-card-header-text)] truncate">{mcpServerName(server)}</span>
               </div>
             {/each}
           {:else}

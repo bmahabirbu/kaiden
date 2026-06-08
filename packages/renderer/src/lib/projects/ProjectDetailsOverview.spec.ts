@@ -21,6 +21,8 @@ import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/svelte';
 import { beforeEach, expect, test, vi } from 'vitest';
 
+import { mcpRemoteServerInfos } from '/@/stores/mcp-remote-servers';
+import type { MCPRemoteServerInfo } from '/@api/mcp/mcp-server-info';
 import type { WorkspaceProjectInfo } from '/@api/workspace-project-info';
 
 import ProjectDetailsOverview from './ProjectDetailsOverview.svelte';
@@ -39,6 +41,7 @@ const sampleProject: WorkspaceProjectInfo = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mcpRemoteServerInfos.set([{ id: 'mcp-server-1', name: 'My MCP Server' } as MCPRemoteServerInfo]);
 });
 
 test('Expect project name is displayed in info card', () => {
@@ -60,7 +63,14 @@ test('Expect skills are listed in skills card', () => {
   expect(screen.getByText('testing')).toBeInTheDocument();
 });
 
-test('Expect MCP servers are listed', () => {
+test('Expect MCP servers are listed by name', () => {
+  render(ProjectDetailsOverview, { project: sampleProject });
+
+  expect(screen.getByText('My MCP Server')).toBeInTheDocument();
+});
+
+test('Expect MCP server falls back to id when name is not found', () => {
+  mcpRemoteServerInfos.set([]);
   render(ProjectDetailsOverview, { project: sampleProject });
 
   expect(screen.getByText('mcp-server-1')).toBeInTheDocument();
