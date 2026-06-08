@@ -90,13 +90,4 @@ export class OpenshellInstaller implements CliToolInstaller {
     const release = await getRelease(this.#openshellVersion);
     return release.version;
   }
-
-  private async hasCommand(cmd: string): Promise<boolean> {
-    try {
-      await extensionApi.process.exec('which', [cmd]);
-      return true;
-    } catch {
-      return false;
-    }
-  }
 }

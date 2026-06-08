@@ -17,7 +17,7 @@
  ***********************************************************************/
 
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 import type { CliToolInstallationSource, Disposable, ExtensionContext } from '@openkaiden/api';
 import * as extensionApi from '@openkaiden/api';
@@ -67,7 +67,6 @@ export class OpenshellCliManager implements Disposable {
     const installer = new OpenshellInstaller(cliTool, packageJson.openshellVersion, this.extensionContext.storagePath);
 
     this.extensionContext.subscriptions.push(cliTool.registerInstaller(installer));
-    if (!cliResult) return;
   }
 
   dispose(): void {}
@@ -120,25 +119,6 @@ export class OpenshellCliManager implements Disposable {
     if (systemResult) {
       console.log(`[${binaryBaseName}] binary found in system PATH`);
       return { path: systemResult.path, version: systemResult.version, installationSource: 'external' };
-    }
-
-    return undefined;
-  }
-
-  private async discoverGatewayBinary(cliPath: string): Promise<BinaryDiscoveryResult | undefined> {
-    const result = await this.discoverBinary('openshell-gateway', 'openshell.gateway.binary.path');
-    if (result) {
-      return result;
-    }
-
-    const gatewayName = extensionApi.env.isWindows ? 'openshell-gateway.exe' : 'openshell-gateway';
-    const siblingPath = join(dirname(cliPath), gatewayName);
-    if (existsSync(siblingPath)) {
-      const version = await this.getVersion(siblingPath);
-      if (version) {
-        console.log('[openshell-gateway] binary found alongside openshell CLI');
-        return { path: siblingPath, version, installationSource: 'external' };
-      }
     }
 
     return undefined;
