@@ -40,6 +40,7 @@ const sampleProject: WorkspaceProjectInfo = {
 };
 
 beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.resetAllMocks();
   mcpRemoteServerInfos.set([{ id: 'mcp-server-1', name: 'My MCP Server' } as MCPRemoteServerInfo]);
 });

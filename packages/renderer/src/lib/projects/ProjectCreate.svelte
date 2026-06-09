@@ -68,6 +68,7 @@ let mcpItems: McpServerItem[] = $derived(
   })),
 );
 let selectedMcpIds: string[] = $state([]);
+let hasInitializedMcpSelection = $state(false);
 
 let isGitSource = $derived(gitUrl.trim() !== '' && sourcePath.trim() === '');
 let gitRepoDisplay = $derived(formatGitUrl(gitUrl));
@@ -85,9 +86,9 @@ function goBack(): void {
 }
 
 function preselectRecommendedMcpServers(): void {
-  if (selectedMcpIds.length === 0 && mcpItems.length > 0) {
-    selectedMcpIds = mcpItems.filter(m => m.recommended).map(m => m.id);
-  }
+  if (hasInitializedMcpSelection || mcpItems.length === 0) return;
+  selectedMcpIds = mcpItems.filter(m => m.recommended).map(m => m.id);
+  hasInitializedMcpSelection = true;
 }
 
 function goNext(): void {
