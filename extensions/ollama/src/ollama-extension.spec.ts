@@ -22,7 +22,7 @@ import { networkInterfaces } from 'node:os';
 import type { ExtensionContext, Provider } from '@openkaiden/api';
 import { env, provider } from '@openkaiden/api';
 import { http, HttpResponse } from 'msw';
-import { setupServer, type SetupServerApi } from 'msw/node';
+import { type SetupServer, setupServer } from 'msw/node';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { OllamaExtension } from './ollama-extension';
@@ -41,7 +41,7 @@ describe('OllamaExtension', () => {
   let extensionContext: ExtensionContext;
   let ollamaProvider: Provider;
   let extension: TestOllamaExtension;
-  let server: SetupServerApi | undefined = undefined;
+  let server: SetupServer | undefined = undefined;
 
   beforeEach(() => {
     ollamaProvider = {

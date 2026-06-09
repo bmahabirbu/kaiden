@@ -18,7 +18,7 @@
 
 import type { Configuration, ProxySettings } from '@openkaiden/api';
 import { delay, http, HttpResponse } from 'msw';
-import { setupServer, type SetupServerApi } from 'msw/node';
+import { type SetupServer, setupServer } from 'msw/node';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import type { Certificates } from '/@/plugin/certificates.js';
@@ -41,7 +41,7 @@ const apiSender: ApiSenderType = {
   receive: vi.fn(),
 };
 
-let server: SetupServerApi | undefined = undefined;
+let server: SetupServer | undefined = undefined;
 
 // unlisted field is not present (assuming it should be listed then)
 const fakePublishedExtension1 = {
