@@ -7,7 +7,7 @@
     "rootDir": "src",
     "outDir": "dist",
     "target": "esnext",
-    "moduleResolution": "Node",
+    "moduleResolution": "Bundler",
     "allowSyntheticDefaultImports": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,

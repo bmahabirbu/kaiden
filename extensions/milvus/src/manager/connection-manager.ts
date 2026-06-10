@@ -29,7 +29,7 @@ import {
   RagProviderConnectionFactory,
 } from '@openkaiden/api';
 import { ContainerExtensionAPI } from '@openkaiden/container-extension-api';
-import { sanitizeContainerName } from '@openkaiden/container-extension-api/src/container-name';
+import { sanitizeContainerName } from '@openkaiden/container-extension-api/container-name';
 // eslint-disable-next-line import/no-extraneous-dependencies
 import Dockerode from 'dockerode';
 import { inject, injectable } from 'inversify';

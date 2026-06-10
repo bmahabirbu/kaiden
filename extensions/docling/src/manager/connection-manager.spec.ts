@@ -17,7 +17,7 @@
  ***********************************************************************/
 
 import { openAsBlob } from 'node:fs';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type {
@@ -60,6 +60,7 @@ beforeEach(async () => {
 
   (extensionContextMock as { subscriptions: Disposable[] }).subscriptions = [];
 
+  vi.mocked(access).mockRejectedValue(new Error('ENOENT'));
   vi.mocked(mkdir).mockResolvedValue(undefined);
   vi.mocked(rm).mockResolvedValue(undefined);
   vi.mocked(writeFile).mockResolvedValue(undefined);

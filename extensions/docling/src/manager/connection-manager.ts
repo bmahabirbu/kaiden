@@ -32,7 +32,7 @@ import type {
 } from '@openkaiden/api';
 import { Uri } from '@openkaiden/api';
 import type { ContainerExtensionAPI } from '@openkaiden/container-extension-api';
-import { sanitizeContainerName } from '@openkaiden/container-extension-api/src/container-name';
+import { sanitizeContainerName } from '@openkaiden/container-extension-api/container-name';
 // eslint-disable-next-line import/no-extraneous-dependencies
 import type Dockerode from 'dockerode';
 import { inject, injectable } from 'inversify';
