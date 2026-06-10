@@ -100,6 +100,7 @@ beforeEach(() => {
   };
   Object.defineProperty(window, 'dispatchEvent', { value: dispatchEventMock });
   (window.getConfigurationValue as unknown) = vi.fn();
+  (window.listOpenshellSandboxes as unknown) = vi.fn().mockResolvedValue([]);
   vi.mocked(window.inferenceGetChats).mockResolvedValue([]);
   vi.mocked(kubernetesNoCurrentContext).kubernetesNoCurrentContext = writable(false);
 });

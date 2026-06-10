@@ -50,7 +50,7 @@ export const openshellSandboxesEventStore = new EventStore<GatewaySandboxes[]>(
   windowListeners,
   listOpenshellSandboxes,
 );
-openshellSandboxesEventStore.setup();
+export const openshellSandboxesEventStoreInfo = openshellSandboxesEventStore.setup();
 
 export interface SandboxInfoWithGateway extends SandboxInfo {
   gatewayName: string;

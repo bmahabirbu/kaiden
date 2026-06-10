@@ -29,6 +29,7 @@ import AgentWorkspaceList from './AgentWorkspaceList.svelte';
 beforeEach(() => {
   vi.resetAllMocks();
   agentWorkspaces.set([]);
+  (window as unknown as Record<string, unknown>).listOpenshellSandboxes = vi.fn().mockResolvedValue([]);
 });
 
 test('Expect empty screen when no workspaces', () => {

@@ -10,6 +10,7 @@ import {
   TableDurationColumn,
   TableRow,
 } from '@podman-desktop/ui-svelte';
+import { onMount } from 'svelte';
 
 import NoLogIcon from '/@/lib/ui/NoLogIcon.svelte';
 import { handleNavigation } from '/@/navigation';
@@ -17,6 +18,7 @@ import { agentWorkspaces, type AgentWorkspaceSummaryUI } from '/@/stores/agent-w
 import {
   allOpenshellSandboxes,
   filteredOpenshellSandboxes,
+  openshellSandboxesEventStoreInfo,
   type SandboxInfoWithGateway,
   searchPattern as sandboxSearchPattern,
 } from '/@/stores/openshell-sandboxes';
@@ -42,6 +44,14 @@ let searchTerm = $state('');
 // Sync searchTerm with sandbox store's searchPattern
 $effect(() => {
   sandboxSearchPattern.set(searchTerm);
+});
+
+onMount(async () => {
+  try {
+    await openshellSandboxesEventStoreInfo.fetch();
+  } catch (error: unknown) {
+    console.error('Failed to fetch OpenShell sandboxes:', error);
+  }
 });
 
 function navigateToCreate(): void {
