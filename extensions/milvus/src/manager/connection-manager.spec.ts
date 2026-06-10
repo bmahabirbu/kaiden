@@ -16,7 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { mkdir, rm } from 'node:fs/promises';
+import { access, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { Extension, ExtensionContext, LifecycleContext, Provider } from '@openkaiden/api';
@@ -66,6 +66,7 @@ const extensionContextMock = {
 beforeEach(async () => {
   vi.resetAllMocks();
 
+  vi.mocked(access).mockRejectedValue(new Error('ENOENT'));
   vi.mocked(mkdir).mockResolvedValue(undefined);
   vi.mocked(rm).mockResolvedValue(undefined);
 
@@ -338,6 +339,41 @@ describe('ConnectionManager', () => {
         Labels: expect.objectContaining({
           'ai.openkaiden.milvus.name': 'my-milvus-db',
         }),
+      }),
+    );
+  });
+
+  test('factory should deduplicate when container name already exists', async () => {
+    const params = {
+      'milvus.name': 'my-milvus',
+    };
+
+    vi.mocked(Dockerode.prototype.listContainers).mockResolvedValue([
+      { Names: ['/milvus-my-milvus'] },
+    ] as unknown as Dockerode.ContainerInfo[]);
+    vi.mocked(Dockerode.prototype.getImage).mockReturnValue(new Dockerode.Image({}, 'image123'));
+    await connectionManager.factory(params);
+
+    expect(Dockerode.prototype.createContainer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'milvus-my-milvus-2',
+      }),
+    );
+  });
+
+  test('factory should deduplicate when storage directory already exists', async () => {
+    const params = {
+      'milvus.name': 'my-milvus',
+    };
+
+    vi.mocked(access).mockResolvedValueOnce(undefined);
+    vi.mocked(access).mockRejectedValueOnce(new Error('ENOENT'));
+    vi.mocked(Dockerode.prototype.getImage).mockReturnValue(new Dockerode.Image({}, 'image123'));
+    await connectionManager.factory(params);
+
+    expect(Dockerode.prototype.createContainer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'milvus-my-milvus-2',
       }),
     );
   });

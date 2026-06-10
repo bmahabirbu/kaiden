@@ -32,6 +32,7 @@ import type {
 } from '@openkaiden/api';
 import { Uri } from '@openkaiden/api';
 import type { ContainerExtensionAPI } from '@openkaiden/container-extension-api';
+import { sanitizeContainerName } from '@openkaiden/container-extension-api/container-name';
 // eslint-disable-next-line import/no-extraneous-dependencies
 import type Dockerode from 'dockerode';
 import { inject, injectable } from 'inversify';
@@ -272,7 +273,8 @@ export class ConnectionManager {
 
     logger?.log(`Connection name: ${name}`);
 
-    const workspacePath = join(this.extensionContext.storagePath, name);
+    const safeName = sanitizeContainerName(name);
+    const workspacePath = join(this.extensionContext.storagePath, safeName);
     await mkdir(workspacePath, { recursive: true });
 
     const endpoint = this.containerExtensionAPI.getEndpoints()[0];
@@ -287,13 +289,13 @@ export class ConnectionManager {
     }
 
     const port = getRandomPort();
-    const containerName = `docling-${name}`;
+    const containerName = `docling-${safeName}`;
 
     logger?.log(`Starting Docling container ${containerName} on port ${port}...`);
     const container = await dockerode.createContainer({
       name: containerName,
       Labels: {
-        [DOCLING_NAME_LABEL]: name,
+        [DOCLING_NAME_LABEL]: safeName,
         [DOCLING_PORT_LABEL]: `${port}`,
       },
       Image: DOCLING_IMAGE,
@@ -330,7 +332,7 @@ export class ConnectionManager {
     await this.registerConnection({
       path: endpoint.path,
       containerId: container.id,
-      name,
+      name: safeName,
       port,
       running: true,
     });

@@ -16,7 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 import { randomInt } from 'node:crypto';
-import { mkdir, rm } from 'node:fs/promises';
+import { access, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import {
@@ -29,6 +29,7 @@ import {
   RagProviderConnectionFactory,
 } from '@openkaiden/api';
 import { ContainerExtensionAPI } from '@openkaiden/container-extension-api';
+import { sanitizeContainerName } from '@openkaiden/container-extension-api/container-name';
 // eslint-disable-next-line import/no-extraneous-dependencies
 import Dockerode from 'dockerode';
 import { inject, injectable } from 'inversify';
@@ -227,25 +228,40 @@ export class ConnectionManager implements Disposable {
 
     logger?.log(`Connection name: ${name}`);
 
-    const safeName = name.replace(/[^a-zA-Z0-9_.-]/g, '-').replace(/^[^a-zA-Z0-9]/, 'x');
+    let safeName = sanitizeContainerName(name);
 
-    // Create storage folder for this Milvus instance
-    const storagePath = join(this.extensionContext.storagePath, safeName);
-    logger?.log(`Storage path: ${storagePath}`);
-
-    // Ensure storage directory exists
-    await mkdir(storagePath, { recursive: true });
-    const { etcdConfigFile, userConfigFile } = await this.configHelper.createConfigFile(storagePath);
-    const containerName = `milvus-${safeName}`;
-
-    logger?.log('Using podman CLI to create container...');
-
-    // Check if podman is available
     const containerConnection = this.containerExtensionAPI.getEndpoints()[0];
     if (!containerConnection) {
       throw new Error('No container endpoint available');
     }
     const dockerode = containerConnection.dockerode;
+
+    // Ensure both container name and storage directory are unique
+    const existingContainers = await dockerode.listContainers({ all: true });
+    const existingNames = new Set(existingContainers.flatMap(c => c.Names ?? []));
+    const storageRoot = this.extensionContext.storagePath;
+    const baseSafeName = safeName;
+    let suffix = 1;
+    while (true) {
+      const storageExists = await access(join(storageRoot, safeName)).then(
+        () => true,
+        () => false,
+      );
+      if (!existingNames.has(`/milvus-${safeName}`) && !storageExists) {
+        break;
+      }
+      suffix++;
+      safeName = `${baseSafeName}-${suffix}`;
+    }
+
+    const storagePath = join(storageRoot, safeName);
+    logger?.log(`Storage path: ${storagePath}`);
+
+    await mkdir(storagePath, { recursive: true });
+    const { etcdConfigFile, userConfigFile } = await this.configHelper.createConfigFile(storagePath);
+    const containerName = `milvus-${safeName}`;
+
+    logger?.log('Using podman CLI to create container...');
     const isImageAvailable = await this.checkMilvusImage(dockerode, logger);
     if (!isImageAvailable) {
       await this.pullMilvusImage(dockerode, logger);

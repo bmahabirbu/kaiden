@@ -235,6 +235,21 @@ describe('ConnectionManager', () => {
       );
     });
 
+    test('should sanitize name with spaces for container naming', async () => {
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);
+
+      await connectionManager.factory({ 'docling.name': 'my chunker' });
+
+      expect(dockerodeMock.createContainer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'docling-my-chunker',
+          Labels: expect.objectContaining({
+            'ai.openkaiden.docling.name': 'my-chunker',
+          }),
+        }),
+      );
+    });
+
     test('should pull image if not available', async () => {
       vi.mocked(imageMock.inspect).mockRejectedValue(new Error('Not found'));
       vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);

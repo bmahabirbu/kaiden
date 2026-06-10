@@ -9,6 +9,10 @@
   },
   "license": "Apache-2.0",
   "types": "./src/container-extension-api.d.ts",
+  "exports": {
+    ".": "./src/container-extension-api.d.ts",
+    "./container-name": "./src/container-name.ts"
+  },
   "files": [
     "src"
   ],
