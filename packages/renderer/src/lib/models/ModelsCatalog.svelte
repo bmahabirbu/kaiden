@@ -54,7 +54,13 @@ const categories: CategoryInfo[] = [
   },
 ];
 
-let activeCategory: Category = $state('cloud');
+interface Props {
+  initialCategory?: Category;
+}
+
+let { initialCategory = 'cloud' }: Props = $props();
+
+let activeCategory: Category = $state(initialCategory);
 let searchTerm = $state('');
 
 let cloudModels: CatalogModelInfo[] = $derived($cloudCatalogModels);

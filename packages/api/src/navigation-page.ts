@@ -71,6 +71,7 @@ export enum NavigationPage {
   SECRET_VAULT_CREATE = 'secret-vault-create',
   SECRET_VAULT_DETAILS = 'secret-vault-details',
   MODELS = 'models',
+  SEMANTIC_ROUTERS = 'semantic-routers',
   PROJECTS = 'projects',
   PROJECT_DETAILS = 'project-details',
   PROJECT_CREATE = 'project-create',

@@ -28,7 +28,7 @@ let error = $state('');
 let canSave = $derived(name.trim().length > 0 && listenerPort >= 1024 && listenerPort <= 65535);
 
 function cancel(): void {
-  handleNavigation({ page: NavigationPage.MODELS });
+  handleNavigation({ page: NavigationPage.SEMANTIC_ROUTERS });
 }
 
 async function createRouter(): Promise<void> {
@@ -55,7 +55,7 @@ async function createRouter(): Promise<void> {
     };
 
     await window.createSemanticRouter(config);
-    handleNavigation({ page: NavigationPage.MODELS });
+    handleNavigation({ page: NavigationPage.SEMANTIC_ROUTERS });
   } catch (err: unknown) {
     error = err instanceof Error ? err.message : String(err);
   } finally {
@@ -67,7 +67,7 @@ function parseTimeout(value: string): number | undefined {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
   const match = /^(\d+)\s*s?$/.exec(trimmed);
-  if (match) return parseInt(match[1], 10);
+  if (match) return Number.parseInt(match[1], 10);
   return undefined;
 }
 </script>

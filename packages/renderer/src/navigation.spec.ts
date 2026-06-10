@@ -320,3 +320,9 @@ test(`Test navigationHandle for ${NavigationPage.MODELS}`, () => {
 
   expect(vi.mocked(router.goto)).toHaveBeenCalledWith('/models');
 });
+
+test(`Test navigationHandle for ${NavigationPage.SEMANTIC_ROUTERS}`, () => {
+  handleNavigation({ page: NavigationPage.SEMANTIC_ROUTERS });
+
+  expect(vi.mocked(router.goto)).toHaveBeenCalledWith('/models/semantic-routers');
+});

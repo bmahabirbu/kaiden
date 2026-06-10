@@ -218,5 +218,8 @@ export const handleNavigation = (request: InferredNavigationRequest<NavigationPa
     case NavigationPage.MODELS:
       router.goto('/models');
       break;
+    case NavigationPage.SEMANTIC_ROUTERS:
+      router.goto('/models/semantic-routers');
+      break;
   }
 };

@@ -29,6 +29,7 @@ vi.mock(import('/@/navigation'));
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.mocked(window.createSemanticRouter).mockResolvedValue({
     name: 'test-router',
     listeners: [{ address: '0.0.0.0', port: 8899 }],
@@ -100,7 +101,7 @@ test('navigates to models page after successful creation', async () => {
 
   const { handleNavigation } = await import('/@/navigation');
   await waitFor(() => {
-    expect(handleNavigation).toHaveBeenCalledWith({ page: 'models' });
+    expect(handleNavigation).toHaveBeenCalledWith({ page: 'semantic-routers' });
   });
 });
 
@@ -127,7 +128,7 @@ test('navigates to models page on cancel', async () => {
   await fireEvent.click(cancelBtn);
 
   const { handleNavigation } = await import('/@/navigation');
-  expect(handleNavigation).toHaveBeenCalledWith({ page: 'models' });
+  expect(handleNavigation).toHaveBeenCalledWith({ page: 'semantic-routers' });
 });
 
 test('passes description when provided', async () => {

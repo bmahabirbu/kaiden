@@ -321,6 +321,9 @@ tablePersistence.storage = new PodmanDesktopStoragePersist();
           <Route path="/" breadcrumb="Models" navigationHint="root">
             <ModelsCatalog />
           </Route>
+          <Route path="/semantic-routers" breadcrumb="Semantic Routers" navigationHint="root">
+            <ModelsCatalog initialCategory="router" />
+          </Route>
           <Route path="/semantic-router/create" breadcrumb="Add Semantic Router" navigationHint="details">
             <SemanticRouterCreate />
           </Route>

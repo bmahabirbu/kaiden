@@ -93,6 +93,7 @@ export interface NavigationParameters {
     id: string;
   };
   [NavigationPage.MODELS]: never;
+  [NavigationPage.SEMANTIC_ROUTERS]: never;
   [NavigationPage.PROJECTS]: never;
   [NavigationPage.PROJECT_DETAILS]: {
     id: string;
