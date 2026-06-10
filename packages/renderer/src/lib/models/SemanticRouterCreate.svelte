@@ -7,7 +7,6 @@ import FormPage from '/@/lib/ui/FormPage.svelte';
 import WizardStepper from '/@/lib/ui/WizardStepper.svelte';
 import { handleNavigation } from '/@/navigation';
 import { NavigationPage } from '/@api/navigation-page';
-import type { SemanticRouterConfigInfo } from '/@api/semantic-router-info';
 
 const WIZARD_STEPS = [
   { id: 'basic', title: 'Basic setup' },
@@ -20,55 +19,16 @@ let name = $state('');
 let description = $state('');
 let listenerAddress = $state('0.0.0.0');
 let listenerPort = $state(8899);
-let timeout = $state('300s');
+let timeout = $state(300);
 
-let saving = $state(false);
 let error = $state('');
 
-let canSave = $derived(name.trim().length > 0 && listenerPort >= 1024 && listenerPort <= 65535);
+let canSave = $derived(
+  name.trim().length > 0 && listenerPort >= 1024 && listenerPort <= 65535 && timeout > 0 && timeout <= 3600,
+);
 
 function cancel(): void {
   handleNavigation({ page: NavigationPage.SEMANTIC_ROUTERS });
-}
-
-async function createRouter(): Promise<void> {
-  if (!canSave || saving) return;
-
-  saving = true;
-  error = '';
-
-  try {
-    const config: SemanticRouterConfigInfo = {
-      name: name.trim(),
-      description: description.trim() || undefined,
-      listeners: [
-        {
-          address: listenerAddress.trim() || '0.0.0.0',
-          port: listenerPort,
-          timeout: parseTimeout(timeout),
-        },
-      ],
-      routing: {
-        keywords: [],
-        decisions: [],
-      },
-    };
-
-    await window.createSemanticRouter(config);
-    handleNavigation({ page: NavigationPage.SEMANTIC_ROUTERS });
-  } catch (err: unknown) {
-    error = err instanceof Error ? err.message : String(err);
-  } finally {
-    saving = false;
-  }
-}
-
-function parseTimeout(value: string): number | undefined {
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  const match = /^(\d+)\s*s?$/.exec(trimmed);
-  if (match) return Number.parseInt(match[1], 10);
-  return undefined;
 }
 </script>
 
@@ -154,9 +114,9 @@ function parseTimeout(value: string): number | undefined {
                 <label for="router-timeout" class="block text-sm font-semibold text-(--pd-modal-text) mb-2">
                   Timeout
                 </label>
-                <Input id="router-timeout" bind:value={timeout} placeholder="300s" aria-label="Timeout" />
+                <NumberInput bind:value={timeout} minimum={1} maximum={3600} type="integer" aria-label="Timeout" />
                 <p class="text-xs text-(--pd-content-card-text) opacity-50 mt-1.5">
-                  Maximum time before the request is cancelled.
+                  Maximum time (in seconds) before the request is cancelled.
                 </p>
               </div>
             </div>
@@ -173,8 +133,9 @@ function parseTimeout(value: string): number | undefined {
             </span>
             <div class="flex flex-wrap items-center justify-end gap-3">
               <Button onclick={cancel}>Cancel</Button>
-              <Button disabled={!canSave || saving} onclick={createRouter}>
-                {saving ? 'Creating...' : 'Next: Backend models'}
+              <!-- TODO: wire to step navigation once backend models step is implemented -->
+              <Button disabled={!canSave}>
+                Next: Backend models
               </Button>
             </div>
           </div>

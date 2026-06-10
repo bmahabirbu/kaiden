@@ -18,10 +18,8 @@
 
 import '@testing-library/jest-dom/vitest';
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { beforeEach, expect, test, vi } from 'vitest';
-
-import type { SemanticRouterConfigInfo } from '/@api/semantic-router-info';
 
 import SemanticRouterCreate from './SemanticRouterCreate.svelte';
 
@@ -70,58 +68,7 @@ test('create button is enabled when name is provided', async () => {
   expect(createBtn).toBeEnabled();
 });
 
-test('calls createSemanticRouter on submit', async () => {
-  render(SemanticRouterCreate);
-
-  const nameInput = screen.getByLabelText('Router name');
-  await fireEvent.input(nameInput, { target: { value: 'my-router' } });
-
-  const createBtn = screen.getByRole('button', { name: 'Next: Backend models' });
-  await fireEvent.click(createBtn);
-
-  await waitFor(() => {
-    expect(window.createSemanticRouter).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'my-router',
-        listeners: expect.arrayContaining([expect.objectContaining({ address: '0.0.0.0', port: 8899 })]),
-        routing: { keywords: [], decisions: [] },
-      }),
-    );
-  });
-});
-
-test('navigates to models page after successful creation', async () => {
-  render(SemanticRouterCreate);
-
-  const nameInput = screen.getByLabelText('Router name');
-  await fireEvent.input(nameInput, { target: { value: 'my-router' } });
-
-  const createBtn = screen.getByRole('button', { name: 'Next: Backend models' });
-  await fireEvent.click(createBtn);
-
-  const { handleNavigation } = await import('/@/navigation');
-  await waitFor(() => {
-    expect(handleNavigation).toHaveBeenCalledWith({ page: 'semantic-routers' });
-  });
-});
-
-test('shows error message on creation failure', async () => {
-  vi.mocked(window.createSemanticRouter).mockRejectedValue(new Error('Router already exists'));
-
-  render(SemanticRouterCreate);
-
-  const nameInput = screen.getByLabelText('Router name');
-  await fireEvent.input(nameInput, { target: { value: 'my-router' } });
-
-  const createBtn = screen.getByRole('button', { name: 'Next: Backend models' });
-  await fireEvent.click(createBtn);
-
-  await waitFor(() => {
-    expect(screen.getByText('Router already exists')).toBeInTheDocument();
-  });
-});
-
-test('navigates to models page on cancel', async () => {
+test('navigates to semantic routers page on cancel', async () => {
   render(SemanticRouterCreate);
 
   const cancelBtn = screen.getByRole('button', { name: 'Cancel' });
@@ -129,43 +76,4 @@ test('navigates to models page on cancel', async () => {
 
   const { handleNavigation } = await import('/@/navigation');
   expect(handleNavigation).toHaveBeenCalledWith({ page: 'semantic-routers' });
-});
-
-test('passes description when provided', async () => {
-  render(SemanticRouterCreate);
-
-  const nameInput = screen.getByLabelText('Router name');
-  await fireEvent.input(nameInput, { target: { value: 'my-router' } });
-
-  const descInput = screen.getByLabelText('Description');
-  await fireEvent.input(descInput, { target: { value: 'Routes coding tasks' } });
-
-  const createBtn = screen.getByRole('button', { name: 'Next: Backend models' });
-  await fireEvent.click(createBtn);
-
-  await waitFor(() => {
-    expect(window.createSemanticRouter).toHaveBeenCalledWith(
-      expect.objectContaining({
-        description: 'Routes coding tasks',
-      }),
-    );
-  });
-});
-
-test('parses timeout value with seconds suffix', async () => {
-  render(SemanticRouterCreate);
-
-  const nameInput = screen.getByLabelText('Router name');
-  await fireEvent.input(nameInput, { target: { value: 'my-router' } });
-
-  const timeoutInput = screen.getByLabelText('Timeout');
-  await fireEvent.input(timeoutInput, { target: { value: '600s' } });
-
-  const createBtn = screen.getByRole('button', { name: 'Next: Backend models' });
-  await fireEvent.click(createBtn);
-
-  await waitFor(() => {
-    const call = vi.mocked(window.createSemanticRouter).mock.calls[0][0] as SemanticRouterConfigInfo;
-    expect(call.listeners[0].timeout).toBe(600);
-  });
 });
