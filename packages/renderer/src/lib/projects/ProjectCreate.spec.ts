@@ -47,21 +47,22 @@ beforeEach(() => {
   vi.mocked(skillsStore).skillInfos = writable<readonly SkillInfo[]>(SAMPLE_SKILLS);
 });
 
-test('wizard displays 3 steps in stepper', () => {
+test('wizard displays 4 steps in stepper', () => {
   render(ProjectCreate);
 
   expect(screen.getAllByText('Source').length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText('Skills')).toBeInTheDocument();
   expect(screen.getByText('Review')).toBeInTheDocument();
+  expect(screen.getByText('MCP Servers')).toBeInTheDocument();
+  expect(screen.getByText('Skills')).toBeInTheDocument();
 });
 
-test('step counter shows Step 1 of 3', () => {
+test('step counter shows Step 1 of 4', () => {
   render(ProjectCreate);
 
-  expect(screen.getByText('Step 1 of 3')).toBeInTheDocument();
+  expect(screen.getByText('Step 1 of 4')).toBeInTheDocument();
 });
 
-test('navigates to skills step after analyze with local path', async () => {
+test('navigates to review step after analyze with local path', async () => {
   const analysisResult: WorkspaceProjectAnalysis = {
     name: 'my-project',
     description: 'A project',
@@ -78,11 +79,11 @@ test('navigates to skills step after analyze with local path', async () => {
   await fireEvent.click(analyzeButton);
 
   await waitFor(() => {
-    expect(screen.getByText('Step 2 of 3')).toBeInTheDocument();
+    expect(screen.getByText('Step 2 of 4')).toBeInTheDocument();
   });
 });
 
-test('skills step shows all enabled skills selected by default after analyze', async () => {
+test('skills step shows all enabled skills selected by default', async () => {
   const analysisResult: WorkspaceProjectAnalysis = {
     name: 'my-project',
     folder: '/home/user/my-project',
@@ -94,6 +95,18 @@ test('skills step shows all enabled skills selected by default after analyze', a
   const input = screen.getByPlaceholderText('/home/user/dev/my-project');
   await fireEvent.input(input, { target: { value: '/home/user/my-project' } });
   await fireEvent.click(screen.getByText('Analyze'));
+
+  await waitFor(() => {
+    expect(screen.getByText('Step 2 of 4')).toBeInTheDocument();
+  });
+
+  await fireEvent.click(screen.getByText('Continue'));
+
+  await waitFor(() => {
+    expect(screen.getByText('Step 3 of 4')).toBeInTheDocument();
+  });
+
+  await fireEvent.click(screen.getByText('Continue'));
 
   await waitFor(() => {
     expect(screen.getByText(/2\/2 skills/)).toBeInTheDocument();
@@ -115,13 +128,19 @@ test('passes selected skills to createWorkspaceProject', async () => {
   await fireEvent.click(screen.getByText('Analyze'));
 
   await waitFor(() => {
-    expect(screen.getByText('Step 2 of 3')).toBeInTheDocument();
+    expect(screen.getByText('Step 2 of 4')).toBeInTheDocument();
   });
 
   await fireEvent.click(screen.getByText('Continue'));
 
   await waitFor(() => {
-    expect(screen.getByText('Step 3 of 3')).toBeInTheDocument();
+    expect(screen.getByText('Step 3 of 4')).toBeInTheDocument();
+  });
+
+  await fireEvent.click(screen.getByText('Continue'));
+
+  await waitFor(() => {
+    expect(screen.getByText('Step 4 of 4')).toBeInTheDocument();
   });
 
   await fireEvent.click(screen.getByText('Create Project'));

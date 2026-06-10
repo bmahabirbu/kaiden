@@ -19,9 +19,9 @@ import ProjectCreateStepSource from './ProjectCreateStepSource.svelte';
 
 const wizardSteps = [
   { id: 'source', title: 'Source' },
-  { id: 'skills', title: 'Skills' },
   { id: 'review', title: 'Review' },
   { id: 'mcp-servers', title: 'MCP Servers' },
+  { id: 'skills', title: 'Skills' },
 ];
 
 let currentStepIndex = $state(0);
@@ -89,13 +89,6 @@ function preselectRecommendedMcpServers(): void {
   if (hasInitializedMcpSelection || mcpItems.length === 0) return;
   selectedMcpIds = mcpItems.filter(m => m.recommended).map(m => m.id);
   hasInitializedMcpSelection = true;
-}
-
-function goNext(): void {
-  if (currentStepIndex < wizardSteps.length - 1) {
-    currentStepIndex++;
-    if (wizardSteps[currentStepIndex]?.id === 'mcp-servers') preselectRecommendedMcpServers();
-  }
 }
 
 function handleStepClick(index: number): void {
@@ -277,10 +270,6 @@ async function createProject(): Promise<void> {
                 <Button disabled={!isSourceStepComplete || analyzing} onclick={handleAnalyze}>
                   {analyzing ? 'Analyzing...' : 'Analyze'}
                 </Button>
-              {:else if currentStepId === 'review'}
-                <Button disabled={!isReviewStepComplete} onclick={goNext}>
-                  Configure MCP Servers
-                </Button>
               {:else if isLastStep}
                 <Button disabled={!isReviewStepComplete || creating} onclick={createProject}>
                   {#if creating}
@@ -290,7 +279,7 @@ async function createProject(): Promise<void> {
                   {/if}
                 </Button>
               {:else}
-                <Button onclick={(): void => { currentStepIndex++; }}>Continue</Button>
+                <Button onclick={(): void => { currentStepIndex++; if (wizardSteps[currentStepIndex]?.id === 'mcp-servers') preselectRecommendedMcpServers(); }}>Continue</Button>
               {/if}
             </div>
           </div>
