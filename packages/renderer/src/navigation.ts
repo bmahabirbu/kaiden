@@ -215,5 +215,8 @@ export const handleNavigation = (request: InferredNavigationRequest<NavigationPa
     case NavigationPage.PROJECT_CREATE:
       router.goto('/projects/create');
       break;
+    case NavigationPage.MODELS:
+      router.goto('/models');
+      break;
   }
 };

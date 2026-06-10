@@ -10,6 +10,7 @@ import {
   TableRow,
 } from '@podman-desktop/ui-svelte';
 import { Icon } from '@podman-desktop/ui-svelte/icons';
+import { router } from 'tinro';
 
 import ModelActionsColumn from '/@/lib/models/columns/ModelActionsColumn.svelte';
 import ModelNameColumn from '/@/lib/models/columns/ModelNameColumn.svelte';
@@ -160,8 +161,9 @@ function filterRoutersBySearch(routers: SemanticRouterConfigInfo[], term: string
   );
 }
 
-// TODO: implement router creation flow
-function addSemanticRouter(): void {}
+function addSemanticRouter(): void {
+  router.goto('/models/semantic-router/create');
+}
 
 function selectCategory(cat: Category): void {
   activeCategory = cat;

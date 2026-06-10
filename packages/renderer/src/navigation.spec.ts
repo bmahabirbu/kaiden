@@ -314,3 +314,9 @@ test(`Test navigationHandle for ${NavigationPage.AGENT_WORKSPACES}`, () => {
 
   expect(vi.mocked(router.goto)).toHaveBeenCalledWith('/agent-workspaces');
 });
+
+test(`Test navigationHandle for ${NavigationPage.MODELS}`, () => {
+  handleNavigation({ page: NavigationPage.MODELS });
+
+  expect(vi.mocked(router.goto)).toHaveBeenCalledWith('/models');
+});

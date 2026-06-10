@@ -75,6 +75,7 @@ import ManifestDetails from './lib/manifest/ManifestDetails.svelte';
 import McpRegistryCreateFromRegistryForm from './lib/mcp/MCPRegistryCreateFromRegistryForm.svelte';
 import McpServerList from './lib/mcp/MCPServerList.svelte';
 import ModelsCatalog from './lib/models/ModelsCatalog.svelte';
+import SemanticRouterCreate from './lib/models/SemanticRouterCreate.svelte';
 import CreateNetwork from './lib/network/CreateNetwork.svelte';
 import NetworkDetails from './lib/network/NetworkDetails.svelte';
 import NetworksList from './lib/network/NetworksList.svelte';
@@ -316,8 +317,13 @@ tablePersistence.storage = new PodmanDesktopStoragePersist();
         </Route>
 
         <!-- Models -->
-        <Route path="/models" breadcrumb="Models" navigationHint="root">
-          <ModelsCatalog />
+        <Route path="/models/*" breadcrumb="Models" navigationHint="root" firstmatch>
+          <Route path="/" breadcrumb="Models" navigationHint="root">
+            <ModelsCatalog />
+          </Route>
+          <Route path="/semantic-router/create" breadcrumb="Add Semantic Router" navigationHint="details">
+            <SemanticRouterCreate />
+          </Route>
         </Route>
 
         <!-- Skills -->
