@@ -1,4 +1,5 @@
 <script lang="ts">
+import { faFloppyDisk } from '@fortawesome/free-solid-svg-icons/faFloppyDisk';
 import { faPlay } from '@fortawesome/free-solid-svg-icons/faPlay';
 import { faTableList } from '@fortawesome/free-solid-svg-icons/faTableList';
 import { faWrench } from '@fortawesome/free-solid-svg-icons/faWrench';
@@ -15,10 +16,14 @@ interface Props {
   loading: boolean;
   packageIndex: number;
   submit: (options: MCPSetupPackageOptions) => Promise<void>;
+  register: (options: MCPSetupPackageOptions) => Promise<void>;
   cancel: () => void;
 }
 
-let { object, packageIndex, loading = $bindable(false), submit, cancel }: Props = $props();
+let { object, packageIndex, loading = $bindable(false), submit, register, cancel }: Props = $props();
+
+let spawning = $state(false);
+let registering = $state(false);
 
 let runtimeArgumentsResponses = new SvelteMap<number, InputWithVariableResponse>(
   (object.runtimeArguments ?? []).map((argument, index) => [index, createInputWithVariables(argument)]),
@@ -70,14 +75,32 @@ function updateArgumentVariableValue<K extends string | number>(
   });
 }
 
-async function spawn(): Promise<void> {
-  return submit({
+function buildOptions(): MCPSetupPackageOptions {
+  return {
     type: 'package',
     index: packageIndex,
     runtimeArguments: Object.fromEntries(runtimeArgumentsResponses.entries()),
     packageArguments: Object.fromEntries(packageArgumentsResponses.entries()),
     environmentVariables: Object.fromEntries(environmentVariablesResponses.entries()),
-  });
+  };
+}
+
+async function spawn(): Promise<void> {
+  spawning = true;
+  try {
+    return await submit(buildOptions());
+  } finally {
+    spawning = false;
+  }
+}
+
+async function registerPackage(): Promise<void> {
+  registering = true;
+  try {
+    return await register(buildOptions());
+  } finally {
+    registering = false;
+  }
 }
 </script>
 
@@ -154,9 +177,17 @@ async function spawn(): Promise<void> {
   </Button>
   <Button
     class="w-auto"
+    type="secondary"
+    icon={faFloppyDisk}
+    onclick={registerPackage}
+    inProgress={registering}>
+    Register
+  </Button>
+  <Button
+    class="w-auto"
     icon={faPlay}
     onclick={spawn}
-    inProgress={loading}>
+    inProgress={spawning}>
     Spawn
   </Button>
 </div>

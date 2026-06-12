@@ -31,15 +31,18 @@ async function refreshMessages(): Promise<void> {
 const mcpServer: MCPRemoteServerInfo | undefined = $derived($mcpRemoteServerInfos.find(server => server.id === id));
 const mcpServerName = $derived(mcpServer?.name ?? id);
 const mcpServerUrl = $derived(mcpServer?.url ?? '');
+const isRunning = $derived(mcpServer?.status !== 'registered');
 const toolSet: string | undefined = $derived(mcpServer?.tools ? JSON.stringify(mcpServer.tools, null, 2) : undefined);
 
 onMount(() => {
-  // Initial load of messages
-  refreshMessages().catch(console.error);
-
-  // Subscribe to updates from main process
-  return window.events?.receive('mcp-manager-update', () => {
+  if (isRunning) {
     refreshMessages().catch(console.error);
+  }
+
+  return window.events?.receive('mcp-manager-update', () => {
+    if (isRunning) {
+      refreshMessages().catch(console.error);
+    }
   });
 });
 </script>

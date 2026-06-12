@@ -34,4 +34,5 @@ export interface MCPRemoteServerInfo {
   commandSpec?: MCPCommandSpec;
   tools: Record<string, { description?: string }>;
   isValidSchema?: boolean;
+  status?: 'running' | 'registered';
 }

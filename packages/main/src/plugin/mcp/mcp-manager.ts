@@ -174,6 +174,36 @@ export class MCPManager implements IAsyncDisposable {
     this.apiSender.send('mcp-manager-update');
   }
 
+  public registerMCPWithoutClient(
+    internalProviderId: string,
+    serverId: string,
+    setupType: 'remote' | 'package',
+    index: number,
+    connectionName: string,
+    url?: string,
+    description?: string,
+    isValidSchema?: boolean,
+    commandSpec?: MCPCommandSpec,
+  ): void {
+    const key = this.getKey(internalProviderId, serverId, setupType, index);
+
+    const mcpRemoteServerInfo: MCPRemoteServerInfo = {
+      id: key,
+      infos: { internalProviderId, remoteId: index, serverId },
+      name: connectionName,
+      url: url ?? '',
+      setupType,
+      commandSpec,
+      description: description ?? '',
+      tools: {},
+      isValidSchema,
+      status: 'registered',
+    };
+    this.#mcps.push(mcpRemoteServerInfo);
+
+    this.apiSender.send('mcp-manager-update');
+  }
+
   public async unregisterMCPClient(
     internalProviderId: string,
     serverId: string,
@@ -192,19 +222,14 @@ export class MCPManager implements IAsyncDisposable {
 
   public async removeMcpRemoteServer(key: string): Promise<void> {
     const instance = this.#client.get(key);
-    if (!instance) throw new Error(`cannot find MCP instance with key ${key}`);
+    if (instance) {
+      await instance.close();
+      this.#client.delete(key);
+      this.exchanges.clearExchanges(key);
+    }
 
-    // Close the client connection
-    await instance.close();
-
-    // remove the instance
-    this.#client.delete(key);
-    this.exchanges.clearExchanges(key);
-
-    // clear from the #mcps list
     this.#mcps = this.#mcps.filter(mcp => mcp.id !== key);
 
-    // broadcast new items
     this.apiSender.send('mcp-manager-update');
   }
 

@@ -8,7 +8,7 @@ import MCPSetupDropdown from '/@/lib/mcp/setup/MCPSetupDropdown.svelte';
 import PackageSetupForm from '/@/lib/mcp/setup/PackageSetupForm.svelte';
 import RemoteSetupForm from '/@/lib/mcp/setup/RemoteSetupForm.svelte';
 import { mcpRegistriesServerInfos } from '/@/stores/mcp-registry-servers';
-import type { MCPSetupOptions } from '/@api/mcp/mcp-setup';
+import type { MCPSetupOptions, MCPSetupPackageOptions } from '/@api/mcp/mcp-setup';
 
 interface Props {
   serverId: string;
@@ -39,6 +39,19 @@ async function submit(options: MCPSetupOptions): Promise<void> {
     loading = true;
     error = undefined;
     await window.setupMCP(serverId, options);
+    return navigateToMcps();
+  } catch (err: unknown) {
+    error = String(err);
+  } finally {
+    loading = false;
+  }
+}
+
+async function register(options: MCPSetupPackageOptions): Promise<void> {
+  try {
+    loading = true;
+    error = undefined;
+    await window.registerMCP(serverId, options);
     return navigateToMcps();
   } catch (err: unknown) {
     error = String(err);
@@ -86,7 +99,7 @@ async function close(): Promise<void> {
                 {#if 'url' in mcpTarget}  <!-- remote -->
                   <RemoteSetupForm submit={submit} remoteIndex={mcpTarget.index} bind:loading={loading} object={mcpTarget} cancel={close}/>
                 {:else} <!-- package -->
-                  <PackageSetupForm submit={submit} packageIndex={mcpTarget.index} bind:loading={loading} object={mcpTarget} cancel={close}/>
+                  <PackageSetupForm submit={submit} register={register} packageIndex={mcpTarget.index} bind:loading={loading} object={mcpTarget} cancel={close}/>
                 {/if}
               {/key}
             {/if}

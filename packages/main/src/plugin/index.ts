@@ -142,7 +142,7 @@ import type { ContainerCreateOptions as PodmanContainerCreateOptions, PlayKubeIn
 import type { ListOrganizerItem } from '/@api/list-organizer.js';
 import type { ManifestCreateOptions, ManifestInspectInfo, ManifestPushOptions } from '/@api/manifest-info.js';
 import type { MCPRemoteServerInfo } from '/@api/mcp/mcp-server-info.js';
-import type { MCPSetupOptions } from '/@api/mcp/mcp-setup.js';
+import type { MCPSetupOptions, MCPSetupPackageOptions } from '/@api/mcp/mcp-setup.js';
 import type { Menu } from '/@api/menu.js';
 import type { NetworkInspectInfo } from '/@api/network-info.js';
 import type { NotificationCard, NotificationCardOptions } from '/@api/notification.js';
@@ -2398,6 +2398,13 @@ export class PluginSystem {
       'mcp-registry:setup',
       async (_listener, serverId: string, options: MCPSetupOptions): Promise<void> => {
         await mcpRegistry.setupMCPServer(serverId, options);
+      },
+    );
+
+    this.ipcHandle(
+      'mcp-registry:register',
+      async (_listener, serverId: string, options: MCPSetupPackageOptions): Promise<void> => {
+        await mcpRegistry.registerMCPServerOnly(serverId, options);
       },
     );
 

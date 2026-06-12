@@ -121,7 +121,7 @@ import type { ListOrganizerItem } from '/@api/list-organizer';
 import type { ManifestCreateOptions, ManifestInspectInfo, ManifestPushOptions } from '/@api/manifest-info';
 import type { MCPExportTarget } from '/@api/mcp/mcp-export';
 import type { MCPRemoteServerInfo, MCPServerDetail } from '/@api/mcp/mcp-server-info';
-import type { MCPSetupOptions } from '/@api/mcp/mcp-setup';
+import type { MCPSetupOptions, MCPSetupPackageOptions } from '/@api/mcp/mcp-setup';
 import type { Menu } from '/@api/menu.js';
 import type { CatalogModelInfo, InferenceConnectionSummary } from '/@api/model-registry-info';
 import { NavigationPage } from '/@api/navigation-page';
@@ -2349,6 +2349,13 @@ export function initExposure(): void {
   contextBridge.exposeInMainWorld('setupMCP', async (serverId: string, options: MCPSetupOptions): Promise<void> => {
     return ipcInvoke('mcp-registry:setup', serverId, options);
   });
+
+  contextBridge.exposeInMainWorld(
+    'registerMCP',
+    async (serverId: string, options: MCPSetupPackageOptions): Promise<void> => {
+      return ipcInvoke('mcp-registry:register', serverId, options);
+    },
+  );
 
   contextBridge.exposeInMainWorld('fetchMcpRemoteServers', async (): Promise<MCPRemoteServerInfo[]> => {
     return ipcInvoke('mcp-manager:fetchMcpRemoteServers');

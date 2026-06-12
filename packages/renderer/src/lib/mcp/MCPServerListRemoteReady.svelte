@@ -1,7 +1,9 @@
 <script lang="ts">
 import { FilteredEmptyScreen, Table, TableColumn, TableRow } from '@podman-desktop/ui-svelte';
+import SimpleColumn from '@podman-desktop/ui-svelte/TableSimpleColumn';
 
 import MCPNameColumn from '/@/lib/mcp/column/MCPNameColumn.svelte';
+import MCPStatusColumn from '/@/lib/mcp/column/MCPStatusColumn.svelte';
 import { filteredMcpRemoteServerInfos, mcpRemoteServerInfoSearchPattern } from '/@/stores/mcp-remote-servers';
 import type { MCPRemoteServerInfo } from '/@api/mcp/mcp-server-info';
 
@@ -32,8 +34,8 @@ const servers: SelectableMCPRemoteServerInfo[] = $derived(
 );
 
 const statusColumn = new TableColumn<MCPRemoteServerInfo>('Status', {
-  width: '60px',
-  renderer: McpIcon,
+  width: '150px',
+  renderer: MCPStatusColumn,
 });
 
 const nameColumn = new TableColumn<MCPRemoteServerInfo>('Name', {
@@ -42,13 +44,20 @@ const nameColumn = new TableColumn<MCPRemoteServerInfo>('Name', {
   comparator: (a, b): number => b.name.localeCompare(a.name),
 });
 
+const typeColumn = new TableColumn<MCPRemoteServerInfo, string>('Type', {
+  width: '100px',
+  renderMapping: (server): string => (server.setupType === 'remote' ? 'Remote' : 'Local'),
+  renderer: SimpleColumn,
+  comparator: (a, b): number => (b.setupType ?? '').localeCompare(a.setupType ?? ''),
+});
+
 const actionsColumn = new TableColumn<MCPRemoteServerInfo>('Actions', {
   align: 'right',
   renderer: McpServerRemoteListActions,
   overflow: true,
 });
 
-const columns = [statusColumn, nameColumn, new MCPServerDescriptionColumn(), actionsColumn];
+const columns = [statusColumn, nameColumn, typeColumn, new MCPServerDescriptionColumn(), actionsColumn];
 
 const row = new TableRow<MCPRemoteServerInfo>({});
 </script>
