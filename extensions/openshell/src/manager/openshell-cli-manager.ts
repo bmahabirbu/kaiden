@@ -48,7 +48,7 @@ export class OpenshellCliManager implements Disposable {
     const packageJsonPath = join(this.extensionContext.extensionUri.fsPath, 'package.json');
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
 
-    const cliResult = await this.discoverBinary('openshell', 'openshell.binary.path', 'openshell');
+    const cliResult = await this.discoverBinary('openshell', 'binary.path', 'openshell');
     const registration: BinaryDiscoveryResult = cliResult ?? {
       installationSource: 'extension',
     };
@@ -71,7 +71,7 @@ export class OpenshellCliManager implements Disposable {
 
     const ibResult = await this.discoverBinary(
       'openshell-image-builder',
-      'openshell.imageBuilder.binary.path',
+      'imageBuilder.binary.path',
       'openshell-image-builder',
     );
     const ibRegistration: BinaryDiscoveryResult = ibResult ?? {
