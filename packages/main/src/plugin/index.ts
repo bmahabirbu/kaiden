@@ -2441,6 +2441,14 @@ export class PluginSystem {
       },
     );
 
+    this.ipcHandle('mcp-manager:startMCPServer', async (_listener, key: string): Promise<void> => {
+      await mcpRegistry.startMCPServer(key);
+    });
+
+    this.ipcHandle('mcp-manager:stopMCPServer', async (_listener, key: string): Promise<void> => {
+      await mcpRegistry.stopMCPServer(key);
+    });
+
     this.ipcHandle(
       'image-registry:updateRegistry',
       async (_listener, registry: containerDesktopAPI.Registry): Promise<void> => {

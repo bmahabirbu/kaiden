@@ -233,6 +233,38 @@ export class MCPManager implements IAsyncDisposable {
     this.apiSender.send('mcp-manager-update');
   }
 
+  public async addClient(key: string, transport: Transport): Promise<void> {
+    const server = this.get(key);
+
+    const wrapped = this.exchanges.createMiddleware(key, transport);
+    const client = await experimental_createMCPClient({ transport: wrapped });
+    this.#client.set(key, client);
+
+    const toolSet = await client.tools();
+    server.tools = Object.fromEntries(
+      Object.entries(toolSet).map(([k, v]) => [k, { description: v.description ?? '' }]),
+    );
+    server.status = undefined;
+
+    this.apiSender.send('mcp-manager-update');
+  }
+
+  public async removeClient(key: string): Promise<void> {
+    const server = this.get(key);
+
+    const instance = this.#client.get(key);
+    if (instance) {
+      await instance.close();
+      this.#client.delete(key);
+      this.exchanges.clearExchanges(key);
+    }
+
+    server.tools = {};
+    server.status = 'registered';
+
+    this.apiSender.send('mcp-manager-update');
+  }
+
   findMcpRemoteServer(
     INTERNAL_PROVIDER_ID: string,
     serverId: string,

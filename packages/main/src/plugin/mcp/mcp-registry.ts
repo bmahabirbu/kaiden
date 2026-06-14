@@ -460,8 +460,11 @@ export class MCPRegistry {
     const existingServers = await this.mcpManager.listMCPRemoteServers();
     const existing = existingServers.find(srv => srv.infos.serverId === serverId);
     if (existing) {
-      const state = existing.status === 'registered' ? 'registered' : 'spawned';
-      throw new Error(`MCP server is already ${state}. Please delete it first and try again.`);
+      if (existing.status === 'registered') {
+        await this.startMCPServer(existing.id);
+        return;
+      }
+      throw new Error('MCP server is already spawned.');
     }
 
     const serverDetails = await this.listMCPServersFromRegistries();
@@ -574,8 +577,11 @@ export class MCPRegistry {
     const existingServers = await this.mcpManager.listMCPRemoteServers();
     const existing = existingServers.find(srv => srv.infos.serverId === serverId);
     if (existing) {
-      const state = existing.status === 'registered' ? 'registered' : 'spawned';
-      throw new Error(`MCP server is already ${state}. Please delete it first and try again.`);
+      if (existing.status !== 'registered') {
+        await this.stopMCPServer(existing.id);
+        return;
+      }
+      throw new Error('MCP server is already registered.');
     }
 
     const serverDetails = await this.listMCPServersFromRegistries();
@@ -643,6 +649,60 @@ export class MCPRegistry {
     );
 
     await this.saveConfiguration(config);
+  }
+
+  async startMCPServer(key: string): Promise<void> {
+    const server = this.mcpManager.get(key);
+    if (server.setupType !== 'package') throw new Error('Only package MCP servers can be started.');
+    if (server.status !== 'registered') throw new Error('MCP server is already spawned.');
+
+    const { serverId, remoteId } = server.infos;
+
+    const configs = await this.getConfigurations();
+    const config = configs.find(
+      (c): c is PackageStorageConfigFormat => 'packageId' in c && c.serverId === serverId && c.packageId === remoteId,
+    );
+    if (!config) throw new Error(`No saved configuration found for MCP server ${serverId}`);
+
+    const serverDetails = await this.listMCPServersFromRegistries();
+    const serverDetail = serverDetails.find(s => s.serverId === serverId);
+    if (!serverDetail) throw new Error(`MCP server with id ${serverId} not found in remote registry`);
+
+    const pack = serverDetail.packages?.[remoteId];
+    if (!pack) throw new Error('package not found');
+
+    const spawner = new MCPPackage({
+      ...pack,
+      packageArguments: config.packageArguments,
+      runtimeArguments: config.runtimeArguments,
+      environmentVariables: config.environmentVariables,
+    });
+    const transport = await spawner.spawn();
+
+    await this.mcpManager.addClient(key, transport);
+    await this.updateConfigurationAutoSpawn(serverId, remoteId, true);
+  }
+
+  async stopMCPServer(key: string): Promise<void> {
+    const server = this.mcpManager.get(key);
+    if (server.setupType !== 'package') throw new Error('Only package MCP servers can be stopped.');
+    if (server.status === 'registered') throw new Error('MCP server is already stopped.');
+
+    const { serverId, remoteId } = server.infos;
+
+    await this.mcpManager.removeClient(key);
+    await this.updateConfigurationAutoSpawn(serverId, remoteId, false);
+  }
+
+  private async updateConfigurationAutoSpawn(serverId: string, packageId: number, autoSpawn: boolean): Promise<void> {
+    const configs = await this.getConfigurations();
+    const updated = configs.map(c => {
+      if ('packageId' in c && c.serverId === serverId && c.packageId === packageId) {
+        return { ...c, autoSpawn };
+      }
+      return c;
+    });
+    await this.safeStorage?.store(STORAGE_KEY, JSON.stringify(updated));
   }
 
   async deletePackageFromConfiguration(serverId: string, packageId: number): Promise<void> {

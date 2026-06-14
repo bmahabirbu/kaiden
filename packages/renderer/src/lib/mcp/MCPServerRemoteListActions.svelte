@@ -1,6 +1,6 @@
 <script lang="ts">
 import { faClaude } from '@fortawesome/free-brands-svg-icons';
-import { faFileExport, faTrash } from '@fortawesome/free-solid-svg-icons';
+import { faFileExport, faPlay, faStop, faTrash } from '@fortawesome/free-solid-svg-icons';
 import { DropdownMenu } from '@podman-desktop/ui-svelte';
 
 import FlatMenu from '/@/lib/ui/FlatMenu.svelte';
@@ -17,6 +17,23 @@ interface Props {
 const { object, dropdownMenu = true, detailed = false }: Props = $props();
 
 let exportInProgress = $state(false);
+let startStopInProgress = $state(false);
+
+const isPackage = $derived(object.setupType === 'package');
+const isRegistered = $derived(object.status === 'registered');
+
+async function handleStartStop(): Promise<void> {
+  startStopInProgress = true;
+  try {
+    if (isRegistered) {
+      await window.startMcpServer(object.id);
+    } else {
+      await window.stopMcpServer(object.id);
+    }
+  } finally {
+    startStopInProgress = false;
+  }
+}
 
 async function removeMcp(): Promise<void> {
   const options = object.infos;
@@ -77,6 +94,14 @@ function exportToVSCode(): Promise<void> {
 
 const ActionsStyle = $derived(dropdownMenu ? DropdownMenu : FlatMenu);
 </script>
+
+{#if isPackage}
+  <ListItemButtonIcon
+    title={isRegistered ? 'Start MCP server' : 'Stop MCP server'}
+    icon={isRegistered ? faPlay : faStop}
+    inProgress={startStopInProgress}
+    onClick={handleStartStop} />
+{/if}
 
  <ListItemButtonIcon
     title="Remove instance of MCP"

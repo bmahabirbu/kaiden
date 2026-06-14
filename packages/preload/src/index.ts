@@ -2390,6 +2390,14 @@ export function initExposure(): void {
     return ipcInvoke('mcp-registry:getExportConfigPath', target);
   });
 
+  contextBridge.exposeInMainWorld('startMcpServer', async (key: string): Promise<void> => {
+    return ipcInvoke('mcp-manager:startMCPServer', key);
+  });
+
+  contextBridge.exposeInMainWorld('stopMcpServer', async (key: string): Promise<void> => {
+    return ipcInvoke('mcp-manager:stopMCPServer', key);
+  });
+
   // can't send configuration object as it is not serializable
   // https://www.electronjs.org/docs/latest/api/context-bridge#parameter--error--return-type-support
   contextBridge.exposeInMainWorld(
