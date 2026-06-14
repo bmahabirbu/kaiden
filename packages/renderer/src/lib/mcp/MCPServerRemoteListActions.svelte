@@ -30,6 +30,14 @@ async function handleStartStop(): Promise<void> {
     } else {
       await window.stopMcpServer(object.id);
     }
+  } catch (error: unknown) {
+    const action = isRegistered ? 'starting' : 'stopping';
+    await window.showMessageBox({
+      title: 'MCP Server',
+      type: 'error',
+      message: `Error while ${action} "${object.name}": ${error instanceof Error ? error.message : String(error)}`,
+      buttons: ['OK'],
+    });
   } finally {
     startStopInProgress = false;
   }

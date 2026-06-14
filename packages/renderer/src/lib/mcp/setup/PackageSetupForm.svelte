@@ -24,6 +24,7 @@ let { object, packageIndex, loading = $bindable(false), submit, register, cancel
 
 let spawning = $state(false);
 let registering = $state(false);
+const busy = $derived(loading || spawning || registering);
 
 let runtimeArgumentsResponses = new SvelteMap<number, InputWithVariableResponse>(
   (object.runtimeArguments ?? []).map((argument, index) => [index, createInputWithVariables(argument)]),
@@ -86,6 +87,7 @@ function buildOptions(): MCPSetupPackageOptions {
 }
 
 async function spawn(): Promise<void> {
+  if (busy) return;
   spawning = true;
   try {
     return await submit(buildOptions());
@@ -95,6 +97,7 @@ async function spawn(): Promise<void> {
 }
 
 async function registerPackage(): Promise<void> {
+  if (busy) return;
   registering = true;
   try {
     return await register(buildOptions());
@@ -180,6 +183,7 @@ async function registerPackage(): Promise<void> {
     type="secondary"
     icon={faFloppyDisk}
     onclick={registerPackage}
+    disabled={busy}
     inProgress={registering}>
     Register
   </Button>
@@ -187,6 +191,7 @@ async function registerPackage(): Promise<void> {
     class="w-auto"
     icon={faPlay}
     onclick={spawn}
+    disabled={busy}
     inProgress={spawning}>
     Spawn
   </Button>

@@ -2437,6 +2437,7 @@ export class PluginSystem {
       'mcp-manager:removeMcpRemoteServer',
       async (_listener, key: string, options: { serverId: string; remoteId: number }): Promise<void> => {
         await mcpRegistry.deleteRemoteMcpFromConfiguration(options.serverId, options.remoteId);
+        await mcpRegistry.deletePackageFromConfiguration(options.serverId, options.remoteId);
         return mcpManager.removeMcpRemoteServer(key);
       },
     );

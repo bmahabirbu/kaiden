@@ -679,8 +679,14 @@ export class MCPRegistry {
     });
     const transport = await spawner.spawn();
 
-    await this.mcpManager.addClient(key, transport);
     await this.updateConfigurationAutoSpawn(serverId, remoteId, true);
+    try {
+      await this.mcpManager.addClient(key, transport);
+    } catch (err) {
+      await transport.close?.().catch(console.error);
+      await this.updateConfigurationAutoSpawn(serverId, remoteId, false);
+      throw err;
+    }
   }
 
   async stopMCPServer(key: string): Promise<void> {
@@ -690,8 +696,13 @@ export class MCPRegistry {
 
     const { serverId, remoteId } = server.infos;
 
-    await this.mcpManager.removeClient(key);
     await this.updateConfigurationAutoSpawn(serverId, remoteId, false);
+    try {
+      await this.mcpManager.removeClient(key);
+    } catch (err) {
+      await this.updateConfigurationAutoSpawn(serverId, remoteId, true);
+      throw err;
+    }
   }
 
   private async updateConfigurationAutoSpawn(serverId: string, packageId: number, autoSpawn: boolean): Promise<void> {

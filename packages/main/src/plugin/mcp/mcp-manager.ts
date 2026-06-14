@@ -235,6 +235,7 @@ export class MCPManager implements IAsyncDisposable {
 
   public async addClient(key: string, transport: Transport): Promise<void> {
     const server = this.get(key);
+    if (this.#client.has(key)) throw new Error(`MCP server ${key} is already started`);
 
     const wrapped = this.exchanges.createMiddleware(key, transport);
     const client = await experimental_createMCPClient({ transport: wrapped });

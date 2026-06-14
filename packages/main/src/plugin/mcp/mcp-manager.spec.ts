@@ -100,6 +100,15 @@ test('addClient throws if server does not exist', async () => {
   );
 });
 
+test('addClient throws if client already exists', async () => {
+  mockMCPClient();
+
+  await mcpManager.registerMCPClient('provider', 'srv1', 'package', 0, 'Test Server', createMockTransport());
+
+  const servers = await mcpManager.listMCPRemoteServers();
+  await expect(mcpManager.addClient(servers[0]!.id, createMockTransport())).rejects.toThrow('is already started');
+});
+
 test('removeClient throws if server does not exist', async () => {
   await expect(mcpManager.removeClient('nonexistent')).rejects.toThrow('cannot find MCP server with id nonexistent');
 });

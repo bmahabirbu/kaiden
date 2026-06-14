@@ -44,6 +44,7 @@ const remoteServer: MCPRemoteServerInfo = {
 };
 
 beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.resetAllMocks();
 });
 
@@ -82,6 +83,25 @@ test('clicking stop calls stopMcpServer', async () => {
   await fireEvent.click(stopButton);
 
   expect(window.stopMcpServer).toHaveBeenCalledWith('internal:test:package:0');
+});
+
+test('error dialog shown when start fails', async () => {
+  vi.mocked(window.startMcpServer).mockRejectedValue(new Error('no kubeconfig provided'));
+
+  render(MCPServerRemoteListActions, { object: packageServer });
+
+  const startButton = screen.getByRole('button', { name: 'Start MCP server' });
+  await fireEvent.click(startButton);
+
+  await vi.waitFor(() => {
+    expect(window.showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'MCP Server',
+        type: 'error',
+        message: expect.stringContaining('no kubeconfig provided'),
+      }),
+    );
+  });
 });
 
 test('remove button is always rendered', () => {
