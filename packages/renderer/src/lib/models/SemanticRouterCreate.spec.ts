@@ -54,7 +54,7 @@ test('renders all form fields', () => {
 test('create button is disabled when name is empty', () => {
   render(SemanticRouterCreate);
 
-  const createBtn = screen.getByRole('button', { name: 'Next: Backend models' });
+  const createBtn = screen.getByRole('button', { name: 'Create' });
   expect(createBtn).toBeDisabled();
 });
 
@@ -64,8 +64,44 @@ test('create button is enabled when name is provided', async () => {
   const nameInput = screen.getByLabelText('Router name');
   await fireEvent.input(nameInput, { target: { value: 'my-router' } });
 
-  const createBtn = screen.getByRole('button', { name: 'Next: Backend models' });
+  const createBtn = screen.getByRole('button', { name: 'Create' });
   expect(createBtn).toBeEnabled();
+});
+
+test('calls createSemanticRouter and navigates on success', async () => {
+  render(SemanticRouterCreate);
+
+  const nameInput = screen.getByLabelText('Router name');
+  await fireEvent.input(nameInput, { target: { value: 'my-router' } });
+
+  const createBtn = screen.getByRole('button', { name: 'Create' });
+  await fireEvent.click(createBtn);
+  await vi.advanceTimersToNextTimerAsync();
+
+  expect(window.createSemanticRouter).toHaveBeenCalledWith({
+    name: 'my-router',
+    description: undefined,
+    listeners: [{ address: '0.0.0.0', port: 8899, timeout: 300 }],
+    routing: { keywords: [], decisions: [] },
+  });
+
+  const { handleNavigation } = await import('/@/navigation');
+  expect(handleNavigation).toHaveBeenCalledWith({ page: 'semantic-routers' });
+});
+
+test('displays error when createSemanticRouter fails', async () => {
+  vi.mocked(window.createSemanticRouter).mockRejectedValueOnce(new Error('duplicate name'));
+
+  render(SemanticRouterCreate);
+
+  const nameInput = screen.getByLabelText('Router name');
+  await fireEvent.input(nameInput, { target: { value: 'my-router' } });
+
+  const createBtn = screen.getByRole('button', { name: 'Create' });
+  await fireEvent.click(createBtn);
+  await vi.advanceTimersToNextTimerAsync();
+
+  expect(screen.getByText('Error: duplicate name')).toBeInTheDocument();
 });
 
 test('navigates to semantic routers page on cancel', async () => {

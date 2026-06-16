@@ -8,12 +8,11 @@ import WizardStepper from '/@/lib/ui/WizardStepper.svelte';
 import { handleNavigation } from '/@/navigation';
 import { NavigationPage } from '/@api/navigation-page';
 
-const WIZARD_STEPS = [
-  { id: 'basic', title: 'Basic setup' },
-  { id: 'backends', title: 'Backend models' },
-  { id: 'signals', title: 'Signals & decisions' },
-  { id: 'advanced', title: 'Advanced & review' },
-];
+const WIZARD_STEPS = [{ id: 'basic', title: 'Basic setup' }];
+
+let currentStepIndex = $state(0);
+let currentStepId = $derived(WIZARD_STEPS[currentStepIndex]?.id ?? '');
+let isLastStep = $derived(currentStepIndex === WIZARD_STEPS.length - 1);
 
 let name = $state('');
 let description = $state('');
@@ -22,10 +21,34 @@ let listenerPort = $state(8899);
 let timeout = $state(300);
 
 let error = $state('');
+let creating = $state(false);
 
 let canSave = $derived(
   name.trim().length > 0 && listenerPort >= 1024 && listenerPort <= 65535 && timeout > 0 && timeout <= 3600,
 );
+
+async function goNext(): Promise<void> {
+  if (!isLastStep) {
+    currentStepIndex++;
+    return;
+  }
+
+  error = '';
+  creating = true;
+  try {
+    await window.createSemanticRouter({
+      name: name.trim(),
+      description: description.trim() || undefined,
+      listeners: [{ address: listenerAddress, port: listenerPort, timeout }],
+      routing: { keywords: [], decisions: [] },
+    });
+    handleNavigation({ page: NavigationPage.SEMANTIC_ROUTERS });
+  } catch (err: unknown) {
+    error = String(err);
+  } finally {
+    creating = false;
+  }
+}
 
 function cancel(): void {
   handleNavigation({ page: NavigationPage.SEMANTIC_ROUTERS });
@@ -55,10 +78,11 @@ function cancel(): void {
           </div>
 
           <!-- Stepper -->
-          <WizardStepper steps={WIZARD_STEPS} currentIndex={0} />
+          <WizardStepper steps={WIZARD_STEPS} currentIndex={currentStepIndex} />
 
           <!-- Step content card -->
           <div class="rounded-xl border border-(--pd-content-card-border) bg-(--pd-content-card-inset-bg) p-6">
+            {#if currentStepId === 'basic'}
             <h2 class="text-lg font-semibold text-(--pd-modal-text) mb-1">Basic setup</h2>
             <p class="text-sm text-(--pd-content-card-text) opacity-60 mb-5">
               Give the router a name and configure the listener. Agents connect to the listener endpoint; they never
@@ -120,6 +144,7 @@ function cancel(): void {
                 </p>
               </div>
             </div>
+            {/if}
           </div>
 
           {#if error}
@@ -129,13 +154,12 @@ function cancel(): void {
           <!-- Footer actions -->
           <div class="flex items-center justify-between pt-4 border-t border-(--pd-content-card-border)">
             <span class="text-sm text-(--pd-content-card-text) opacity-70">
-              Step 1 of {WIZARD_STEPS.length}
+              Step {currentStepIndex + 1} of {WIZARD_STEPS.length}
             </span>
             <div class="flex flex-wrap items-center justify-end gap-3">
               <Button onclick={cancel}>Cancel</Button>
-              <!-- TODO: wire to step navigation once backend models step is implemented -->
-              <Button disabled={!canSave}>
-                Next: Backend models
+              <Button onclick={goNext} disabled={!canSave || creating} inProgress={creating}>
+                {isLastStep ? 'Create' : `Next: ${WIZARD_STEPS[currentStepIndex + 1]?.title}`}
               </Button>
             </div>
           </div>
