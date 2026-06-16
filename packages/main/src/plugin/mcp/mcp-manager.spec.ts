@@ -16,6 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
+import { experimental_createMCPClient } from '@ai-sdk/mcp';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { beforeEach, expect, test, vi } from 'vitest';
 
@@ -25,8 +26,6 @@ import type { MCPExchanges } from './mcp-exchanges.js';
 import { MCPManager } from './mcp-manager.js';
 
 vi.mock(import('@ai-sdk/mcp'));
-
-const { experimental_createMCPClient } = await import('@ai-sdk/mcp');
 
 const apiSender: ApiSenderType = {
   send: vi.fn(),

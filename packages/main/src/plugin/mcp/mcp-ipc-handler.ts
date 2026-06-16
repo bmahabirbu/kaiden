@@ -40,6 +40,8 @@ export class MCPIPCHandler {
     this.ipcHandle('mcp-registry:createMCPRegistry', this.createMCPRegistry.bind(this));
     this.ipcHandle('mcp-registry:exportServer', this.exportServer.bind(this));
     this.ipcHandle('mcp-registry:getExportConfigPath', this.getExportConfigPath.bind(this));
+    this.ipcHandle('mcp-manager:startMCPServer', this.startMCPServer.bind(this));
+    this.ipcHandle('mcp-manager:stopMCPServer', this.stopMCPServer.bind(this));
   }
 
   protected async createMCPRegistry(
@@ -55,5 +57,13 @@ export class MCPIPCHandler {
 
   protected getExportConfigPath(_: IpcMainInvokeEvent, target: MCPExportTarget): string {
     return this.mcpExporter.getConfigFilePath(target);
+  }
+
+  protected async startMCPServer(_: IpcMainInvokeEvent, key: string): Promise<void> {
+    await this.mcpRegistry.startMCPServer(key);
+  }
+
+  protected async stopMCPServer(_: IpcMainInvokeEvent, key: string): Promise<void> {
+    await this.mcpRegistry.stopMCPServer(key);
   }
 }
