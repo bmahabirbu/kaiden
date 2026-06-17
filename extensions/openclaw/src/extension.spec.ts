@@ -16,11 +16,11 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import type { Disposable, ExtensionContext } from '@openkaiden/api';
+import type { AgentConfigurationFile, AgentWorkspaceContext, Disposable, ExtensionContext } from '@openkaiden/api';
 import { agents } from '@openkaiden/api';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { activate } from './extension';
+import { activate, OPENCLAW_CONFIG_PATH } from './extension';
 
 const AGENT_DISPOSABLE_MOCK: Disposable = { dispose: vi.fn() };
 
@@ -65,5 +65,114 @@ describe('activate', () => {
     expect(agent.isSupportedModelType!({ name: 'openai' })).toBe(true);
     expect(agent.isSupportedModelType!({ name: 'gemini' })).toBe(true);
     expect(agent.isSupportedModelType!({ name: 'vertexai' })).toBe(false);
+  });
+
+  test('registers agent with openclaw.json configuration file', async () => {
+    await activate(extensionContextMock);
+
+    const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+    expect(agent.configurationFiles).toHaveLength(1);
+    expect(agent.configurationFiles[0]!.path).toBe(OPENCLAW_CONFIG_PATH);
+  });
+
+  describe('preWorkspaceStart', () => {
+    function createContext(
+      configFiles: AgentConfigurationFile[],
+      modelLabel = 'anthropic/claude-opus-4-6',
+    ): AgentWorkspaceContext {
+      return {
+        model: {
+          model: { label: modelLabel },
+        },
+        configurationFiles: configFiles,
+      };
+    }
+
+    function createConfigFile(content = '{}'): AgentConfigurationFile & { updateMock: ReturnType<typeof vi.fn> } {
+      const updateMock = vi.fn();
+      const file: AgentConfigurationFile = {
+        path: OPENCLAW_CONFIG_PATH,
+        read: vi.fn().mockResolvedValue(content),
+        update: updateMock,
+      };
+      return Object.assign(file, { updateMock });
+    }
+
+    test('writes model configuration into openclaw.json', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const configFile = createConfigFile();
+      await agent.preWorkspaceStart(createContext([configFile]));
+
+      expect(configFile.updateMock).toHaveBeenCalledOnce();
+      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
+      expect(written).toEqual({
+        agents: { defaults: { model: 'anthropic/claude-opus-4-6' } },
+      });
+    });
+
+    test('preserves existing configuration fields', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const existingConfig = JSON.stringify({
+        agents: { defaults: { model: 'old-model', params: { cacheRetention: 'long' } } },
+        other: true,
+      });
+      const configFile = createConfigFile(existingConfig);
+      await agent.preWorkspaceStart(createContext([configFile], 'openai/gpt-5.5'));
+
+      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
+      expect(written.agents.defaults.model).toBe('openai/gpt-5.5');
+      expect(written.agents.defaults.params.cacheRetention).toBe('long');
+      expect(written.other).toBe(true);
+    });
+
+    test.each([
+      'null',
+      '"a string"',
+      '123',
+      'true',
+      '[1, 2]',
+    ])('falls back to empty config when parsed JSON is non-object: %s', async (payload: string) => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const configFile = createConfigFile(payload);
+      await agent.preWorkspaceStart(createContext([configFile]));
+
+      expect(configFile.updateMock).toHaveBeenCalledOnce();
+      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
+      expect(written.agents.defaults.model).toBe('anthropic/claude-opus-4-6');
+    });
+
+    test('handles invalid JSON by starting with empty config', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const configFile = createConfigFile('not valid json');
+      await agent.preWorkspaceStart(createContext([configFile]));
+
+      expect(configFile.updateMock).toHaveBeenCalledOnce();
+      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
+      expect(written.agents.defaults.model).toBe('anthropic/claude-opus-4-6');
+    });
+
+    test('does nothing when config file is not in context', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const updateMock = vi.fn();
+      const otherFile: AgentConfigurationFile = {
+        path: 'some/other/path.json',
+        read: vi.fn(),
+        update: updateMock,
+      };
+
+      await agent.preWorkspaceStart(createContext([otherFile]));
+
+      expect(updateMock).not.toHaveBeenCalled();
+    });
   });
 });
