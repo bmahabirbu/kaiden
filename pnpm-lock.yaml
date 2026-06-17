@@ -741,6 +741,9 @@ importers:
       '@openkaiden/api':
         specifier: workspace:*
         version: link:../../packages/extension-api
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       adm-zip:
         specifier: ^0.5.16

@@ -16,8 +16,37 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import type { ExtensionContext, ModelType } from '@openkaiden/api';
+import type { AgentWorkspaceContext, ExtensionContext, ModelType } from '@openkaiden/api';
 import { agents } from '@openkaiden/api';
+import { z } from 'zod';
+
+const OpenClawAgentsSchema = z
+  .looseObject({
+    defaults: z.looseObject({}).catch({}).optional(),
+  })
+  .catch({});
+
+const McpServerEntrySchema = z.looseObject({
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  transport: z.string().optional(),
+  url: z.string().optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+});
+
+type McpServerEntry = z.infer<typeof McpServerEntrySchema>;
+
+const McpConfigSchema = z.looseObject({
+  servers: z.record(z.string(), McpServerEntrySchema).optional(),
+});
+
+const OpenClawConfigSchema = z.looseObject({
+  agents: OpenClawAgentsSchema.optional(),
+  mcp: McpConfigSchema.optional(),
+});
+
+export const OPENCLAW_CONFIG_PATH = '.openclaw/openclaw.json';
 
 export async function activate(extensionContext: ExtensionContext): Promise<void> {
   const disposable = agents.registerAgent({
@@ -30,13 +59,60 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
     },
     command: 'openclaw',
     acp: { args: ['acp'] },
-    configurationFiles: [],
+    configurationFiles: [
+      {
+        path: OPENCLAW_CONFIG_PATH,
+        async read(): Promise<string> {
+          return '{}';
+        },
+      },
+    ],
     destinationSkillsFolder: '${HOME}/.openclaw/skills',
     isSupportedModelType(type: ModelType): boolean {
       return type.name !== 'vertexai';
     },
-    async preWorkspaceStart(): Promise<void> {
-      throw new Error('not implemented');
+    async preWorkspaceStart(context: AgentWorkspaceContext): Promise<void> {
+      const configFile = context.configurationFiles.find(f => f.path === OPENCLAW_CONFIG_PATH);
+      if (!configFile) {
+        return;
+      }
+
+      const config = OpenClawConfigSchema.parse(JSON.parse(await configFile.read()));
+
+      config.agents = {
+        ...config.agents,
+        defaults: {
+          ...(config.agents?.defaults ?? {}),
+          model: context.model.model.label,
+        },
+      };
+
+      const mcpServers = context.workspace.mcp?.servers;
+      const mcpCommands = context.workspace.mcp?.commands;
+
+      if (mcpServers?.length || mcpCommands?.length) {
+        const servers: Record<string, McpServerEntry> = { ...config.mcp?.servers };
+
+        for (const server of mcpServers ?? []) {
+          servers[server.name] = {
+            transport: 'streamable-http',
+            url: server.url,
+            ...(server.headers && Object.keys(server.headers).length > 0 ? { headers: server.headers } : {}),
+          };
+        }
+
+        for (const cmd of mcpCommands ?? []) {
+          servers[cmd.name] = {
+            command: cmd.command,
+            args: cmd.args ?? [],
+            ...(cmd.env && Object.keys(cmd.env).length > 0 ? { env: cmd.env } : {}),
+          };
+        }
+
+        config.mcp = { ...config.mcp, servers };
+      }
+
+      await configFile.update(JSON.stringify(config, undefined, 2));
     },
   });
   extensionContext.subscriptions.push(disposable);
