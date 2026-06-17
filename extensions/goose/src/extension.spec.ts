@@ -16,11 +16,11 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import type { Disposable, ExtensionContext } from '@openkaiden/api';
+import type { AgentConfigurationFile, AgentWorkspaceContext, Disposable, ExtensionContext } from '@openkaiden/api';
 import { agents } from '@openkaiden/api';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { activate } from './extension';
+import { activate, GOOSE_CONFIG_PATH } from './extension';
 
 const AGENT_DISPOSABLE_MOCK: Disposable = { dispose: vi.fn() };
 
@@ -73,5 +73,84 @@ describe('activate', () => {
     const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
     expect(agent.isSupportedModelType!({ name: 'gemini' })).toBe(true);
     expect(agent.isSupportedModelType!({ name: 'openai' })).toBe(true);
+  });
+
+  test('registers agent with config.yaml configuration file', async () => {
+    await activate(extensionContextMock);
+
+    const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+    expect(agent.configurationFiles).toHaveLength(1);
+    expect(agent.configurationFiles[0]!.path).toBe(GOOSE_CONFIG_PATH);
+  });
+
+  describe('preWorkspaceStart', () => {
+    function createContext(configFiles: AgentConfigurationFile[], modelLabel = 'gpt-4o'): AgentWorkspaceContext {
+      return {
+        model: {
+          model: { label: modelLabel },
+        },
+        configurationFiles: configFiles,
+      };
+    }
+
+    function createConfigFile(content = ''): AgentConfigurationFile & { updateMock: ReturnType<typeof vi.fn> } {
+      const updateMock = vi.fn();
+      const file: AgentConfigurationFile = {
+        path: GOOSE_CONFIG_PATH,
+        read: vi.fn().mockResolvedValue(content),
+        update: updateMock,
+      };
+      return Object.assign(file, { updateMock });
+    }
+
+    test('writes model configuration into config.yaml', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const configFile = createConfigFile();
+      await agent.preWorkspaceStart(createContext([configFile]));
+
+      expect(configFile.updateMock).toHaveBeenCalledOnce();
+      expect(configFile.updateMock.mock.calls[0]![0]).toBe('GOOSE_MODEL: gpt-4o\n');
+    });
+
+    test('preserves existing configuration fields', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const configFile = createConfigFile('GOOSE_PROVIDER: openai\nGOOSE_MODEL: old-model\n');
+      await agent.preWorkspaceStart(createContext([configFile], 'claude-sonnet'));
+
+      const written = configFile.updateMock.mock.calls[0]![0] as string;
+      expect(written).toContain('GOOSE_PROVIDER: openai');
+      expect(written).toContain('GOOSE_MODEL: claude-sonnet');
+      expect(written).not.toContain('old-model');
+    });
+
+    test('handles empty config file', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const configFile = createConfigFile('');
+      await agent.preWorkspaceStart(createContext([configFile], 'gemini-2.5-pro'));
+
+      expect(configFile.updateMock.mock.calls[0]![0]).toBe('GOOSE_MODEL: gemini-2.5-pro\n');
+    });
+
+    test('does nothing when config file is not in context', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const updateMock = vi.fn();
+      const otherFile: AgentConfigurationFile = {
+        path: 'some/other/path.yaml',
+        read: vi.fn(),
+        update: updateMock,
+      };
+
+      await agent.preWorkspaceStart(createContext([otherFile]));
+
+      expect(updateMock).not.toHaveBeenCalled();
+    });
   });
 });
