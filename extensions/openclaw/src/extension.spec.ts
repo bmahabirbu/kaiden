@@ -130,6 +130,27 @@ describe('activate', () => {
     });
 
     test.each([
+      {
+        name: 'agents is not an object',
+        payload: JSON.stringify({ agents: 'invalid', other: true }),
+      },
+      {
+        name: 'agents.defaults is not an object',
+        payload: JSON.stringify({ agents: { defaults: 'invalid', keep: true }, other: true }),
+      },
+    ])('falls back to empty nested config when %s', async ({ payload }) => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const configFile = createConfigFile(payload);
+      await agent.preWorkspaceStart(createContext([configFile], 'openai/gpt-5.5'));
+
+      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
+      expect(written.agents.defaults.model).toBe('openai/gpt-5.5');
+      expect(written.other).toBe(true);
+    });
+
+    test.each([
       'null',
       '"a string"',
       '123',

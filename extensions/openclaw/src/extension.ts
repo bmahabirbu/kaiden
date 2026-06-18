@@ -18,8 +18,38 @@
 
 import type { AgentWorkspaceContext, ExtensionContext, ModelType } from '@openkaiden/api';
 import { agents } from '@openkaiden/api';
+import { z } from 'zod';
+
+type JsonObject = Record<string, unknown>;
+
+const JsonObjectSchema: z.ZodType<JsonObject> = z.record(z.string(), z.unknown());
+
+const OpenClawAgentsSchema = z
+  .object({
+    defaults: JsonObjectSchema.catch({}).optional(),
+  })
+  .catchall(z.unknown())
+  .catch({});
+
+const OpenClawConfigSchema = z
+  .object({
+    agents: OpenClawAgentsSchema.optional(),
+  })
+  .catchall(z.unknown());
+
+type OpenClawConfig = z.output<typeof OpenClawConfigSchema>;
 
 export const OPENCLAW_CONFIG_PATH = 'openclaw.json';
+
+function parseOpenClawConfig(content: string): OpenClawConfig {
+  try {
+    const parsed: unknown = JSON.parse(content);
+    const result = OpenClawConfigSchema.safeParse(parsed);
+    return result.success ? result.data : {};
+  } catch {
+    return {};
+  }
+}
 
 export async function activate(extensionContext: ExtensionContext): Promise<void> {
   const disposable = agents.registerAgent({
@@ -50,25 +80,19 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
         return;
       }
 
-      const content = await configFile.read();
-      let config: Record<string, unknown>;
-      try {
-        const parsed: unknown = JSON.parse(content);
-        config =
-          typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-            ? (parsed as Record<string, unknown>)
-            : {};
-      } catch {
-        config = {};
-      }
+      const config = parseOpenClawConfig(await configFile.read());
+      const nextConfig: OpenClawConfig = {
+        ...config,
+        agents: {
+          ...config.agents,
+          defaults: {
+            ...(config.agents?.defaults ?? {}),
+            model: context.model.model.label,
+          },
+        },
+      };
 
-      const agents = (config.agents as Record<string, unknown> | undefined) ?? {};
-      const defaults = (agents.defaults as Record<string, unknown> | undefined) ?? {};
-      defaults.model = context.model.model.label;
-      agents.defaults = defaults;
-      config.agents = agents;
-
-      await configFile.update(JSON.stringify(config, undefined, 2));
+      await configFile.update(JSON.stringify(nextConfig, undefined, 2));
     },
   });
   extensionContext.subscriptions.push(disposable);
