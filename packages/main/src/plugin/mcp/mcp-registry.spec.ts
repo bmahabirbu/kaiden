@@ -412,6 +412,7 @@ test('listMCPServersFromRegistries handles both updates and additions', async ()
 describe('startMCPServer / stopMCPServer', () => {
   const SERVER_KEY = 'internal:test-server:package:0';
   const SERVER_ID = 'test-server';
+  const OTHER_SERVER_KEY = 'internal:test-server:package:1';
 
   const registeredServer: MCPRemoteServerInfo = {
     id: SERVER_KEY,
@@ -431,6 +432,18 @@ describe('startMCPServer / stopMCPServer', () => {
     tools: { myTool: { description: 'a tool' } },
   };
 
+  const otherRegisteredServer: MCPRemoteServerInfo = {
+    ...registeredServer,
+    id: OTHER_SERVER_KEY,
+    infos: { internalProviderId: 'internal', serverId: SERVER_ID, remoteId: 1 },
+  };
+
+  const otherSpawnedServer: MCPRemoteServerInfo = {
+    ...spawnedServer,
+    id: OTHER_SERVER_KEY,
+    infos: { internalProviderId: 'internal', serverId: SERVER_ID, remoteId: 1 },
+  };
+
   const remoteServer: MCPRemoteServerInfo = {
     ...registeredServer,
     setupType: 'remote',
@@ -441,21 +454,36 @@ describe('startMCPServer / stopMCPServer', () => {
     serverId: SERVER_ID,
     packageId: 0,
     autoSpawn: false,
-    runtimeArguments: [],
-    packageArguments: [],
-    environmentVariables: {},
+    runtimeArguments: ['--port=3000'],
+    packageArguments: ['serve'],
+    environmentVariables: { TOKEN: 'default-token' },
   };
 
   const serverDetail = {
     serverId: SERVER_ID,
     name: 'Test MCP',
     description: 'A test server',
-    packages: [{ registryType: 'npm', name: 'test-mcp', version: '1.0.0' }],
+    packages: [
+      {
+        registryType: 'npm',
+        name: 'test-mcp',
+        version: '1.0.0',
+        runtimeArguments: [{ default: '--port=3000' }],
+        packageArguments: [{ default: 'serve' }],
+        environmentVariables: [{ name: 'TOKEN', default: 'default-token' }],
+      },
+      {
+        registryType: 'npm',
+        name: 'test-mcp-alt',
+        version: '2.0.0',
+      },
+    ],
   };
 
   let mockMcpManager: MCPManager;
   let mockSafeStorage: { get: ReturnType<typeof vi.fn>; store: ReturnType<typeof vi.fn> };
   let registry: MCPRegistry;
+  let storedConfigs: Array<Record<string, unknown>>;
 
   beforeEach(() => {
     mockMcpManager = {
@@ -468,9 +496,12 @@ describe('startMCPServer / stopMCPServer', () => {
       removeMcpRemoteServer: vi.fn(),
     } as unknown as MCPManager;
 
+    storedConfigs = [{ ...savedConfig }];
     mockSafeStorage = {
-      get: vi.fn().mockResolvedValue(JSON.stringify([savedConfig])),
-      store: vi.fn(),
+      get: vi.fn().mockImplementation(async () => JSON.stringify(storedConfigs)),
+      store: vi.fn().mockImplementation(async (_key: string, value: string) => {
+        storedConfigs = JSON.parse(value);
+      }),
     };
 
     const mockSafeStorageRegistry = {
@@ -509,9 +540,7 @@ describe('startMCPServer / stopMCPServer', () => {
     await registry.startMCPServer(SERVER_KEY);
 
     expect(mockMcpManager.addClient).toHaveBeenCalledWith(SERVER_KEY, mockTransport);
-    expect(mockSafeStorage.store).toHaveBeenCalled();
-    const storedConfigs = JSON.parse(vi.mocked(mockSafeStorage.store).mock.calls[0]![1] as string);
-    expect(storedConfigs[0].autoSpawn).toBe(true);
+    expect(storedConfigs[0]?.['autoSpawn']).toBe(true);
   });
 
   test('startMCPServer throws if server is already spawned', async () => {
@@ -532,9 +561,7 @@ describe('startMCPServer / stopMCPServer', () => {
     await registry.stopMCPServer(SERVER_KEY);
 
     expect(mockMcpManager.removeClient).toHaveBeenCalledWith(SERVER_KEY);
-    expect(mockSafeStorage.store).toHaveBeenCalled();
-    const storedConfigs = JSON.parse(vi.mocked(mockSafeStorage.store).mock.calls[0]![1] as string);
-    expect(storedConfigs[0].autoSpawn).toBe(false);
+    expect(storedConfigs[0]?.['autoSpawn']).toBe(false);
   });
 
   test('stopMCPServer throws if server is already registered', async () => {
@@ -549,7 +576,7 @@ describe('startMCPServer / stopMCPServer', () => {
     await expect(registry.stopMCPServer(SERVER_KEY)).rejects.toThrow('Only package MCP servers can be stopped.');
   });
 
-  test('setupMCPServer starts a registered server instead of erroring', async () => {
+  test('setupMCPServer starts the matching registered server and refreshes its saved config', async () => {
     vi.mocked(mockMcpManager.get).mockReturnValue(registeredServer);
     vi.mocked(mockMcpManager.listMCPRemoteServers).mockResolvedValue([registeredServer]);
 
@@ -560,12 +587,20 @@ describe('startMCPServer / stopMCPServer', () => {
     await registry.setupMCPServer(SERVER_ID, {
       type: 'package',
       index: 0,
-      runtimeArguments: {},
-      packageArguments: {},
-      environmentVariables: {},
+      runtimeArguments: { 0: { value: '--port=9000', variables: {} } },
+      packageArguments: { 0: { value: 'serve-updated', variables: {} } },
+      environmentVariables: { TOKEN: { value: 'updated-token', variables: {} } },
     });
 
     expect(mockMcpManager.addClient).toHaveBeenCalledWith(SERVER_KEY, expect.anything());
+    expect(storedConfigs[0]).toMatchObject({
+      serverId: SERVER_ID,
+      packageId: 0,
+      autoSpawn: true,
+      runtimeArguments: ['--port=9000'],
+      packageArguments: ['serve-updated'],
+      environmentVariables: { TOKEN: 'updated-token' },
+    });
   });
 
   test('setupMCPServer throws if server is already spawned', async () => {
@@ -582,11 +617,14 @@ describe('startMCPServer / stopMCPServer', () => {
     ).rejects.toThrow('MCP server is already spawned.');
   });
 
-  test('registerMCPServerOnly stops a spawned server instead of erroring', async () => {
-    vi.mocked(mockMcpManager.get).mockReturnValue(spawnedServer);
-    vi.mocked(mockMcpManager.listMCPRemoteServers).mockResolvedValue([spawnedServer]);
+  test('setupMCPServer registers a different package target for the same server id', async () => {
+    vi.mocked(mockMcpManager.listMCPRemoteServers).mockResolvedValue([otherRegisteredServer]);
 
-    await registry.registerMCPServerOnly(SERVER_ID, {
+    const { MCPPackage } = await import('/@/plugin/mcp/package/mcp-package.js');
+    vi.mocked(MCPPackage.prototype.spawn).mockResolvedValue({} as Transport);
+    vi.mocked(MCPPackage.prototype.buildCommandSpec).mockReturnValue({ command: 'node', args: ['server.js'] });
+
+    await registry.setupMCPServer(SERVER_ID, {
       type: 'package',
       index: 0,
       runtimeArguments: {},
@@ -594,7 +632,42 @@ describe('startMCPServer / stopMCPServer', () => {
       environmentVariables: {},
     });
 
+    expect(mockMcpManager.addClient).not.toHaveBeenCalled();
+    expect(mockMcpManager.registerMCPClient).toHaveBeenCalledWith(
+      'internal',
+      SERVER_ID,
+      'package',
+      0,
+      'Test MCP',
+      expect.anything(),
+      undefined,
+      'A test server',
+      undefined,
+      { command: 'node', args: ['server.js'] },
+    );
+  });
+
+  test('registerMCPServerOnly stops the matching spawned server and refreshes its saved config', async () => {
+    vi.mocked(mockMcpManager.get).mockReturnValue(spawnedServer);
+    vi.mocked(mockMcpManager.listMCPRemoteServers).mockResolvedValue([spawnedServer]);
+
+    await registry.registerMCPServerOnly(SERVER_ID, {
+      type: 'package',
+      index: 0,
+      runtimeArguments: { 0: { value: '--port=9100', variables: {} } },
+      packageArguments: { 0: { value: 'serve-registered', variables: {} } },
+      environmentVariables: { TOKEN: { value: 'registered-token', variables: {} } },
+    });
+
     expect(mockMcpManager.removeClient).toHaveBeenCalledWith(SERVER_KEY);
+    expect(storedConfigs[0]).toMatchObject({
+      serverId: SERVER_ID,
+      packageId: 0,
+      autoSpawn: false,
+      runtimeArguments: ['--port=9100'],
+      packageArguments: ['serve-registered'],
+      environmentVariables: { TOKEN: 'registered-token' },
+    });
   });
 
   test('registerMCPServerOnly throws if server is already registered', async () => {
@@ -609,5 +682,33 @@ describe('startMCPServer / stopMCPServer', () => {
         environmentVariables: {},
       }),
     ).rejects.toThrow('MCP server is already registered.');
+  });
+
+  test('registerMCPServerOnly registers a different package target for the same server id', async () => {
+    vi.mocked(mockMcpManager.listMCPRemoteServers).mockResolvedValue([otherSpawnedServer]);
+
+    const { MCPPackage } = await import('/@/plugin/mcp/package/mcp-package.js');
+    vi.mocked(MCPPackage.prototype.buildCommandSpec).mockReturnValue({ command: 'node', args: ['server.js'] });
+
+    await registry.registerMCPServerOnly(SERVER_ID, {
+      type: 'package',
+      index: 0,
+      runtimeArguments: {},
+      packageArguments: {},
+      environmentVariables: {},
+    });
+
+    expect(mockMcpManager.removeClient).not.toHaveBeenCalled();
+    expect(mockMcpManager.registerMCPWithoutClient).toHaveBeenCalledWith(
+      'internal',
+      SERVER_ID,
+      'package',
+      0,
+      'Test MCP',
+      undefined,
+      'A test server',
+      undefined,
+      { command: 'node', args: ['server.js'] },
+    );
   });
 });

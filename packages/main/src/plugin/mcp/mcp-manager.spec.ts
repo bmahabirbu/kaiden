@@ -1,5 +1,5 @@
 /**********************************************************************
- * Copyright (C) 2025 Red Hat, Inc.
+ * Copyright (C) 2026 Red Hat, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -106,6 +106,28 @@ test('addClient throws if client already exists', async () => {
 
   const servers = await mcpManager.listMCPRemoteServers();
   await expect(mcpManager.addClient(servers[0]!.id, createMockTransport())).rejects.toThrow('is already started');
+});
+
+test('addClient cleans up client state when tool discovery fails', async () => {
+  const close = vi.fn().mockResolvedValue(undefined);
+  vi.mocked(experimental_createMCPClient).mockResolvedValueOnce({
+    tools: vi.fn().mockRejectedValue(new Error('tool discovery failed')),
+    close,
+  } as never);
+
+  mcpManager.registerMCPWithoutClient('provider', 'srv1', 'package', 0, 'Test Server');
+
+  const servers = await mcpManager.listMCPRemoteServers();
+  await expect(mcpManager.addClient(servers[0]!.id, createMockTransport())).rejects.toThrow('tool discovery failed');
+
+  expect(close).toHaveBeenCalled();
+  expect(exchanges.clearExchanges).toHaveBeenCalledWith(servers[0]!.id);
+
+  mockMCPClient({ recovered: { description: 'after retry' } });
+  await expect(mcpManager.addClient(servers[0]!.id, createMockTransport())).resolves.toBeUndefined();
+
+  const updated = await mcpManager.listMCPRemoteServers();
+  expect(updated[0]!.tools).toEqual({ recovered: { description: 'after retry' } });
 });
 
 test('removeClient throws if server does not exist', async () => {

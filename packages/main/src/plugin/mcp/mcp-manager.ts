@@ -140,22 +140,7 @@ export class MCPManager implements IAsyncDisposable {
   ): Promise<void> {
     const key = this.getKey(internalProviderId, serverId, setupType, index);
 
-    const wrapped = this.exchanges.createMiddleware(key, transport);
-
-    const client = await experimental_createMCPClient({ transport: wrapped });
-
-    console.log('[MCPManager] Registering MCP client for ', internalProviderId, ' with name ', connectionName);
-    this.#client.set(key, client);
-
-    const toolSet = await client.tools();
-    const tools = Object.fromEntries(
-      Object.entries(toolSet).map(([key, value]) => [
-        key,
-        {
-          description: value.description ?? '',
-        },
-      ]),
-    );
+    const tools = await this.createClientTools(key, transport);
 
     const mcpRemoteServerInfo: MCPRemoteServerInfo = {
       id: key,
@@ -237,14 +222,7 @@ export class MCPManager implements IAsyncDisposable {
     const server = this.get(key);
     if (this.#client.has(key)) throw new Error(`MCP server ${key} is already started`);
 
-    const wrapped = this.exchanges.createMiddleware(key, transport);
-    const client = await experimental_createMCPClient({ transport: wrapped });
-    this.#client.set(key, client);
-
-    const toolSet = await client.tools();
-    server.tools = Object.fromEntries(
-      Object.entries(toolSet).map(([k, v]) => [k, { description: v.description ?? '' }]),
-    );
+    server.tools = await this.createClientTools(key, transport);
     server.status = undefined;
 
     this.apiSender.send('mcp-manager-update');
@@ -274,5 +252,32 @@ export class MCPManager implements IAsyncDisposable {
   ): MCPRemoteServerInfo | undefined {
     const key = this.getKey(INTERNAL_PROVIDER_ID, serverId, type, index);
     return this.#mcps.find(mcp => mcp.id === key);
+  }
+
+  private async createClientTools(
+    key: string,
+    transport: Transport,
+  ): Promise<Record<string, { description?: string }>> {
+    const wrapped = this.exchanges.createMiddleware(key, transport);
+    const client = await experimental_createMCPClient({ transport: wrapped });
+
+    try {
+      const toolSet = await client.tools();
+      const tools = Object.fromEntries(
+        Object.entries(toolSet).map(([toolName, value]) => [
+          toolName,
+          {
+            description: value.description ?? '',
+          },
+        ]),
+      );
+
+      this.#client.set(key, client);
+      return tools;
+    } catch (error) {
+      await client.close().catch(console.error);
+      this.exchanges.clearExchanges(key);
+      throw error;
+    }
   }
 }
