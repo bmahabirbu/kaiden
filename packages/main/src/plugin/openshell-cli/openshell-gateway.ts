@@ -18,6 +18,10 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import type { Disposable } from '@openkaiden/api';
 import { inject, injectable, preDestroy } from 'inversify';
@@ -33,6 +37,8 @@ const HEALTH_CHECK_INTERVAL_MS = 1000;
 const MAX_HEALTH_CHECK_ATTEMPTS = 30;
 const STOP_TIMEOUT_MS = 5000;
 
+type LocalComputeDriver = 'docker' | 'podman';
+
 /**
  * Manages the `openshell-gateway` server binary lifecycle.
  *
@@ -44,6 +50,7 @@ const STOP_TIMEOUT_MS = 5000;
 @injectable()
 export class OpenshellGateway implements Disposable {
   #gatewayProcess: ChildProcess | undefined;
+  #gatewayConfigPath: string | undefined;
   #port: number = DEFAULT_PORT;
   #bindAddress: string = DEFAULT_BIND_ADDRESS;
 
@@ -148,7 +155,10 @@ export class OpenshellGateway implements Disposable {
       this.#bindAddress = options.bindAddress;
     }
 
-    const args = this.buildArgs(options?.disableTls ?? true);
+    const gatewayConfigPath = await this.createGatewayConfig();
+    this.#gatewayConfigPath = gatewayConfigPath;
+
+    const args = this.buildArgs(options?.disableTls ?? true, gatewayConfigPath);
     console.log(`[openshell-gateway] starting: ${binaryPath} ${args.join(' ')}`);
 
     this.#gatewayProcess = spawn(binaryPath, args, {
@@ -214,6 +224,7 @@ export class OpenshellGateway implements Disposable {
     });
 
     this.#gatewayProcess = undefined;
+    await this.cleanupGatewayConfig();
   }
 
   isRunning(): boolean {
@@ -225,14 +236,77 @@ export class OpenshellGateway implements Disposable {
     this.stop().catch((err: unknown) => console.error('[openshell-gateway] failed to stop: ', err));
   }
 
-  private buildArgs(disableTls: boolean): string[] {
+  private buildArgs(disableTls: boolean, gatewayConfigPath?: string): string[] {
     const args: string[] = [];
+    if (gatewayConfigPath) {
+      args.push('--config', gatewayConfigPath);
+    }
     args.push('--port', String(this.#port));
     args.push('--bind-address', this.#bindAddress);
     if (disableTls) {
       args.push('--disable-tls');
     }
     return args;
+  }
+
+  private async createGatewayConfig(): Promise<string | undefined> {
+    const driver = await this.detectLocalComputeDriver();
+    if (!driver) {
+      console.log('[openshell-gateway] no local compute driver detected; starting without generated config');
+      return undefined;
+    }
+
+    const configPath = join(tmpdir(), `kaiden-openshell-gateway-${randomUUID()}.toml`);
+    await writeFile(configPath, this.buildGatewayConfig(driver), 'utf-8');
+    console.log(`[openshell-gateway] generated local gateway config for ${driver} at ${configPath}`);
+    return configPath;
+  }
+
+  private async detectLocalComputeDriver(): Promise<LocalComputeDriver | undefined> {
+    if (await this.isCommandAvailable('podman')) {
+      return 'podman';
+    }
+    if (await this.isCommandAvailable('docker')) {
+      return 'docker';
+    }
+    return undefined;
+  }
+
+  private async isCommandAvailable(command: string): Promise<boolean> {
+    try {
+      await this.exec.exec(command, ['--version']);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private buildGatewayConfig(driver: LocalComputeDriver): string {
+    return [
+      '[openshell]',
+      'version = 1',
+      '',
+      '[openshell.gateway]',
+      `compute_drivers = ["${driver}"]`,
+      '',
+      `[openshell.drivers.${driver}]`,
+      'enable_bind_mounts = true',
+      '',
+    ].join('\n');
+  }
+
+  private async cleanupGatewayConfig(): Promise<void> {
+    if (!this.#gatewayConfigPath) {
+      return;
+    }
+
+    const configPath = this.#gatewayConfigPath;
+    this.#gatewayConfigPath = undefined;
+    try {
+      await rm(configPath, { force: true });
+    } catch (err: unknown) {
+      console.warn('[openshell-gateway] failed to remove generated config:', err);
+    }
   }
 
   private async waitForReady(): Promise<void> {
