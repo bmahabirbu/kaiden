@@ -534,8 +534,8 @@ describe('create – OpenShell mode', () => {
     expect(openshellCli.createSandbox).toHaveBeenCalledWith(
       expect.objectContaining({
         uploads: [
-          { local: '/home/user/.kaiden/skills/github', remote: '/sandbox/.claude/skills/github' },
-          { local: '/home/user/.kaiden/skills/kubernetes', remote: '/sandbox/.claude/skills/kubernetes' },
+          { local: '/home/user/.kaiden/skills/github', remote: '.claude/skills/github' },
+          { local: '/home/user/.kaiden/skills/kubernetes', remote: '.claude/skills/kubernetes' },
         ],
       }),
     );
@@ -554,7 +554,7 @@ describe('create – OpenShell mode', () => {
 
     expect(openshellCli.createSandbox).toHaveBeenCalledWith(
       expect.objectContaining({
-        uploads: [{ local: '/home/user/.kaiden/skills/github', remote: '/sandbox/.agents/skills/github' }],
+        uploads: [{ local: '/home/user/.kaiden/skills/github', remote: '.agents/skills/github' }],
       }),
     );
   });

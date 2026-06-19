@@ -52,8 +52,6 @@ import type { GatewaySandboxes } from '/@api/openshell-gateway-info.js';
 import type { InferenceConnectionCredentials } from '/@api/provider-info.js';
 import type { SecretCreateOptions, SecretValue } from '/@api/secret-info.js';
 
-const OPENSHELL_SANDBOX_HOME = '/sandbox';
-
 /**
  * Manages agent workspaces by delegating to the `kdn` CLI.
  */
@@ -207,22 +205,18 @@ export class AgentWorkspaceManager implements Disposable {
 
   private resolveOpenshellSkillsDestination(destinationSkillsFolder: string): string {
     if (destinationSkillsFolder === '${HOME}') {
-      return OPENSHELL_SANDBOX_HOME;
+      return '.';
     }
 
     if (destinationSkillsFolder.startsWith('${HOME}/')) {
-      return posix.join(OPENSHELL_SANDBOX_HOME, destinationSkillsFolder.slice('${HOME}/'.length));
+      return destinationSkillsFolder.slice('${HOME}/'.length);
     }
 
     if (destinationSkillsFolder.startsWith('~/')) {
-      return posix.join(OPENSHELL_SANDBOX_HOME, destinationSkillsFolder.slice(2));
+      return destinationSkillsFolder.slice(2);
     }
 
-    if (destinationSkillsFolder.startsWith('/')) {
-      return destinationSkillsFolder;
-    }
-
-    return posix.join(OPENSHELL_SANDBOX_HOME, destinationSkillsFolder);
+    return destinationSkillsFolder;
   }
 
   /**
