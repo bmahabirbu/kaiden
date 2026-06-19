@@ -52,6 +52,8 @@ import type { GatewaySandboxes } from '/@api/openshell-gateway-info.js';
 import type { InferenceConnectionCredentials } from '/@api/provider-info.js';
 import type { SecretCreateOptions, SecretValue } from '/@api/secret-info.js';
 
+const HOME_VARIABLE = '${HOME}';
+
 /**
  * Manages agent workspaces by delegating to the `kdn` CLI.
  */
@@ -204,16 +206,18 @@ export class AgentWorkspaceManager implements Disposable {
   }
 
   private resolveOpenshellSkillsDestination(destinationSkillsFolder: string): string {
-    if (destinationSkillsFolder === '${HOME}') {
+    if (destinationSkillsFolder === HOME_VARIABLE) {
       return '.';
     }
 
-    if (destinationSkillsFolder.startsWith('${HOME}/')) {
-      return destinationSkillsFolder.slice('${HOME}/'.length);
+    for (const str of [`${HOME_VARIABLE}/`, '~/']) {
+      if (destinationSkillsFolder.startsWith(str)) {
+        return destinationSkillsFolder.slice(str.length);
+      }
     }
 
-    if (destinationSkillsFolder.startsWith('~/')) {
-      return destinationSkillsFolder.slice(2);
+    if (destinationSkillsFolder.includes('..')) {
+      throw new Error(`Invalid destination skills folder: ${destinationSkillsFolder}`);
     }
 
     return destinationSkillsFolder;
