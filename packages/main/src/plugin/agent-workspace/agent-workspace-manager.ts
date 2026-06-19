@@ -18,7 +18,7 @@
 
 import { access, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, join, posix } from 'node:path';
 
 import type { Disposable, FileSystemWatcher } from '@openkaiden/api';
 import type { WebContents } from 'electron';
@@ -51,6 +51,8 @@ import { IConfigurationRegistry } from '/@api/configuration/models.js';
 import type { GatewaySandboxes } from '/@api/openshell-gateway-info.js';
 import type { InferenceConnectionCredentials } from '/@api/provider-info.js';
 import type { SecretCreateOptions, SecretValue } from '/@api/secret-info.js';
+
+const OPENSHELL_SANDBOX_HOME = '/sandbox';
 
 /**
  * Manages agent workspaces by delegating to the `kdn` CLI.
@@ -158,6 +160,9 @@ export class AgentWorkspaceManager implements Disposable {
         await writeFile(file.localPath, await file.read(), 'utf-8');
         uploads.push({ local: file.localPath, remote: file.path });
       }
+
+      const skillUploads = this.buildOpenshellSkillUploads(options.skills, agent.destinationSkillsFolder);
+      uploads.push(...skillUploads);
     } else {
       throw new Error(`Unable to create workspace: agent ${options.agent} not registered`);
     }
@@ -183,6 +188,41 @@ export class AgentWorkspaceManager implements Disposable {
     } catch {
       return false;
     }
+  }
+
+  private buildOpenshellSkillUploads(
+    skills: string[] | undefined,
+    destinationSkillsFolder: string,
+  ): Array<{ local: string; remote: string }> {
+    if (!skills?.length) {
+      return [];
+    }
+
+    const remoteBase = this.resolveOpenshellSkillsDestination(destinationSkillsFolder);
+    return skills.map(skillPath => ({
+      local: skillPath,
+      remote: posix.join(remoteBase, basename(skillPath)),
+    }));
+  }
+
+  private resolveOpenshellSkillsDestination(destinationSkillsFolder: string): string {
+    if (destinationSkillsFolder === '${HOME}') {
+      return OPENSHELL_SANDBOX_HOME;
+    }
+
+    if (destinationSkillsFolder.startsWith('${HOME}/')) {
+      return posix.join(OPENSHELL_SANDBOX_HOME, destinationSkillsFolder.slice('${HOME}/'.length));
+    }
+
+    if (destinationSkillsFolder.startsWith('~/')) {
+      return posix.join(OPENSHELL_SANDBOX_HOME, destinationSkillsFolder.slice(2));
+    }
+
+    if (destinationSkillsFolder.startsWith('/')) {
+      return destinationSkillsFolder;
+    }
+
+    return posix.join(OPENSHELL_SANDBOX_HOME, destinationSkillsFolder);
   }
 
   /**

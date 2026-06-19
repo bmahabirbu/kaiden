@@ -523,6 +523,42 @@ describe('create – OpenShell mode', () => {
     );
   });
 
+  test('uploads selected skills into the agent destination skills folder', async () => {
+    const options = {
+      ...defaultOptions,
+      skills: ['/home/user/.kaiden/skills/github', '/home/user/.kaiden/skills/kubernetes'],
+    };
+
+    await manager.create(options);
+
+    expect(openshellCli.createSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        uploads: [
+          { local: '/home/user/.kaiden/skills/github', remote: '/sandbox/.claude/skills/github' },
+          { local: '/home/user/.kaiden/skills/kubernetes', remote: '/sandbox/.claude/skills/kubernetes' },
+        ],
+      }),
+    );
+  });
+
+  test('resolves relative destination skills folders under the sandbox home', async () => {
+    vi.mocked(agentRegistry.getAgentRegistration).mockReturnValue({
+      ...mockAgent,
+      destinationSkillsFolder: '.agents/skills',
+    });
+
+    await manager.create({
+      ...defaultOptions,
+      skills: ['/home/user/.kaiden/skills/github'],
+    });
+
+    expect(openshellCli.createSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        uploads: [{ local: '/home/user/.kaiden/skills/github', remote: '/sandbox/.agents/skills/github' }],
+      }),
+    );
+  });
+
   test('throws when agent is not found in registry', async () => {
     vi.mocked(agentRegistry.getAgentRegistration).mockReturnValue(undefined);
 
