@@ -428,6 +428,24 @@ describe('create – OpenShell mode', () => {
     });
   });
 
+  test('passes workspace environment variables to sandbox creation', async () => {
+    await manager.create({
+      ...defaultOptions,
+      workspaceConfiguration: {
+        environment: [
+          { name: 'MISTRAL_API_KEY', value: 'provided' },
+          { name: 'DEBUG', value: '1' },
+        ],
+      },
+    });
+
+    expect(openshellCli.createSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        env: ['MISTRAL_API_KEY=provided', 'DEBUG=1'],
+      }),
+    );
+  });
+
   test('returns { id: sandboxName }', async () => {
     const result = await manager.create(defaultOptions);
 

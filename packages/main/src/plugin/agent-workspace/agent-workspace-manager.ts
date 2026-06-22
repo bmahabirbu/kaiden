@@ -182,10 +182,14 @@ export class AgentWorkspaceManager implements Disposable {
     }
 
     const sandboxName = options.name ?? basename(options.sourcePath);
+    const env = workspace.environment
+      ?.filter(entry => typeof entry.value === 'string' && entry.value !== '')
+      .map(entry => `${entry.name}=${entry.value}`);
 
     await this.openshellCli.createSandbox({
       name: sandboxName,
       providers: options.secrets,
+      env: env?.length ? env : undefined,
       labels: encodeWorkspaceLabels(options.sourcePath),
       uploads: uploads.length > 0 ? uploads : undefined,
       noTty: true,
