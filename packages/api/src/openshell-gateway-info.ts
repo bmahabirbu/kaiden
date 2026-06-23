@@ -85,7 +85,7 @@ export interface CreateSandboxOptions {
   cpu?: string;
   memory?: string;
   providers?: string[];
-  env?: string[];
+  env?: Record<string, string>;
   labels?: Record<string, string>;
   uploads?: Array<{ local: string; remote: string }>;
   command?: string[];

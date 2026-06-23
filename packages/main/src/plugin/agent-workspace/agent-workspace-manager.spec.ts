@@ -441,7 +441,7 @@ describe('create – OpenShell mode', () => {
 
     expect(openshellCli.createSandbox).toHaveBeenCalledWith(
       expect.objectContaining({
-        env: ['MISTRAL_API_KEY=provided', 'DEBUG=1'],
+        env: { MISTRAL_API_KEY: 'provided', DEBUG: '1' },
       }),
     );
   });

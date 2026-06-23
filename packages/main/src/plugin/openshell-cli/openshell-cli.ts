@@ -135,8 +135,8 @@ export class OpenshellCli {
       }
     }
     if (options.env) {
-      for (const env of options.env) {
-        args.push('--env', env);
+      for (const [key, value] of Object.entries(options.env)) {
+        args.push('--env', `${key}=${value}`);
       }
     }
     if (options.labels) {

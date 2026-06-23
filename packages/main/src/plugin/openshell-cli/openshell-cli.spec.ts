@@ -169,7 +169,7 @@ describe('createSandbox', () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
 
-    await openshellCli.createSandbox({ env: ['API_KEY=sk-test', 'DEBUG=1'] });
+    await openshellCli.createSandbox({ env: { API_KEY: 'sk-test', DEBUG: '1' } });
 
     expect(exec.exec).toHaveBeenCalledWith(
       OPENSHELL_CLI_PATH,
@@ -252,7 +252,7 @@ describe('createSandbox', () => {
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
 
     await openshellCli.createSandbox({
-      env: ['API_KEY=sk-test'],
+      env: { API_KEY: 'sk-test' },
       command: ['bash'],
     });
 
