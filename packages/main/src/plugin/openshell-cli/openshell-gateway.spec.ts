@@ -55,30 +55,10 @@ function mockExecResult(stdout = ''): RunResult {
   return { command: CLI_BINARY, stdout, stderr: '' };
 }
 
-function mockExecBehavior(options?: {
-  statusResults?: Array<boolean>;
-  podmanAvailable?: boolean;
-  dockerAvailable?: boolean;
-}): void {
+function mockExecBehavior(options?: { statusResults?: Array<boolean> }): void {
   const statusResults = [...(options?.statusResults ?? [])];
-  const podmanAvailable = options?.podmanAvailable ?? true;
-  const dockerAvailable = options?.dockerAvailable ?? false;
 
   vi.mocked(exec.exec).mockImplementation(async (command: string, args?: string[]) => {
-    if (command === 'podman') {
-      if (podmanAvailable) {
-        return mockExecResult('podman version 5.0.0');
-      }
-      throw new Error('podman not found');
-    }
-
-    if (command === 'docker') {
-      if (dockerAvailable) {
-        return mockExecResult('Docker version 27.0.0');
-      }
-      throw new Error('docker not found');
-    }
-
     if (command === CLI_BINARY && args?.[0] === 'status') {
       const next = statusResults.shift();
       if (next === false) {
@@ -445,59 +425,23 @@ describe('start', () => {
     vi.useRealTimers();
   });
 
-  test('writes a podman gateway config with bind mounts enabled', async () => {
+  test('writes gateway config enabling bind mounts for both podman and docker', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
-    mockExecBehavior({ statusResults: [true], podmanAvailable: true, dockerAvailable: true });
+    mockExecBehavior({ statusResults: [true] });
 
     await gateway.start();
 
     expect(writeFile).toHaveBeenCalledWith(
       expect.stringContaining('kaiden-openshell-gateway-'),
-      expect.stringContaining('compute_drivers = ["podman"]'),
-      'utf-8',
-    );
-    expect(writeFile).toHaveBeenCalledWith(
-      expect.any(String),
       expect.stringContaining('[openshell.drivers.podman]\nenable_bind_mounts = true'),
-      'utf-8',
-    );
-  });
-
-  test('falls back to docker when podman is unavailable', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    const proc = createMockChildProcess();
-    vi.mocked(spawn).mockReturnValue(proc);
-    mockExecBehavior({ statusResults: [true], podmanAvailable: false, dockerAvailable: true });
-
-    await gateway.start();
-
-    expect(writeFile).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.stringContaining('compute_drivers = ["docker"]'),
       'utf-8',
     );
     expect(writeFile).toHaveBeenCalledWith(
       expect.any(String),
       expect.stringContaining('[openshell.drivers.docker]\nenable_bind_mounts = true'),
       'utf-8',
-    );
-  });
-
-  test('starts without generated config when no local driver is available', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    const proc = createMockChildProcess();
-    vi.mocked(spawn).mockReturnValue(proc);
-    mockExecBehavior({ statusResults: [true], podmanAvailable: false, dockerAvailable: false });
-
-    await gateway.start();
-
-    expect(writeFile).not.toHaveBeenCalled();
-    expect(spawn).toHaveBeenCalledWith(
-      GATEWAY_BINARY,
-      ['--port', '17670', '--bind-address', '127.0.0.1', '--disable-tls'],
-      expect.objectContaining({ detached: false }),
     );
   });
 });

@@ -37,8 +37,6 @@ const HEALTH_CHECK_INTERVAL_MS = 1000;
 const MAX_HEALTH_CHECK_ATTEMPTS = 30;
 const STOP_TIMEOUT_MS = 5000;
 
-type LocalComputeDriver = 'docker' | 'podman';
-
 /**
  * Manages the `openshell-gateway` server binary lifecycle.
  *
@@ -250,46 +248,21 @@ export class OpenshellGateway implements Disposable {
   }
 
   private async createGatewayConfig(): Promise<string | undefined> {
-    const driver = await this.detectLocalComputeDriver();
-    if (!driver) {
-      console.log('[openshell-gateway] no local compute driver detected; starting without generated config');
-      return undefined;
-    }
-
     const configPath = join(tmpdir(), `kaiden-openshell-gateway-${randomUUID()}.toml`);
-    await writeFile(configPath, this.buildGatewayConfig(driver), 'utf-8');
-    console.log(`[openshell-gateway] generated local gateway config for ${driver} at ${configPath}`);
+    await writeFile(configPath, this.buildGatewayConfig(), 'utf-8');
+    console.log(`[openshell-gateway] generated local gateway config at ${configPath}`);
     return configPath;
   }
 
-  private async detectLocalComputeDriver(): Promise<LocalComputeDriver | undefined> {
-    if (await this.isCommandAvailable('podman')) {
-      return 'podman';
-    }
-    if (await this.isCommandAvailable('docker')) {
-      return 'docker';
-    }
-    return undefined;
-  }
-
-  private async isCommandAvailable(command: string): Promise<boolean> {
-    try {
-      await this.exec.exec(command, ['--version']);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private buildGatewayConfig(driver: LocalComputeDriver): string {
+  private buildGatewayConfig(): string {
     return [
       '[openshell]',
       'version = 1',
       '',
-      '[openshell.gateway]',
-      `compute_drivers = ["${driver}"]`,
+      '[openshell.drivers.podman]',
+      'enable_bind_mounts = true',
       '',
-      `[openshell.drivers.${driver}]`,
+      '[openshell.drivers.docker]',
       'enable_bind_mounts = true',
       '',
     ].join('\n');
