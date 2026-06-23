@@ -155,7 +155,7 @@ export class OpenshellCli {
     if (options.command?.length) {
       args.push('--', ...options.command);
     }
-    await this.runCli(args);
+    await this.runCli(args, { redact: true });
   }
 
   async listSandboxes(gatewayName?: string): Promise<SandboxInfo[]> {
@@ -318,7 +318,7 @@ export class OpenshellCli {
   }
 
   private redactSensitiveArgs(args: string[]): string[] {
-    const sensitiveFlags = new Set(['--credential', '--config']);
+    const sensitiveFlags = new Set(['--credential', '--config', '--env']);
     return args.map((arg, i) => {
       if (i > 0 && sensitiveFlags.has(args[i - 1]!)) {
         return '***';

@@ -247,6 +247,18 @@ describe('createSandbox', () => {
     );
   });
 
+  test('redacts --env values in logs', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
+
+    await openshellCli.createSandbox({ env: { API_KEY: 'sk-secret-123' } });
+
+    const loggedMessage = logSpy.mock.calls[0]?.[0] as string;
+    expect(loggedMessage).not.toContain('sk-secret-123');
+    expect(loggedMessage).toContain('--env');
+    expect(loggedMessage).toContain('***');
+  });
+
   test('places --env flags before -- command separator', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
