@@ -18,18 +18,20 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { Disposable } from '@openkaiden/api';
 import { inject, injectable, preDestroy } from 'inversify';
+import Mustache from 'mustache';
 
 import { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
+import { Directories } from '/@/plugin/directories.js';
 import { OpenshellCli } from '/@/plugin/openshell-cli/openshell-cli.js';
 import { Exec } from '/@/plugin/util/exec.js';
 import type { OpenshellGatewayStartOptions } from '/@api/openshell-gateway-info.js';
+
+import gatewayConfigTemplate from './openshell-gateway.toml?raw';
 
 const DEFAULT_PORT = 17670;
 const DEFAULT_BIND_ADDRESS = '127.0.0.1';
@@ -48,7 +50,6 @@ const STOP_TIMEOUT_MS = 5000;
 @injectable()
 export class OpenshellGateway implements Disposable {
   #gatewayProcess: ChildProcess | undefined;
-  #gatewayConfigPath: string | undefined;
   #port: number = DEFAULT_PORT;
   #bindAddress: string = DEFAULT_BIND_ADDRESS;
 
@@ -59,6 +60,8 @@ export class OpenshellGateway implements Disposable {
     private readonly cliToolRegistry: CliToolRegistry,
     @inject(OpenshellCli)
     private readonly openshellCli: OpenshellCli,
+    @inject(Directories)
+    private readonly directories: Directories,
   ) {}
 
   async init(): Promise<void> {
@@ -154,7 +157,6 @@ export class OpenshellGateway implements Disposable {
     }
 
     const gatewayConfigPath = await this.createGatewayConfig();
-    this.#gatewayConfigPath = gatewayConfigPath;
 
     const args = this.buildArgs(options?.disableTls ?? true, gatewayConfigPath);
     console.log(`[openshell-gateway] starting: ${binaryPath} ${args.join(' ')}`);
@@ -222,7 +224,6 @@ export class OpenshellGateway implements Disposable {
     });
 
     this.#gatewayProcess = undefined;
-    await this.cleanupGatewayConfig();
   }
 
   isRunning(): boolean {
@@ -248,38 +249,16 @@ export class OpenshellGateway implements Disposable {
   }
 
   private async createGatewayConfig(): Promise<string | undefined> {
-    const configPath = join(tmpdir(), `kaiden-openshell-gateway-${randomUUID()}.toml`);
-    await writeFile(configPath, this.buildGatewayConfig(), 'utf-8');
+    const storageDirectory = join(this.directories.getDataDirectory(), 'openshell-gateway');
+    const configPath = join(storageDirectory, 'gateway.toml');
+    const config = Mustache.render(gatewayConfigTemplate, {
+      enablePodmanBindMounts: true,
+    });
+
+    await mkdir(storageDirectory, { recursive: true });
+    await writeFile(configPath, config, 'utf-8');
     console.log(`[openshell-gateway] generated local gateway config at ${configPath}`);
     return configPath;
-  }
-
-  private buildGatewayConfig(): string {
-    return [
-      '[openshell]',
-      'version = 1',
-      '',
-      '[openshell.drivers.podman]',
-      'enable_bind_mounts = true',
-      '',
-      '[openshell.drivers.docker]',
-      'enable_bind_mounts = true',
-      '',
-    ].join('\n');
-  }
-
-  private async cleanupGatewayConfig(): Promise<void> {
-    if (!this.#gatewayConfigPath) {
-      return;
-    }
-
-    const configPath = this.#gatewayConfigPath;
-    this.#gatewayConfigPath = undefined;
-    try {
-      await rm(configPath, { force: true });
-    } catch (err: unknown) {
-      console.warn('[openshell-gateway] failed to remove generated config:', err);
-    }
   }
 
   private async waitForReady(): Promise<void> {

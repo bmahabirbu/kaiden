@@ -18,12 +18,13 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 
 import type { RunResult } from '@openkaiden/api';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
+import type { Directories } from '/@/plugin/directories.js';
 import type { OpenshellCli } from '/@/plugin/openshell-cli/openshell-cli.js';
 import type { Proxy } from '/@/plugin/proxy.js';
 import { Exec } from '/@/plugin/util/exec.js';
@@ -40,6 +41,9 @@ const { spawn } = await import('node:child_process');
 
 const GATEWAY_BINARY = '/usr/local/bin/openshell-gateway';
 const CLI_BINARY = '/usr/local/bin/openshell';
+const KAIDEN_DATA_DIRECTORY = '/home/user/.local/share/kaiden';
+const GATEWAY_STORAGE_DIRECTORY = `${KAIDEN_DATA_DIRECTORY}/openshell-gateway`;
+const GATEWAY_CONFIG_PATH = `${GATEWAY_STORAGE_DIRECTORY}/gateway.toml`;
 
 function createMockChildProcess(): ChildProcess & { _stdout: EventEmitter; _stderr: EventEmitter } {
   const proc = new EventEmitter() as ChildProcess & { _stdout: EventEmitter; _stderr: EventEmitter };
@@ -59,9 +63,17 @@ function mockExecBehavior(options?: { statusResults?: Array<boolean> }): void {
   const statusResults = [...(options?.statusResults ?? [])];
 
   vi.mocked(exec.exec).mockImplementation(async (command: string, args?: string[]) => {
+    if (command === 'podman') {
+      throw new Error('podman not found');
+    }
+
+    if (command === 'docker') {
+      throw new Error('docker not found');
+    }
+
     if (command === CLI_BINARY && args?.[0] === 'status') {
       const next = statusResults.shift();
-      if (next === false) {
+      if (next !== true) {
         throw new Error('connection refused');
       }
       return mockExecResult('');
@@ -83,13 +95,18 @@ const openshellCli = {
   selectGateway: vi.fn(),
 } as unknown as OpenshellCli;
 
+const directories = {
+  getDataDirectory: vi.fn(),
+} as unknown as Directories;
+
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(cliToolRegistry.getCliToolInfos).mockReturnValue([
     { name: 'openshell-gateway', path: GATEWAY_BINARY },
     { name: 'openshell', path: CLI_BINARY },
   ] as unknown as CliToolInfo[]);
-  gateway = new OpenshellGateway(exec, cliToolRegistry, openshellCli);
+  vi.mocked(directories.getDataDirectory).mockReturnValue(KAIDEN_DATA_DIRECTORY);
+  gateway = new OpenshellGateway(exec, cliToolRegistry, openshellCli, directories);
 });
 
 describe('init', () => {
@@ -274,15 +291,7 @@ describe('start', () => {
 
     expect(spawn).toHaveBeenCalledWith(
       GATEWAY_BINARY,
-      [
-        '--config',
-        expect.stringContaining('kaiden-openshell-gateway-'),
-        '--port',
-        '17670',
-        '--bind-address',
-        '127.0.0.1',
-        '--disable-tls',
-      ],
+      ['--config', GATEWAY_CONFIG_PATH, '--port', '17670', '--bind-address', '127.0.0.1', '--disable-tls'],
       expect.objectContaining({ detached: false }),
     );
   });
@@ -297,15 +306,7 @@ describe('start', () => {
 
     expect(spawn).toHaveBeenCalledWith(
       GATEWAY_BINARY,
-      [
-        '--config',
-        expect.stringContaining('kaiden-openshell-gateway-'),
-        '--port',
-        '9999',
-        '--bind-address',
-        '0.0.0.0',
-        '--disable-tls',
-      ],
+      ['--config', GATEWAY_CONFIG_PATH, '--port', '9999', '--bind-address', '0.0.0.0', '--disable-tls'],
       expect.objectContaining({ detached: false }),
     );
   });
@@ -320,14 +321,7 @@ describe('start', () => {
 
     expect(spawn).toHaveBeenCalledWith(
       GATEWAY_BINARY,
-      [
-        '--config',
-        expect.stringContaining('kaiden-openshell-gateway-'),
-        '--port',
-        '17670',
-        '--bind-address',
-        '127.0.0.1',
-      ],
+      ['--config', GATEWAY_CONFIG_PATH, '--port', '17670', '--bind-address', '127.0.0.1'],
       expect.objectContaining({ detached: false }),
     );
   });
@@ -425,7 +419,7 @@ describe('start', () => {
     vi.useRealTimers();
   });
 
-  test('writes gateway config enabling bind mounts for both podman and docker', async () => {
+  test('writes gateway config under the kaiden data directory with podman bind mounts enabled', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
@@ -433,15 +427,44 @@ describe('start', () => {
 
     await gateway.start();
 
+    expect(mkdir).toHaveBeenCalledWith(GATEWAY_STORAGE_DIRECTORY, { recursive: true });
     expect(writeFile).toHaveBeenCalledWith(
-      expect.stringContaining('kaiden-openshell-gateway-'),
+      GATEWAY_CONFIG_PATH,
       expect.stringContaining('[openshell.drivers.podman]\nenable_bind_mounts = true'),
       'utf-8',
     );
     expect(writeFile).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.stringContaining('[openshell.drivers.docker]\nenable_bind_mounts = true'),
+      GATEWAY_CONFIG_PATH,
+      expect.not.stringContaining('compute_drivers ='),
       'utf-8',
+    );
+  });
+
+  test('does not probe local compute drivers before starting gateway', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const proc = createMockChildProcess();
+    vi.mocked(spawn).mockReturnValue(proc);
+    mockExecBehavior({ statusResults: [true] });
+
+    await gateway.start();
+
+    expect(exec.exec).not.toHaveBeenCalledWith('podman', ['--version']);
+    expect(exec.exec).not.toHaveBeenCalledWith('docker', ['--version']);
+  });
+
+  test('always starts with the generated gateway config so openshell can detect the driver', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const proc = createMockChildProcess();
+    vi.mocked(spawn).mockReturnValue(proc);
+    mockExecBehavior({ statusResults: [true] });
+
+    await gateway.start();
+
+    expect(writeFile).toHaveBeenCalled();
+    expect(spawn).toHaveBeenCalledWith(
+      GATEWAY_BINARY,
+      ['--config', GATEWAY_CONFIG_PATH, '--port', '17670', '--bind-address', '127.0.0.1', '--disable-tls'],
+      expect.objectContaining({ detached: false }),
     );
   });
 });
@@ -460,7 +483,7 @@ describe('stop', () => {
     await stopPromise;
 
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
-    expect(rm).toHaveBeenCalledWith(expect.stringContaining('kaiden-openshell-gateway-'), { force: true });
+    expect(rm).not.toHaveBeenCalled();
   });
 
   test('is a no-op when not running', async () => {

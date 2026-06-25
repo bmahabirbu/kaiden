@@ -1,0 +1,6 @@
+[openshell]
+version = 1
+
+# Keep compute_drivers unset so openshell-gateway keeps owning driver detection.
+[openshell.drivers.podman]
+enable_bind_mounts = {{enablePodmanBindMounts}}
