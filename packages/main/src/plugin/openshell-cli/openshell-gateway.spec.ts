@@ -19,6 +19,7 @@
 import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import type { RunResult } from '@openkaiden/api';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -42,8 +43,8 @@ const { spawn } = await import('node:child_process');
 const GATEWAY_BINARY = '/usr/local/bin/openshell-gateway';
 const CLI_BINARY = '/usr/local/bin/openshell';
 const KAIDEN_DATA_DIRECTORY = '/home/user/.local/share/kaiden';
-const GATEWAY_STORAGE_DIRECTORY = `${KAIDEN_DATA_DIRECTORY}/openshell-gateway`;
-const GATEWAY_CONFIG_PATH = `${GATEWAY_STORAGE_DIRECTORY}/gateway.toml`;
+const GATEWAY_STORAGE_DIRECTORY = join(KAIDEN_DATA_DIRECTORY, 'openshell-gateway');
+const GATEWAY_CONFIG_PATH = join(GATEWAY_STORAGE_DIRECTORY, 'gateway.toml');
 
 function createMockChildProcess(): ChildProcess & { _stdout: EventEmitter; _stderr: EventEmitter } {
   const proc = new EventEmitter() as ChildProcess & { _stdout: EventEmitter; _stderr: EventEmitter };
