@@ -252,7 +252,7 @@ export class OpenshellGateway implements Disposable {
     const storageDirectory = join(this.directories.getDataDirectory(), 'openshell-gateway');
     const configPath = join(storageDirectory, 'gateway.toml');
     const config = Mustache.render(gatewayConfigTemplate, {
-      enablePodmanBindMounts: true,
+      enableBindMounts: true,
     });
 
     await mkdir(storageDirectory, { recursive: true });

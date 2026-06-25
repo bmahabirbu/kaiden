@@ -2,5 +2,8 @@
 version = 1
 
 # Keep compute_drivers unset so openshell-gateway keeps owning driver detection.
+[openshell.drivers.docker]
+enable_bind_mounts = {{enableBindMounts}}
+
 [openshell.drivers.podman]
-enable_bind_mounts = {{enablePodmanBindMounts}}
+enable_bind_mounts = {{enableBindMounts}}

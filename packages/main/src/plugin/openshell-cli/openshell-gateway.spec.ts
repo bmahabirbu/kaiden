@@ -420,7 +420,7 @@ describe('start', () => {
     vi.useRealTimers();
   });
 
-  test('writes gateway config under the kaiden data directory with podman bind mounts enabled', async () => {
+  test('writes gateway config under the kaiden data directory with container bind mounts enabled', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
@@ -432,6 +432,11 @@ describe('start', () => {
     expect(writeFile).toHaveBeenCalledWith(
       GATEWAY_CONFIG_PATH,
       expect.stringContaining('[openshell.drivers.podman]\nenable_bind_mounts = true'),
+      'utf-8',
+    );
+    expect(writeFile).toHaveBeenCalledWith(
+      GATEWAY_CONFIG_PATH,
+      expect.stringContaining('[openshell.drivers.docker]\nenable_bind_mounts = true'),
       'utf-8',
     );
     expect(writeFile).toHaveBeenCalledWith(
