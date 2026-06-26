@@ -16,9 +16,9 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { access, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, lstat, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { basename, join, posix } from 'node:path';
+import { basename, join, posix, resolve } from 'node:path';
 
 import type { Disposable, FileSystemWatcher } from '@openkaiden/api';
 import type { WebContents } from 'electron';
@@ -55,6 +55,12 @@ import { AGENT_LABEL, decodeWorkspaceLabels, WORKSPACE_LABEL } from '/@api/opens
 
 const HOME_VARIABLE = '${HOME}';
 const LABEL_MAX_LENGTH = 63;
+const SOURCES_VARIABLE = '$SOURCES';
+const MOUNT_HOME_VARIABLE = '$HOME';
+const OPENSHELL_SANDBOX_HOME = '/home/agent';
+const OPENSHELL_SANDBOX_SOURCES_BASE = '/workspace/sources';
+
+type OpenshellUpload = { local: string; remote: string };
 
 export function encodeWorkspaceLabels(sourcePath: string): Record<string, string> {
   const encoded = Buffer.from(sourcePath).toString('base64url');
@@ -141,7 +147,7 @@ export class AgentWorkspaceManager implements Disposable {
 
     const workspace = await writeWorkspaceConfig(options);
     const agent = this.agentRegistry.getAgentRegistration(options.agent);
-    const uploads: Array<{ local: string; remote: string }> = [];
+    const uploads: OpenshellUpload[] = [];
 
     if (agent) {
       const writable = await Promise.all(
@@ -187,6 +193,8 @@ export class AgentWorkspaceManager implements Disposable {
       }
     }
 
+    uploads.push(...this.buildOpenshellFilesystemUploads(options.sourcePath, workspace));
+
     const sandboxName = options.name ?? basename(options.sourcePath);
     const env = workspace.environment
       ?.filter(entry => typeof entry.value === 'string' && entry.value !== '')
@@ -194,13 +202,15 @@ export class AgentWorkspaceManager implements Disposable {
         acc[entry.name] = entry.value as string;
         return acc;
       }, {});
+    const normalizedUploads = await this.normalizeOpenshellUploads(uploads);
+    const dedupedUploads = this.dedupeOpenshellUploads(normalizedUploads);
 
     await this.openshellCli.createSandbox({
       name: sandboxName,
       providers: options.secrets,
       env: env && Object.keys(env).length > 0 ? env : undefined,
       labels: { ...encodeWorkspaceLabels(options.sourcePath), [AGENT_LABEL]: options.agent },
-      uploads: uploads.length > 0 ? uploads : undefined,
+      uploads: dedupedUploads.length > 0 ? dedupedUploads : undefined,
       noTty: true,
       command: ['true'],
     });
@@ -258,10 +268,7 @@ export class AgentWorkspaceManager implements Disposable {
     }
   }
 
-  private buildOpenshellSkillUploads(
-    skills: string[] | undefined,
-    destinationSkillsFolder: string,
-  ): Array<{ local: string; remote: string }> {
+  private buildOpenshellSkillUploads(skills: string[] | undefined, destinationSkillsFolder: string): OpenshellUpload[] {
     if (!skills?.length) {
       return [];
     }
@@ -271,6 +278,106 @@ export class AgentWorkspaceManager implements Disposable {
       local: skillPath,
       remote: posix.join(remoteBase, basename(skillPath)),
     }));
+  }
+
+  private buildOpenshellFilesystemUploads(
+    sourcePath: string,
+    workspace: AgentWorkspaceConfiguration,
+  ): OpenshellUpload[] {
+    const sandboxSourcesPath = this.resolveOpenshellSourcesPath(sourcePath);
+    const uploads: OpenshellUpload[] = [
+      { local: sourcePath, remote: sandboxSourcesPath },
+      { local: join(sourcePath, '.kaiden', 'workspace.json'), remote: '.kaiden/workspace.json' },
+    ];
+
+    for (const mount of workspace.mounts ?? []) {
+      const local = this.resolveOpenshellHostPath(mount.host, sourcePath);
+      const remote = this.resolveOpenshellSandboxPath(mount.target, sourcePath);
+      if (!local || !remote) {
+        continue;
+      }
+      uploads.push({ local, remote });
+    }
+    return uploads;
+  }
+
+  private resolveOpenshellHostPath(path: string, sourcePath: string): string | undefined {
+    if (path === SOURCES_VARIABLE) {
+      return sourcePath;
+    }
+    if (path.startsWith(`${SOURCES_VARIABLE}/`)) {
+      return resolve(sourcePath, `.${path.slice(SOURCES_VARIABLE.length)}`);
+    }
+    if (path === MOUNT_HOME_VARIABLE) {
+      return homedir();
+    }
+    if (path.startsWith(`${MOUNT_HOME_VARIABLE}/`)) {
+      return resolve(homedir(), `.${path.slice(MOUNT_HOME_VARIABLE.length)}`);
+    }
+    if (path.startsWith('~/')) {
+      return resolve(homedir(), path.slice(2));
+    }
+    if (path.startsWith('/')) {
+      return path;
+    }
+    return undefined;
+  }
+
+  private resolveOpenshellSandboxPath(path: string, sourcePath: string): string | undefined {
+    const sandboxSourcesPath = this.resolveOpenshellSourcesPath(sourcePath);
+    if (path === SOURCES_VARIABLE) {
+      return sandboxSourcesPath;
+    }
+    if (path.startsWith(`${SOURCES_VARIABLE}/`)) {
+      return posix.normalize(posix.join(sandboxSourcesPath, `.${path.slice(SOURCES_VARIABLE.length)}`));
+    }
+    if (path === MOUNT_HOME_VARIABLE) {
+      return OPENSHELL_SANDBOX_HOME;
+    }
+    if (path.startsWith(`${MOUNT_HOME_VARIABLE}/`)) {
+      return posix.normalize(posix.join(OPENSHELL_SANDBOX_HOME, `.${path.slice(MOUNT_HOME_VARIABLE.length)}`));
+    }
+    if (path.startsWith('/')) {
+      return posix.normalize(path);
+    }
+    return undefined;
+  }
+
+  private resolveOpenshellSourcesPath(sourcePath: string): string {
+    return posix.join(OPENSHELL_SANDBOX_SOURCES_BASE, basename(sourcePath));
+  }
+
+  private async normalizeOpenshellUploads(uploads: OpenshellUpload[]): Promise<OpenshellUpload[]> {
+    return Promise.all(
+      uploads.map(async upload => {
+        try {
+          const stats = await lstat(upload.local);
+          if (stats.isDirectory()) {
+            const localBase = basename(upload.local);
+            if (localBase !== '' && posix.basename(upload.remote) === localBase) {
+              return { local: upload.local, remote: posix.dirname(upload.remote) };
+            }
+          }
+        } catch {
+          // Leave upload unchanged when the local path cannot be inspected.
+        }
+        return upload;
+      }),
+    );
+  }
+
+  private dedupeOpenshellUploads(uploads: OpenshellUpload[]): OpenshellUpload[] {
+    const deduped: OpenshellUpload[] = [];
+    const seen = new Set<string>();
+    for (const upload of uploads) {
+      const key = `${upload.local}\u0000${upload.remote}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      deduped.push(upload);
+    }
+    return deduped;
   }
 
   private resolveOpenshellSkillsDestination(destinationSkillsFolder: string): string {
