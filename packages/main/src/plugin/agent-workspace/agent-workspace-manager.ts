@@ -18,7 +18,7 @@
 
 import { access, lstat, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { basename, join, posix, resolve } from 'node:path';
+import { basename, isAbsolute, join, posix, resolve } from 'node:path';
 
 import type { Disposable, FileSystemWatcher } from '@openkaiden/api';
 import type { WebContents } from 'electron';
@@ -58,7 +58,6 @@ const LABEL_MAX_LENGTH = 63;
 const SOURCES_VARIABLE = '$SOURCES';
 const MOUNT_HOME_VARIABLE = '$HOME';
 const OPENSHELL_SANDBOX_HOME = '/home/agent';
-const OPENSHELL_SANDBOX_SOURCES_BASE = '/workspace/sources';
 
 type OpenshellUpload = { local: string; remote: string };
 
@@ -317,7 +316,7 @@ export class AgentWorkspaceManager implements Disposable {
     if (path.startsWith('~/')) {
       return resolve(homedir(), path.slice(2));
     }
-    if (path.startsWith('/')) {
+    if (isAbsolute(path)) {
       return path;
     }
     return undefined;
@@ -343,8 +342,8 @@ export class AgentWorkspaceManager implements Disposable {
     return undefined;
   }
 
-  private resolveOpenshellSourcesPath(sourcePath: string): string {
-    return posix.join(OPENSHELL_SANDBOX_SOURCES_BASE, basename(sourcePath));
+  private resolveOpenshellSourcesPath(_sourcePath: string): string {
+    return '.';
   }
 
   private async normalizeOpenshellUploads(uploads: OpenshellUpload[]): Promise<OpenshellUpload[]> {

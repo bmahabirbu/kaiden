@@ -16,7 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { access, lstat, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, lstat, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -393,7 +393,7 @@ describe('create – OpenShell mode', () => {
     expect(openshellCli.createSandbox).toHaveBeenCalledWith(
       expect.objectContaining({
         uploads: expect.arrayContaining([
-          { local: '/tmp/my-project', remote: '/workspace/sources' },
+          { local: '/tmp/my-project', remote: '.' },
           { local: join('/tmp/my-project', '.kaiden', 'workspace.json'), remote: '.kaiden/workspace.json' },
         ]),
       }),
@@ -445,7 +445,7 @@ describe('create – OpenShell mode', () => {
     expect(openshellCli.createSandbox).toHaveBeenCalledWith(
       expect.objectContaining({
         uploads: expect.arrayContaining([
-          { local: '/tmp/my-project', remote: '/workspace/sources' },
+          { local: '/tmp/my-project', remote: '.' },
           { local: join('/tmp/my-project', '.kaiden', 'workspace.json'), remote: '.kaiden/workspace.json' },
         ]),
       }),
@@ -464,8 +464,8 @@ describe('create – OpenShell mode', () => {
     expect(openshellCli.createSandbox).toHaveBeenCalledWith(
       expect.objectContaining({
         uploads: expect.arrayContaining([
-          { local: '/tmp/my-project', remote: '/workspace/sources' },
-          { local: resolve('/tmp/my-project', './../shared-lib'), remote: '/workspace/sources' },
+          { local: '/tmp/my-project', remote: '.' },
+          { local: resolve('/tmp/my-project', './../shared-lib'), remote: '..' },
           { local: join(homedir(), '.gitconfig'), remote: '/home/agent/.gitconfig' },
         ]),
       }),
@@ -484,7 +484,7 @@ describe('create – OpenShell mode', () => {
     const sandboxOptions = vi.mocked(openshellCli.createSandbox).mock.calls[0]?.[0];
     expect(sandboxOptions?.uploads).toEqual(
       expect.arrayContaining([
-        { local: '/tmp/my-project', remote: '/workspace/sources' },
+        { local: '/tmp/my-project', remote: '.' },
         { local: join('/tmp/my-project', '.kaiden', 'workspace.json'), remote: '.kaiden/workspace.json' },
         { local: homedir(), remote: '/home/agent' },
         { local: '/', remote: '/' },
