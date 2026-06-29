@@ -31,7 +31,7 @@ import { OpenshellCli } from '/@/plugin/openshell-cli/openshell-cli.js';
 import { Exec } from '/@/plugin/util/exec.js';
 import type { OpenshellGatewayStartOptions } from '/@api/openshell-gateway-info.js';
 
-import gatewayConfigTemplate from './openshell-gateway.toml?raw';
+import gatewayConfigTemplate from './openshell-gateway.toml.template?raw';
 
 const DEFAULT_PORT = 17670;
 const DEFAULT_BIND_ADDRESS = '127.0.0.1';
