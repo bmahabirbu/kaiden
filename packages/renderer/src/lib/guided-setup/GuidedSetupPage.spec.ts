@@ -192,10 +192,6 @@ beforeEach(() => {
   providerInfosWritable = writable([]);
   catalogModelsWritable = writable([]);
   connectionSummariesWritable = writable([]);
-  vi.stubGlobal(
-    'getCliInfo',
-    vi.fn().mockResolvedValue({ version: '0.1.0', agents: ['opencode', 'claude', 'goose'], runtimes: ['podman'] }),
-  );
   vi.mocked(agentsStore).agentInfos = writable(mockAgentInfos);
   vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable('podman');
   vi.mocked(configurationPropertiesStore).configurationProperties = writable([]);
@@ -330,13 +326,7 @@ test('renders agent selection above the model section inside a compact step card
   });
 });
 
-test('filters the visible agents to the ones reported by the CLI', async () => {
-  vi.mocked(window.getCliInfo).mockResolvedValue({
-    version: '0.1.0',
-    agents: ['claude'],
-    runtimes: ['podman'],
-  });
-
+test('renders all shared-store agents for the active runtime', async () => {
   const onboarding: OnboardingState = {
     agent: 'opencode',
     workspaceSetting: {},
@@ -345,11 +335,10 @@ test('filters the visible agents to the ones reported by the CLI', async () => {
   renderPage(onboarding);
 
   await waitFor(() => {
+    expect(screen.getByRole('option', { name: 'OpenCode' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Claude Code' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Goose' })).toBeInTheDocument();
   });
-
-  expect(screen.queryByRole('option', { name: 'OpenCode' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('option', { name: 'Goose' })).not.toBeInTheDocument();
 });
 
 test('allows selecting an agent that exists in the shared agent store', async () => {
@@ -364,11 +353,6 @@ test('allows selecting an agent that exists in the shared agent store', async ()
       supportedModelTypes: [{ name: 'anthropic' }],
     },
   ]);
-  vi.mocked(window.getCliInfo).mockResolvedValue({
-    version: '0.1.0',
-    agents: ['opencode', 'claude', 'goose', 'custom-agent'],
-    runtimes: ['podman'],
-  });
 
   const onboarding: OnboardingState = {
     agent: 'opencode',

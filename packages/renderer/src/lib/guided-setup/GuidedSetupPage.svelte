@@ -2,7 +2,7 @@
 import { faTerminal } from '@fortawesome/free-solid-svg-icons';
 import { ErrorMessage } from '@podman-desktop/ui-svelte';
 import { Icon } from '@podman-desktop/ui-svelte/icons';
-import { onMount, untrack } from 'svelte';
+import { untrack } from 'svelte';
 
 import IconImage from '/@/lib/appearance/IconImage.svelte';
 import { getCompatibleModels } from '/@/lib/models/compatible-connections';
@@ -12,36 +12,16 @@ import { agentInfos } from '/@/stores/agents';
 import { agentWorkspaceRuntime } from '/@/stores/agentworkspace-runtime';
 import { disabledModels, isModelEnabled, modelSelectionKey } from '/@/stores/model-catalog';
 import { catalogModels } from '/@/stores/models';
-import type { AgentInfo } from '/@api/agent-info';
 import type { DefaultWorkspaceModelSettings } from '/@api/onboarding-settings-info';
 
 import type { GuidedSetupStepProps } from './guided-setup-steps';
 
 let { title, description, onboarding = $bindable() }: GuidedSetupStepProps = $props();
 
-let availableCliAgents: string[] | undefined = $state(undefined);
 let validationError = $state('');
-
-onMount(async () => {
-  const fallback = $agentInfos.map(agent => agent.id);
-
-  try {
-    const cliInfo = await window.getCliInfo();
-    availableCliAgents = cliInfo.agents.length > 0 ? cliInfo.agents : fallback;
-  } catch (err: unknown) {
-    console.warn('Failed to fetch CLI agents, showing all registered agents', err);
-    availableCliAgents = fallback;
-  }
-});
-
-function isAgentAvailable(agent: AgentInfo): boolean {
-  if (!availableCliAgents) return true;
-  return availableCliAgents.includes(agent.id) || availableCliAgents.includes(agent.command);
-}
 
 let filteredAgents = $derived(
   $agentInfos
-    .filter(agent => isAgentAvailable(agent))
     .filter(
       agent => !agent.supportedRuntimes || agent.supportedRuntimes.some(runtime => runtime === $agentWorkspaceRuntime),
     )
