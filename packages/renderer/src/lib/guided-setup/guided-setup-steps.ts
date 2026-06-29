@@ -17,15 +17,15 @@
  ***********************************************************************/
 
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
-import { faCube, faRobot } from '@fortawesome/free-solid-svg-icons';
+import { faRobot } from '@fortawesome/free-solid-svg-icons';
 import type { Component } from 'svelte';
 
+import type { AgentInfo } from '/@api/agent-info';
 import type { DefaultWorkspaceModelSettings, DefaultWorkspaceSettings } from '/@api/onboarding-settings-info';
 
-import CodingAgentStep from './CodingAgentStep.svelte';
-import ModelStep from './ModelStep.svelte';
+import GuidedSetupPage from './GuidedSetupPage.svelte';
 
-export type CliAgent = 'opencode' | 'openclaw' | 'claude' | 'claude-vertex' | 'cursor' | 'goose';
+export type CliAgent = AgentInfo['id'];
 
 export interface OnboardingState {
   agent: CliAgent;
@@ -44,6 +44,7 @@ export interface GuidedSetupStepProps {
 export interface GuidedSetupStep {
   id: string;
   title: string;
+  stepperLabel?: string;
   description: string;
   icon: IconDefinition;
   component: Component<GuidedSetupStepProps>;
@@ -60,21 +61,13 @@ export function createDefaultOnboardingState(): OnboardingState {
 
 export const guidedSetupSteps: GuidedSetupStep[] = [
   {
-    id: 'coding-agent',
-    title: 'Coding agent',
+    id: 'guided-setup',
+    title: 'Choose your coding agent',
+    stepperLabel: 'Coding agent',
     description:
-      'Pick the default coding agent runtime. The API notes below update for your choice. You can change this later in settings.',
+      'Pick the coding agent Kaiden should prepare by default, then choose or create a compatible model connection.',
     icon: faRobot,
-    component: CodingAgentStep,
-    isComplete: (): boolean => false,
-    isSkippable: true,
-  },
-  {
-    id: 'model-selection',
-    title: 'Model',
-    description: 'Select the default model for your coding agent.',
-    icon: faCube,
-    component: ModelStep,
+    component: GuidedSetupPage,
     isComplete: (): boolean => false,
     isSkippable: true,
   },
