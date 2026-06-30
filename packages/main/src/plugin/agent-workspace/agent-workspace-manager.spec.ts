@@ -456,7 +456,7 @@ describe('create – OpenShell mode', () => {
     await manager.create({
       ...defaultOptions,
       mounts: [
-        { host: '$SOURCES/../shared-lib', target: '$SOURCES/../shared-lib', ro: false },
+        { host: '$SOURCES/subdir', target: '$SOURCES/subdir', ro: false },
         { host: '$HOME/.gitconfig', target: '$HOME/.gitconfig', ro: true },
       ],
     });
@@ -465,11 +465,27 @@ describe('create – OpenShell mode', () => {
       expect.objectContaining({
         uploads: expect.arrayContaining([
           { local: '/tmp/my-project', remote: '.' },
-          { local: resolve('/tmp/my-project', './../shared-lib'), remote: '..' },
+          { local: resolve('/tmp/my-project', './subdir'), remote: 'subdir' },
           { local: join(homedir(), '.gitconfig'), remote: '/home/agent/.gitconfig' },
         ]),
       }),
     );
+  });
+
+  test('rejects mounts with path traversal escaping the base directory', async () => {
+    await manager.create({
+      ...defaultOptions,
+      mounts: [
+        { host: '$SOURCES/../../etc/passwd', target: '$SOURCES/../../etc/passwd', ro: true },
+        { host: '$HOME/../../../etc/shadow', target: '$HOME/../../../etc/shadow', ro: true },
+      ],
+    });
+
+    const sandboxOptions = vi.mocked(openshellCli.createSandbox).mock.calls[0]?.[0];
+    expect(sandboxOptions?.uploads).toEqual([
+      { local: '/tmp/my-project', remote: '.' },
+      { local: join('/tmp/my-project', '.kaiden', 'workspace.json'), remote: '.kaiden/workspace.json' },
+    ]);
   });
 
   test('uploads broad host access mounts when creating an openshell sandbox', async () => {

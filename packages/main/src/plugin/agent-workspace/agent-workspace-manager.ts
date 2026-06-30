@@ -305,16 +305,19 @@ export class AgentWorkspaceManager implements Disposable {
       return sourcePath;
     }
     if (path.startsWith(`${SOURCES_VARIABLE}/`)) {
-      return resolve(sourcePath, `.${path.slice(SOURCES_VARIABLE.length)}`);
+      const resolved = resolve(sourcePath, `.${path.slice(SOURCES_VARIABLE.length)}`);
+      return this.ensureContainedPath(resolved, sourcePath);
     }
     if (path === MOUNT_HOME_VARIABLE) {
       return homedir();
     }
     if (path.startsWith(`${MOUNT_HOME_VARIABLE}/`)) {
-      return resolve(homedir(), `.${path.slice(MOUNT_HOME_VARIABLE.length)}`);
+      const resolved = resolve(homedir(), `.${path.slice(MOUNT_HOME_VARIABLE.length)}`);
+      return this.ensureContainedPath(resolved, homedir());
     }
     if (path.startsWith('~/')) {
-      return resolve(homedir(), path.slice(2));
+      const resolved = resolve(homedir(), path.slice(2));
+      return this.ensureContainedPath(resolved, homedir());
     }
     if (isAbsolute(path)) {
       return path;
@@ -328,13 +331,17 @@ export class AgentWorkspaceManager implements Disposable {
       return sandboxSourcesPath;
     }
     if (path.startsWith(`${SOURCES_VARIABLE}/`)) {
-      return posix.normalize(posix.join(sandboxSourcesPath, `.${path.slice(SOURCES_VARIABLE.length)}`));
+      const resolved = posix.normalize(posix.join(sandboxSourcesPath, `.${path.slice(SOURCES_VARIABLE.length)}`));
+      return this.ensureContainedPosixPath(resolved, sandboxSourcesPath);
     }
     if (path === MOUNT_HOME_VARIABLE) {
       return OPENSHELL_SANDBOX_HOME;
     }
     if (path.startsWith(`${MOUNT_HOME_VARIABLE}/`)) {
-      return posix.normalize(posix.join(OPENSHELL_SANDBOX_HOME, `.${path.slice(MOUNT_HOME_VARIABLE.length)}`));
+      const resolved = posix.normalize(
+        posix.join(OPENSHELL_SANDBOX_HOME, `.${path.slice(MOUNT_HOME_VARIABLE.length)}`),
+      );
+      return this.ensureContainedPosixPath(resolved, OPENSHELL_SANDBOX_HOME);
     }
     if (path.startsWith('/')) {
       return posix.normalize(path);
@@ -344,6 +351,30 @@ export class AgentWorkspaceManager implements Disposable {
 
   private resolveOpenshellSourcesPath(_sourcePath: string): string {
     return '.';
+  }
+
+  private ensureContainedPath(resolved: string, base: string): string | undefined {
+    const normalizedBase = resolve(base);
+    if (
+      resolved !== normalizedBase &&
+      !resolved.startsWith(`${normalizedBase}/`) &&
+      !resolved.startsWith(`${normalizedBase}\\`)
+    ) {
+      return undefined;
+    }
+    return resolved;
+  }
+
+  private ensureContainedPosixPath(resolved: string, base: string): string | undefined {
+    const normalizedBase = posix.normalize(base);
+    if (resolved === normalizedBase) {
+      return resolved;
+    }
+    const prefix = normalizedBase === '.' ? '' : `${normalizedBase}/`;
+    if (!resolved.startsWith(prefix) || resolved.startsWith('../')) {
+      return undefined;
+    }
+    return resolved;
   }
 
   private async normalizeOpenshellUploads(uploads: OpenshellUpload[]): Promise<OpenshellUpload[]> {
