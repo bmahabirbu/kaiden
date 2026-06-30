@@ -466,7 +466,7 @@ describe('create – OpenShell mode', () => {
         uploads: expect.arrayContaining([
           { local: '/tmp/my-project', remote: '.' },
           { local: resolve('/tmp/my-project', './subdir'), remote: 'subdir' },
-          { local: join(homedir(), '.gitconfig'), remote: '/home/agent/.gitconfig' },
+          { local: join(homedir(), '.gitconfig'), remote: '~/.gitconfig' },
         ]),
       }),
     );
@@ -502,7 +502,7 @@ describe('create – OpenShell mode', () => {
       expect.arrayContaining([
         { local: '/tmp/my-project', remote: '.' },
         { local: join('/tmp/my-project', '.kaiden', 'workspace.json'), remote: '.kaiden/workspace.json' },
-        { local: homedir(), remote: '/home/agent' },
+        { local: homedir(), remote: '~' },
         { local: '/', remote: '/' },
       ]),
     );

@@ -57,7 +57,6 @@ const HOME_VARIABLE = '${HOME}';
 const LABEL_MAX_LENGTH = 63;
 const SOURCES_VARIABLE = '$SOURCES';
 const MOUNT_HOME_VARIABLE = '$HOME';
-const OPENSHELL_SANDBOX_HOME = '/home/agent';
 
 type OpenshellUpload = { local: string; remote: string };
 
@@ -335,13 +334,11 @@ export class AgentWorkspaceManager implements Disposable {
       return this.ensureContainedPosixPath(resolved, sandboxSourcesPath);
     }
     if (path === MOUNT_HOME_VARIABLE) {
-      return OPENSHELL_SANDBOX_HOME;
+      return '~';
     }
     if (path.startsWith(`${MOUNT_HOME_VARIABLE}/`)) {
-      const resolved = posix.normalize(
-        posix.join(OPENSHELL_SANDBOX_HOME, `.${path.slice(MOUNT_HOME_VARIABLE.length)}`),
-      );
-      return this.ensureContainedPosixPath(resolved, OPENSHELL_SANDBOX_HOME);
+      const resolved = posix.normalize(posix.join('~', `.${path.slice(MOUNT_HOME_VARIABLE.length)}`));
+      return this.ensureContainedPosixPath(resolved, '~');
     }
     if (path.startsWith('/')) {
       return posix.normalize(path);
