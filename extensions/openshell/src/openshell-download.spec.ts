@@ -121,19 +121,18 @@ describe('downloadOpenshellBinaries', () => {
       const cwd = opts.cwd ?? '';
       fileMap.set(normPath(path.join(cwd, 'openshell')), true);
       fileMap.set(normPath(path.join(cwd, 'openshell-gateway')), true);
-      fileMap.set(normPath(path.join(cwd, 'openshell-sandbox')), true);
       fileMap.set(normPath(path.join(cwd, 'openshell-driver-vm')), true);
     });
 
     await downloadOpenshellBinaries('0.0.55', 'linux', 'x64', '/output', digests);
 
-    expect(vi.mocked(tar.extract)).toHaveBeenCalledTimes(4);
+    expect(vi.mocked(tar.extract)).toHaveBeenCalledTimes(3);
     expect(writeFile).toHaveBeenCalledWith(
       expect.stringContaining('.openshell-version'),
       '0.0.55-linux-x64',
       expect.any(Object),
     );
-    expect(chmod).toHaveBeenCalledTimes(4);
+    expect(chmod).toHaveBeenCalledTimes(3);
   });
 
   test('throws on checksum mismatch', async () => {

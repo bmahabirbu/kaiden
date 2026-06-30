@@ -18,23 +18,25 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { existsSync } from 'node:fs';
 
 import type { RunResult } from '@openkaiden/api';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
-import type { OpenshellCli } from '/@/plugin/openshell-cli/openshell-cli.js';
 import type { Proxy } from '/@/plugin/proxy.js';
 import { Exec } from '/@/plugin/util/exec.js';
 import type { CliToolInfo } from '/@api/cli-tool-info.js';
-import type { GatewayInfo } from '/@api/openshell-gateway-info.js';
 
 import { OpenshellGateway } from './openshell-gateway.js';
 
 vi.mock(import('node:child_process'));
+vi.mock(import('node:fs'));
+vi.mock(import('node:fs/promises'));
 vi.mock(import('/@/plugin/util/exec.js'));
 
 const { spawn } = await import('node:child_process');
+const { writeFile, mkdir } = await import('node:fs/promises');
 
 const GATEWAY_BINARY = '/usr/local/bin/openshell-gateway';
 const CLI_BINARY = '/usr/local/bin/openshell';
@@ -60,88 +62,62 @@ const cliToolRegistry = {
   getCliToolInfos: vi.fn(),
 } as unknown as CliToolRegistry;
 
-const openshellCli = {
-  listGateways: vi.fn(),
-  selectGateway: vi.fn(),
-} as unknown as OpenshellCli;
-
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(cliToolRegistry.getCliToolInfos).mockReturnValue([
     { name: 'openshell-gateway', path: GATEWAY_BINARY },
     { name: 'openshell', path: CLI_BINARY },
   ] as unknown as CliToolInfo[]);
-  gateway = new OpenshellGateway(exec, cliToolRegistry, openshellCli);
+  vi.mocked(mkdir).mockResolvedValue(undefined);
+  vi.mocked(writeFile).mockResolvedValue(undefined);
+  gateway = new OpenshellGateway(exec, cliToolRegistry);
 });
 
 describe('init', () => {
-  test('skips auto-start when existing gateway is healthy and already active', async () => {
+  test('bootstraps TLS and starts gateway when certs do not exist', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    const existingGateways: GatewayInfo[] = [
-      { name: 'local-gw', endpoint: 'https://127.0.0.1:8443', active: true, type: 'local' },
-    ];
-    vi.mocked(openshellCli.listGateways).mockResolvedValue(existingGateways);
-    vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
-
-    await gateway.init();
-
-    expect(openshellCli.listGateways).toHaveBeenCalled();
-    expect(exec.exec).toHaveBeenCalledWith(CLI_BINARY, ['status', '--gateway-endpoint', 'https://127.0.0.1:8443']);
-    expect(spawn).not.toHaveBeenCalled();
-    expect(openshellCli.selectGateway).not.toHaveBeenCalled();
-  });
-
-  test('selects healthy gateway when it is not active', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    const existingGateways: GatewayInfo[] = [{ name: 'kaiden-alt', endpoint: 'http://127.0.0.1:18080', active: false }];
-    vi.mocked(openshellCli.listGateways).mockResolvedValue(existingGateways);
-    vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
-
-    await gateway.init();
-
-    expect(openshellCli.selectGateway).toHaveBeenCalledWith('kaiden-alt');
-    expect(spawn).not.toHaveBeenCalled();
-  });
-
-  test('auto-starts local gateway when no gateways exist and port is free', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    vi.mocked(openshellCli.listGateways).mockResolvedValue([]);
+    vi.mocked(existsSync).mockReturnValue(false);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
-    vi.mocked(exec.exec).mockRejectedValueOnce(new Error('connection refused')).mockResolvedValue(mockExecResult(''));
+    // generate-certs succeeds, then health check fails (not running), then waitForReady succeeds, then register succeeds
+    vi.mocked(exec.exec)
+      .mockResolvedValueOnce(mockExecResult(''))
+      .mockRejectedValueOnce(new Error('connection refused'))
+      .mockResolvedValue(mockExecResult(''));
 
     await gateway.init();
 
-    expect(spawn).toHaveBeenCalledWith(
+    expect(exec.exec).toHaveBeenCalledWith(
       GATEWAY_BINARY,
-      expect.arrayContaining(['--port', '17670']),
-      expect.objectContaining({ detached: false }),
+      expect.arrayContaining(['generate-certs', '--output-dir', expect.stringContaining('tls')]),
     );
+    expect(spawn).toHaveBeenCalled();
   });
 
-  test('reuses orphan gateway when port is already healthy', async () => {
+  test('skips TLS bootstrap when certs already exist', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    vi.mocked(openshellCli.listGateways).mockResolvedValue([]);
+    vi.mocked(existsSync).mockReturnValue(true);
+    const proc = createMockChildProcess();
+    vi.mocked(spawn).mockReturnValue(proc);
+    vi.mocked(exec.exec).mockRejectedValueOnce(new Error('not healthy')).mockResolvedValue(mockExecResult(''));
+
+    await gateway.init();
+
+    expect(exec.exec).not.toHaveBeenCalledWith(GATEWAY_BINARY, expect.arrayContaining(['generate-certs']));
+  });
+
+  test('skips start when gateway is already healthy', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(existsSync).mockReturnValue(true);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
 
     await gateway.init();
 
     expect(spawn).not.toHaveBeenCalled();
-    expect(exec.exec).toHaveBeenCalledWith(CLI_BINARY, [
-      'gateway',
-      'add',
-      'http://127.0.0.1:17670',
-      '--local',
-      '--name',
-      'kaiden-local',
-    ]);
   });
 
-  test('skips auto-start when discovery fails and binary is not registered', async () => {
+  test('skips when gateway binary is not registered', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    vi.mocked(openshellCli.listGateways).mockRejectedValue(new Error('CLI not found'));
     vi.mocked(cliToolRegistry.getCliToolInfos).mockReturnValue([
       { name: 'openshell', path: CLI_BINARY },
     ] as unknown as CliToolInfo[]);
@@ -151,89 +127,14 @@ describe('init', () => {
     expect(spawn).not.toHaveBeenCalled();
   });
 
-  test('auto-starts when discovery fails but binary is available and port is free', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    vi.mocked(openshellCli.listGateways).mockRejectedValue(new Error('no gateway configured'));
-    const proc = createMockChildProcess();
-    vi.mocked(spawn).mockReturnValue(proc);
-    vi.mocked(exec.exec).mockRejectedValueOnce(new Error('connection refused')).mockResolvedValue(mockExecResult(''));
-
-    await gateway.init();
-
-    expect(spawn).toHaveBeenCalledWith(
-      GATEWAY_BINARY,
-      expect.arrayContaining(['--port', '17670']),
-      expect.objectContaining({ detached: false }),
-    );
-  });
-
-  test('returns without spawning when at least one gateway is healthy among multiple', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    const gateways: GatewayInfo[] = [
-      { name: 'gw-stopped', endpoint: 'http://127.0.0.1:8080', active: false },
-      { name: 'gw-healthy', endpoint: 'http://127.0.0.1:9090', active: true },
-    ];
-    vi.mocked(openshellCli.listGateways).mockResolvedValue(gateways);
-    vi.mocked(exec.exec)
-      .mockRejectedValueOnce(new Error('connection refused'))
-      .mockResolvedValueOnce(mockExecResult(''));
+  test('returns gracefully when TLS bootstrap fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.mocked(existsSync).mockReturnValue(false);
+    vi.mocked(exec.exec).mockRejectedValue(new Error('generate-certs failed'));
 
     await gateway.init();
 
     expect(spawn).not.toHaveBeenCalled();
-  });
-
-  test('creates new gateway when existing gateways are unreachable', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const gateways: GatewayInfo[] = [{ name: 'broken-gw', endpoint: 'http://127.0.0.1:19999', active: true }];
-    vi.mocked(openshellCli.listGateways).mockResolvedValue(gateways);
-    const proc = createMockChildProcess();
-    vi.mocked(spawn).mockReturnValue(proc);
-    vi.mocked(exec.exec)
-      .mockRejectedValueOnce(new Error('connection refused'))
-      .mockRejectedValueOnce(new Error('connection refused'))
-      .mockResolvedValue(mockExecResult(''));
-
-    await gateway.init();
-
-    expect(spawn).toHaveBeenCalledWith(
-      GATEWAY_BINARY,
-      expect.arrayContaining(['--port', '17670']),
-      expect.objectContaining({ detached: false }),
-    );
-  });
-
-  test('does not pass --gateway-insecure for https endpoints during health check', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    const gateways: GatewayInfo[] = [
-      { name: 'tls-gw', endpoint: 'https://127.0.0.1:8443', active: true, type: 'local' },
-    ];
-    vi.mocked(openshellCli.listGateways).mockResolvedValue(gateways);
-    vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
-
-    await gateway.init();
-
-    expect(exec.exec).toHaveBeenCalledWith(CLI_BINARY, ['status', '--gateway-endpoint', 'https://127.0.0.1:8443']);
-  });
-
-  test('skips remote gateways during init and auto-starts local', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const gateways: GatewayInfo[] = [{ name: 'remote-gw', endpoint: 'https://gw.example.com', active: true }];
-    vi.mocked(openshellCli.listGateways).mockResolvedValue(gateways);
-    const proc = createMockChildProcess();
-    vi.mocked(spawn).mockReturnValue(proc);
-    vi.mocked(exec.exec).mockRejectedValueOnce(new Error('connection refused')).mockResolvedValue(mockExecResult(''));
-
-    await gateway.init();
-
-    expect(exec.exec).not.toHaveBeenCalledWith(
-      CLI_BINARY,
-      expect.arrayContaining(['--gateway-endpoint', 'https://gw.example.com']),
-    );
-    expect(spawn).toHaveBeenCalled();
   });
 });
 
@@ -251,8 +152,9 @@ describe('getGatewayBinaryPath', () => {
 });
 
 describe('start', () => {
-  test('spawns the gateway process with default args', async () => {
+  test('spawns gateway with --config and TLS env', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(existsSync).mockReturnValue(false);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult('connected'));
@@ -261,43 +163,59 @@ describe('start', () => {
 
     expect(spawn).toHaveBeenCalledWith(
       GATEWAY_BINARY,
-      ['--port', '17670', '--bind-address', '127.0.0.1', '--disable-tls'],
-      expect.objectContaining({ detached: false }),
+      ['--config', expect.stringContaining('gateway.toml')],
+      expect.objectContaining({
+        detached: false,
+        env: expect.objectContaining({
+          OPENSHELL_LOCAL_TLS_DIR: expect.stringContaining('tls'),
+        }),
+      }),
     );
   });
 
-  test('spawns with custom port and address', async () => {
+  test('does not pass --disable-tls', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(existsSync).mockReturnValue(false);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult('connected'));
 
-    await gateway.start({ port: 9999, bindAddress: '0.0.0.0' });
+    await gateway.start();
 
-    expect(spawn).toHaveBeenCalledWith(
-      GATEWAY_BINARY,
-      ['--port', '9999', '--bind-address', '0.0.0.0', '--disable-tls'],
-      expect.objectContaining({ detached: false }),
-    );
+    const spawnArgs = vi.mocked(spawn).mock.calls[0]![1] as string[];
+    expect(spawnArgs).not.toContain('--disable-tls');
   });
 
-  test('skips --disable-tls when disableTls is false', async () => {
+  test('writes gateway config with VM driver', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(existsSync).mockReturnValue(false);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult('connected'));
 
-    await gateway.start({ disableTls: false });
+    await gateway.start();
 
-    expect(spawn).toHaveBeenCalledWith(
-      GATEWAY_BINARY,
-      ['--port', '17670', '--bind-address', '127.0.0.1'],
-      expect.objectContaining({ detached: false }),
+    expect(writeFile).toHaveBeenCalledWith(
+      expect.stringContaining('gateway.toml'),
+      expect.stringContaining('compute_drivers = ["vm"]'),
     );
+  });
+
+  test('skips writing config when it already exists', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(existsSync).mockReturnValue(true);
+    const proc = createMockChildProcess();
+    vi.mocked(spawn).mockReturnValue(proc);
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult('connected'));
+
+    await gateway.start();
+
+    expect(writeFile).not.toHaveBeenCalled();
   });
 
   test('skips if already running', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(existsSync).mockReturnValue(false);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult('connected'));
@@ -316,24 +234,22 @@ describe('start', () => {
     await expect(gateway.start()).rejects.toThrow('openshell-gateway binary not registered');
   });
 
-  test('performs health check with openshell status', async () => {
+  test('health checks use https without --gateway-insecure', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(existsSync).mockReturnValue(false);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
 
     await gateway.start();
 
-    expect(exec.exec).toHaveBeenCalledWith(CLI_BINARY, [
-      'status',
-      '--gateway-endpoint',
-      'http://127.0.0.1:17670',
-      '--gateway-insecure',
-    ]);
+    expect(exec.exec).toHaveBeenCalledWith(CLI_BINARY, ['status', '--gateway-endpoint', 'https://127.0.0.1:17670']);
+    expect(exec.exec).not.toHaveBeenCalledWith(CLI_BINARY, expect.arrayContaining(['--gateway-insecure']));
   });
 
-  test('registers gateway with CLI after health check passes', async () => {
+  test('registers gateway as kaiden over https', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(existsSync).mockReturnValue(false);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
@@ -343,29 +259,18 @@ describe('start', () => {
     expect(exec.exec).toHaveBeenCalledWith(CLI_BINARY, [
       'gateway',
       'add',
-      'http://127.0.0.1:17670',
+      'https://127.0.0.1:17670',
       '--local',
       '--name',
-      'kaiden-local',
+      'kaiden',
     ]);
-  });
-
-  test('skips registerWithCli when skipRegistration is true', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    const proc = createMockChildProcess();
-    vi.mocked(spawn).mockReturnValue(proc);
-    vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
-
-    await gateway.start({ skipRegistration: true });
-
-    expect(spawn).toHaveBeenCalled();
-    expect(exec.exec).not.toHaveBeenCalledWith(CLI_BINARY, expect.arrayContaining(['gateway', 'add']));
   });
 
   test('stops the spawned process when waitForReady fails', async () => {
     vi.useFakeTimers();
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.mocked(existsSync).mockReturnValue(false);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
     vi.mocked(exec.exec).mockRejectedValue(new Error('connection refused'));
@@ -393,6 +298,7 @@ describe('start', () => {
 describe('stop', () => {
   test('sends SIGTERM to running process', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(existsSync).mockReturnValue(false);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
@@ -418,6 +324,7 @@ describe('isRunning', () => {
 
   test('returns true when process is running', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(existsSync).mockReturnValue(false);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
@@ -431,6 +338,7 @@ describe('isRunning', () => {
 describe('dispose', () => {
   test('stops the gateway process', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(existsSync).mockReturnValue(false);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));

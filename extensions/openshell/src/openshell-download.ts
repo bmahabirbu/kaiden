@@ -61,11 +61,6 @@ const ASSET_MAP: Record<string, AssetSpec[]> = {
       binaryName: 'openshell-gateway',
     },
     {
-      component: 'openshell-sandbox',
-      assetName: 'openshell-sandbox-x86_64-unknown-linux-gnu.tar.gz',
-      binaryName: 'openshell-sandbox',
-    },
-    {
       component: 'openshell-driver-vm',
       assetName: 'openshell-driver-vm-x86_64-unknown-linux-gnu.tar.gz',
       binaryName: 'openshell-driver-vm',
@@ -77,11 +72,6 @@ const ASSET_MAP: Record<string, AssetSpec[]> = {
       component: 'openshell-gateway',
       assetName: 'openshell-gateway-aarch64-unknown-linux-gnu.tar.gz',
       binaryName: 'openshell-gateway',
-    },
-    {
-      component: 'openshell-sandbox',
-      assetName: 'openshell-sandbox-aarch64-unknown-linux-gnu.tar.gz',
-      binaryName: 'openshell-sandbox',
     },
     {
       component: 'openshell-driver-vm',

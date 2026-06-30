@@ -18,100 +18,111 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 import type { Disposable } from '@openkaiden/api';
 import { inject, injectable, preDestroy } from 'inversify';
 
 import { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
-import { OpenshellCli } from '/@/plugin/openshell-cli/openshell-cli.js';
 import { Exec } from '/@/plugin/util/exec.js';
-import type { OpenshellGatewayStartOptions } from '/@api/openshell-gateway-info.js';
 
 const DEFAULT_PORT = 17670;
 const DEFAULT_BIND_ADDRESS = '127.0.0.1';
 const HEALTH_CHECK_INTERVAL_MS = 1000;
 const MAX_HEALTH_CHECK_ATTEMPTS = 30;
 const STOP_TIMEOUT_MS = 5000;
+const GATEWAY_NAME = 'kaiden';
 
-/**
- * Manages the `openshell-gateway` server binary lifecycle.
- *
- * On {@link init}, discovers existing gateways via the CLI. If a healthy
- * gateway is found it is selected. Otherwise, auto-starts a new local
- * gateway by spawning the `openshell-gateway` binary, waiting for it to
- * become healthy, and registering it with the CLI.
- */
+const GATEWAY_CONFIG = `[openshell]
+version = 1
+
+[openshell.gateway]
+bind_address = "${DEFAULT_BIND_ADDRESS}:${DEFAULT_PORT}"
+compute_drivers = ["vm"]
+`;
+
 @injectable()
 export class OpenshellGateway implements Disposable {
   #gatewayProcess: ChildProcess | undefined;
-  #port: number = DEFAULT_PORT;
-  #bindAddress: string = DEFAULT_BIND_ADDRESS;
+  #tlsDir: string;
+  #configDir: string;
 
   constructor(
     @inject(Exec)
     private readonly exec: Exec,
     @inject(CliToolRegistry)
     private readonly cliToolRegistry: CliToolRegistry,
-    @inject(OpenshellCli)
-    private readonly openshellCli: OpenshellCli,
-  ) {}
+  ) {
+    const home = homedir();
+    this.#tlsDir = join(home, '.local', 'state', 'openshell', 'tls');
+    this.#configDir = join(home, '.local', 'state', 'openshell', 'config');
+  }
 
   async init(): Promise<void> {
-    try {
-      const gateways = await this.openshellCli.listGateways();
-      const localGateways = gateways.filter(gw => gw.type === 'local' || this.isLocalEndpoint(gw.endpoint));
-      if (localGateways.length > 0) {
-        for (const gw of localGateways) {
-          if (await this.isEndpointHealthy(gw.endpoint)) {
-            if (!gw.active) {
-              await this.openshellCli.selectGateway(gw.name);
-            }
-            console.log(`[openshell-gateway] gateway '${gw.name}' is healthy and selected`);
-            return;
-          }
-        }
-        console.warn('[openshell-gateway] local gateway(s) defined but none reachable');
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(`[openshell-gateway] failed to discover gateways: ${message}`);
+    const gatewayBinaryPath = this.getGatewayBinaryPath();
+    if (!gatewayBinaryPath) {
+      console.warn('[openshell-gateway] gateway binary not registered, skipping');
+      return;
     }
 
-    const binaryPath = this.getGatewayBinaryPath();
-    if (!binaryPath) {
-      console.warn('[openshell-gateway] no existing gateways and binary not registered, skipping auto-start');
+    try {
+      await this.bootstrapTls(gatewayBinaryPath);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[openshell-gateway] TLS bootstrap failed: ${message}`);
       return;
     }
 
     if (await this.isEndpointHealthy()) {
-      console.log('[openshell-gateway] found healthy gateway on default port, registering');
-      await this.registerWithCli();
+      console.log('[openshell-gateway] gateway is already healthy');
       return;
     }
 
-    console.log('[openshell-gateway] no existing gateways found, auto-starting local gateway');
+    console.log('[openshell-gateway] starting local gateway with VM driver');
     await this.start();
   }
 
-  private async isEndpointHealthy(endpoint?: string): Promise<boolean> {
-    const target = endpoint ?? `http://${this.#bindAddress}:${this.#port}`;
-    const cliPath = this.getCliPath();
-    const args = ['status', '--gateway-endpoint', target];
-    if (target.startsWith('http://')) {
-      args.push('--gateway-insecure');
+  private async bootstrapTls(gatewayBinaryPath: string): Promise<void> {
+    if (this.isTlsBootstrapped()) {
+      console.log('[openshell-gateway] TLS already bootstrapped');
+      return;
     }
-    try {
-      await this.exec.exec(cliPath, args);
-      return true;
-    } catch {
-      return false;
-    }
+
+    console.log('[openshell-gateway] bootstrapping TLS certificates');
+    await this.exec.exec(gatewayBinaryPath, [
+      'generate-certs',
+      '--output-dir',
+      this.#tlsDir,
+      '--server-san',
+      'host.openshell.internal',
+    ]);
+    console.log(`[openshell-gateway] TLS certificates generated in ${this.#tlsDir}`);
   }
 
-  private isLocalEndpoint(endpoint: string): boolean {
+  private isTlsBootstrapped(): boolean {
+    return (
+      existsSync(join(this.#tlsDir, 'ca.crt')) &&
+      existsSync(join(this.#tlsDir, 'server', 'tls.crt')) &&
+      existsSync(join(this.#tlsDir, 'server', 'tls.key')) &&
+      existsSync(join(this.#tlsDir, 'client', 'tls.crt')) &&
+      existsSync(join(this.#tlsDir, 'client', 'tls.key')) &&
+      existsSync(join(this.#tlsDir, 'jwt', 'signing.pem')) &&
+      existsSync(join(this.#tlsDir, 'jwt', 'public.pem'))
+    );
+  }
+
+  private async isEndpointHealthy(): Promise<boolean> {
+    const cliPath = this.getCliPath();
     try {
-      const url = new URL(endpoint);
-      return ['127.0.0.1', 'localhost', '::1'].includes(url.hostname);
+      await this.exec.exec(cliPath, [
+        'status',
+        '--gateway-endpoint',
+        `https://${DEFAULT_BIND_ADDRESS}:${DEFAULT_PORT}`,
+      ]);
+      return true;
     } catch {
       return false;
     }
@@ -127,7 +138,7 @@ export class OpenshellGateway implements Disposable {
     return tool?.path ?? 'openshell';
   }
 
-  async start(options?: OpenshellGatewayStartOptions): Promise<void> {
+  async start(): Promise<void> {
     if (this.#gatewayProcess) {
       console.log('[openshell-gateway] already running, skipping start');
       return;
@@ -138,22 +149,19 @@ export class OpenshellGateway implements Disposable {
       throw new Error('openshell-gateway binary not registered in CLI tool registry');
     }
 
-    const previousPort = this.#port;
-    const previousBindAddress = this.#bindAddress;
+    await this.writeGatewayConfig();
 
-    if (options?.port !== undefined) {
-      this.#port = options.port;
-    }
-    if (options?.bindAddress !== undefined) {
-      this.#bindAddress = options.bindAddress;
-    }
-
-    const args = this.buildArgs(options?.disableTls ?? true);
+    const configPath = join(this.#configDir, 'gateway.toml');
+    const args = ['--config', configPath];
     console.log(`[openshell-gateway] starting: ${binaryPath} ${args.join(' ')}`);
 
     this.#gatewayProcess = spawn(binaryPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
+      env: {
+        ...process.env,
+        OPENSHELL_LOCAL_TLS_DIR: this.#tlsDir,
+      },
     });
 
     this.#gatewayProcess.stdout?.on('data', (data: Buffer) => {
@@ -180,13 +188,9 @@ export class OpenshellGateway implements Disposable {
       await this.stop().catch((stopErr: unknown) => {
         console.warn('[openshell-gateway] failed to stop after startup error:', stopErr);
       });
-      this.#port = previousPort;
-      this.#bindAddress = previousBindAddress;
       throw err;
     }
-    if (!options?.skipRegistration) {
-      await this.registerWithCli();
-    }
+    await this.registerWithCli();
   }
 
   async stop(): Promise<void> {
@@ -225,18 +229,18 @@ export class OpenshellGateway implements Disposable {
     this.stop().catch((err: unknown) => console.error('[openshell-gateway] failed to stop: ', err));
   }
 
-  private buildArgs(disableTls: boolean): string[] {
-    const args: string[] = [];
-    args.push('--port', String(this.#port));
-    args.push('--bind-address', this.#bindAddress);
-    if (disableTls) {
-      args.push('--disable-tls');
+  private async writeGatewayConfig(): Promise<void> {
+    const configPath = join(this.#configDir, 'gateway.toml');
+    if (existsSync(configPath)) {
+      return;
     }
-    return args;
+    await mkdir(this.#configDir, { recursive: true });
+    await writeFile(configPath, GATEWAY_CONFIG);
+    console.log(`[openshell-gateway] gateway config written to ${configPath}`);
   }
 
   private async waitForReady(): Promise<void> {
-    const endpoint = `http://${this.#bindAddress}:${this.#port}`;
+    const endpoint = `https://${DEFAULT_BIND_ADDRESS}:${DEFAULT_PORT}`;
     console.log(`[openshell-gateway] waiting for server at ${endpoint}`);
 
     const cliPath = this.getCliPath();
@@ -246,7 +250,7 @@ export class OpenshellGateway implements Disposable {
       }
 
       try {
-        await this.exec.exec(cliPath, ['status', '--gateway-endpoint', endpoint, '--gateway-insecure']);
+        await this.exec.exec(cliPath, ['status', '--gateway-endpoint', endpoint]);
         console.log('[openshell-gateway] server is ready');
         return;
       } catch {
@@ -260,11 +264,11 @@ export class OpenshellGateway implements Disposable {
   }
 
   private async registerWithCli(): Promise<void> {
-    const endpoint = `http://${this.#bindAddress}:${this.#port}`;
+    const endpoint = `https://${DEFAULT_BIND_ADDRESS}:${DEFAULT_PORT}`;
     const cliPath = this.getCliPath();
     try {
-      await this.exec.exec(cliPath, ['gateway', 'add', endpoint, '--local', '--name', 'kaiden-local']);
-      console.log(`[openshell-gateway] registered with CLI as kaiden-local at ${endpoint}`);
+      await this.exec.exec(cliPath, ['gateway', 'add', endpoint, '--local', '--name', GATEWAY_NAME]);
+      console.log(`[openshell-gateway] registered with CLI as ${GATEWAY_NAME} at ${endpoint}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn(`[openshell-gateway] failed to register with CLI: ${message}`);
