@@ -78,13 +78,21 @@ describe('activate', () => {
   describe('preWorkspaceStart', () => {
     function createContext(
       configFiles: AgentConfigurationFile[],
-      modelLabel = 'anthropic/claude-opus-4-6',
+      options: {
+        modelLabel?: string;
+        mcp?: {
+          servers?: { name: string; url: string; headers?: Record<string, string> }[];
+          commands?: { name: string; command: string; args?: string[]; env?: Record<string, string> }[];
+        };
+      } = {},
     ): AgentWorkspaceContext {
+      const { modelLabel = 'anthropic/claude-opus-4-6', mcp } = options;
       return {
         model: {
           model: { label: modelLabel },
         },
         configurationFiles: configFiles,
+        workspace: { ...(mcp ? { mcp } : {}) },
       };
     }
 
@@ -121,7 +129,7 @@ describe('activate', () => {
         other: true,
       });
       const configFile = createConfigFile(existingConfig);
-      await agent.preWorkspaceStart(createContext([configFile], 'openai/gpt-5.5'));
+      await agent.preWorkspaceStart(createContext([configFile], { modelLabel: 'openai/gpt-5.5' }));
 
       const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
       expect(written.agents.defaults.model).toBe('openai/gpt-5.5');
@@ -129,55 +137,22 @@ describe('activate', () => {
       expect(written.other).toBe(true);
     });
 
-    test.each([
-      {
-        name: 'agents is not an object',
-        payload: JSON.stringify({ agents: 'invalid', other: true }),
-      },
-      {
-        name: 'agents.defaults is not an object',
-        payload: JSON.stringify({ agents: { defaults: 'invalid', keep: true }, other: true }),
-      },
-    ])('falls back to empty nested config when %s', async ({ payload }) => {
-      await activate(extensionContextMock);
-      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
-
-      const configFile = createConfigFile(payload);
-      await agent.preWorkspaceStart(createContext([configFile], 'openai/gpt-5.5'));
-
-      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
-      expect(written.agents.defaults.model).toBe('openai/gpt-5.5');
-      expect(written.other).toBe(true);
-    });
-
-    test.each([
-      'null',
-      '"a string"',
-      '123',
-      'true',
-      '[1, 2]',
-    ])('falls back to empty config when parsed JSON is non-object: %s', async (payload: string) => {
-      await activate(extensionContextMock);
-      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
-
-      const configFile = createConfigFile(payload);
-      await agent.preWorkspaceStart(createContext([configFile]));
-
-      expect(configFile.updateMock).toHaveBeenCalledOnce();
-      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
-      expect(written.agents.defaults.model).toBe('anthropic/claude-opus-4-6');
-    });
-
-    test('handles invalid JSON by starting with empty config', async () => {
+    test('throws on invalid JSON', async () => {
       await activate(extensionContextMock);
       const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
 
       const configFile = createConfigFile('not valid json');
-      await agent.preWorkspaceStart(createContext([configFile]));
+      await expect(agent.preWorkspaceStart(createContext([configFile]))).rejects.toThrow();
+    });
 
-      expect(configFile.updateMock).toHaveBeenCalledOnce();
-      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
-      expect(written.agents.defaults.model).toBe('anthropic/claude-opus-4-6');
+    test('throws on non-object JSON', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      for (const nonObject of ['null', '"string"', '123', '[]']) {
+        const configFile = createConfigFile(nonObject);
+        await expect(agent.preWorkspaceStart(createContext([configFile]))).rejects.toThrow();
+      }
     });
 
     test('does nothing when config file is not in context', async () => {
@@ -194,6 +169,213 @@ describe('activate', () => {
       await agent.preWorkspaceStart(createContext([otherFile]));
 
       expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    test('writes remote MCP servers from workspace config', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const configFile = createConfigFile();
+      await agent.preWorkspaceStart(
+        createContext([configFile], {
+          mcp: {
+            servers: [{ name: 'my-remote', url: 'https://mcp.example.com' }],
+          },
+        }),
+      );
+
+      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
+      expect(written.mcp.servers).toEqual({
+        'my-remote': { transport: 'streamable-http', url: 'https://mcp.example.com' },
+      });
+    });
+
+    test('writes remote MCP servers with headers', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const configFile = createConfigFile();
+      await agent.preWorkspaceStart(
+        createContext([configFile], {
+          mcp: {
+            servers: [
+              {
+                name: 'authed-server',
+                url: 'https://mcp.example.com',
+                headers: { Authorization: 'Bearer token123' },
+              },
+            ],
+          },
+        }),
+      );
+
+      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
+      expect(written.mcp.servers).toEqual({
+        'authed-server': {
+          transport: 'streamable-http',
+          url: 'https://mcp.example.com',
+          headers: { Authorization: 'Bearer token123' },
+        },
+      });
+    });
+
+    test('writes local MCP commands from workspace config', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const configFile = createConfigFile();
+      await agent.preWorkspaceStart(
+        createContext([configFile], {
+          mcp: {
+            commands: [{ name: 'my-local', command: 'npx', args: ['-y', 'my-mcp-server'] }],
+          },
+        }),
+      );
+
+      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
+      expect(written.mcp.servers).toEqual({
+        'my-local': { command: 'npx', args: ['-y', 'my-mcp-server'] },
+      });
+    });
+
+    test('writes local MCP commands with env variables', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const configFile = createConfigFile();
+      await agent.preWorkspaceStart(
+        createContext([configFile], {
+          mcp: {
+            commands: [
+              {
+                name: 'github-mcp',
+                command: 'npx',
+                args: ['@modelcontextprotocol/server-github'],
+                env: { GITHUB_TOKEN: 'ghp_test123' },
+              },
+            ],
+          },
+        }),
+      );
+
+      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
+      expect(written.mcp.servers).toEqual({
+        'github-mcp': {
+          command: 'npx',
+          args: ['@modelcontextprotocol/server-github'],
+          env: { GITHUB_TOKEN: 'ghp_test123' },
+        },
+      });
+    });
+
+    test('writes both remote and local MCP servers together', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const configFile = createConfigFile();
+      await agent.preWorkspaceStart(
+        createContext([configFile], {
+          mcp: {
+            servers: [{ name: 'remote-one', url: 'https://mcp.example.com' }],
+            commands: [{ name: 'local-one', command: 'npx', args: ['my-server'] }],
+          },
+        }),
+      );
+
+      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
+      expect(written.mcp.servers).toEqual({
+        'remote-one': { transport: 'streamable-http', url: 'https://mcp.example.com' },
+        'local-one': { command: 'npx', args: ['my-server'] },
+      });
+    });
+
+    test('merges MCP servers with existing mcp.servers config', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const existingConfig = JSON.stringify({
+        mcp: { servers: { 'existing-server': { transport: 'streamable-http', url: 'https://existing.example.com' } } },
+      });
+      const configFile = createConfigFile(existingConfig);
+      await agent.preWorkspaceStart(
+        createContext([configFile], {
+          mcp: {
+            servers: [{ name: 'new-server', url: 'https://new.example.com' }],
+          },
+        }),
+      );
+
+      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
+      expect(written.mcp.servers).toEqual({
+        'existing-server': { transport: 'streamable-http', url: 'https://existing.example.com' },
+        'new-server': { transport: 'streamable-http', url: 'https://new.example.com' },
+      });
+    });
+
+    test('does not write mcp key when workspace has no MCP config', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const configFile = createConfigFile();
+      await agent.preWorkspaceStart(createContext([configFile]));
+
+      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
+      expect(written.mcp).toBeUndefined();
+    });
+
+    test('preserves existing mcp.servers when workspace has no MCP config', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const existingConfig = JSON.stringify({
+        mcp: { servers: { 'existing-server': { command: 'my-server', args: [] } } },
+      });
+      const configFile = createConfigFile(existingConfig);
+      await agent.preWorkspaceStart(createContext([configFile]));
+
+      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
+      expect(written.mcp.servers).toEqual({
+        'existing-server': { command: 'my-server', args: [] },
+      });
+    });
+
+    test('omits headers when remote MCP server has empty headers', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const configFile = createConfigFile();
+      await agent.preWorkspaceStart(
+        createContext([configFile], {
+          mcp: {
+            servers: [{ name: 'no-headers', url: 'https://mcp.example.com', headers: {} }],
+          },
+        }),
+      );
+
+      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
+      expect(written.mcp.servers['no-headers']).toEqual({
+        transport: 'streamable-http',
+        url: 'https://mcp.example.com',
+      });
+      expect(written.mcp.servers['no-headers']).not.toHaveProperty('headers');
+    });
+
+    test('omits env when local MCP command has empty env', async () => {
+      await activate(extensionContextMock);
+      const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
+
+      const configFile = createConfigFile();
+      await agent.preWorkspaceStart(
+        createContext([configFile], {
+          mcp: {
+            commands: [{ name: 'minimal', command: 'my-server', args: [], env: {} }],
+          },
+        }),
+      );
+
+      const written = JSON.parse(configFile.updateMock.mock.calls[0]![0] as string);
+      expect(written.mcp.servers['minimal']).toEqual({ command: 'my-server', args: [] });
+      expect(written.mcp.servers['minimal']).not.toHaveProperty('env');
     });
   });
 });

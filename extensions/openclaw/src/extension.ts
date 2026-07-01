@@ -20,36 +20,33 @@ import type { AgentWorkspaceContext, ExtensionContext, ModelType } from '@openka
 import { agents } from '@openkaiden/api';
 import { z } from 'zod';
 
-type JsonObject = Record<string, unknown>;
-
-const JsonObjectSchema: z.ZodType<JsonObject> = z.record(z.string(), z.unknown());
-
 const OpenClawAgentsSchema = z
-  .object({
-    defaults: JsonObjectSchema.catch({}).optional(),
+  .looseObject({
+    defaults: z.looseObject({}).catch({}).optional(),
   })
-  .catchall(z.unknown())
   .catch({});
 
-const OpenClawConfigSchema = z
-  .object({
-    agents: OpenClawAgentsSchema.optional(),
-  })
-  .catchall(z.unknown());
+const McpServerEntrySchema = z.looseObject({
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  transport: z.string().optional(),
+  url: z.string().optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+});
 
-type OpenClawConfig = z.output<typeof OpenClawConfigSchema>;
+type McpServerEntry = z.infer<typeof McpServerEntrySchema>;
 
-export const OPENCLAW_CONFIG_PATH = 'openclaw.json';
+const McpConfigSchema = z.looseObject({
+  servers: z.record(z.string(), McpServerEntrySchema).optional(),
+});
 
-function parseOpenClawConfig(content: string): OpenClawConfig {
-  try {
-    const parsed: unknown = JSON.parse(content);
-    const result = OpenClawConfigSchema.safeParse(parsed);
-    return result.success ? result.data : {};
-  } catch {
-    return {};
-  }
-}
+const OpenClawConfigSchema = z.looseObject({
+  agents: OpenClawAgentsSchema.optional(),
+  mcp: McpConfigSchema.optional(),
+});
+
+export const OPENCLAW_CONFIG_PATH = '.openclaw/openclaw.json';
 
 export async function activate(extensionContext: ExtensionContext): Promise<void> {
   const disposable = agents.registerAgent({
@@ -80,19 +77,42 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
         return;
       }
 
-      const config = parseOpenClawConfig(await configFile.read());
-      const nextConfig: OpenClawConfig = {
-        ...config,
-        agents: {
-          ...config.agents,
-          defaults: {
-            ...(config.agents?.defaults ?? {}),
-            model: context.model.model.label,
-          },
+      const config = OpenClawConfigSchema.parse(JSON.parse(await configFile.read()));
+
+      config.agents = {
+        ...config.agents,
+        defaults: {
+          ...(config.agents?.defaults ?? {}),
+          model: context.model.model.label,
         },
       };
 
-      await configFile.update(JSON.stringify(nextConfig, undefined, 2));
+      const mcpServers = context.workspace.mcp?.servers;
+      const mcpCommands = context.workspace.mcp?.commands;
+
+      if (mcpServers?.length || mcpCommands?.length) {
+        const servers: Record<string, McpServerEntry> = { ...config.mcp?.servers };
+
+        for (const server of mcpServers ?? []) {
+          servers[server.name] = {
+            transport: 'streamable-http',
+            url: server.url,
+            ...(server.headers && Object.keys(server.headers).length > 0 ? { headers: server.headers } : {}),
+          };
+        }
+
+        for (const cmd of mcpCommands ?? []) {
+          servers[cmd.name] = {
+            command: cmd.command,
+            args: cmd.args ?? [],
+            ...(cmd.env && Object.keys(cmd.env).length > 0 ? { env: cmd.env } : {}),
+          };
+        }
+
+        config.mcp = { ...config.mcp, servers };
+      }
+
+      await configFile.update(JSON.stringify(config, undefined, 2));
     },
   });
   extensionContext.subscriptions.push(disposable);
