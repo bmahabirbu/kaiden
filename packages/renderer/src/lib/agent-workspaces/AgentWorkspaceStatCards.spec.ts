@@ -19,11 +19,16 @@
 import '@testing-library/jest-dom/vitest';
 
 import { render, screen } from '@testing-library/svelte';
-import { expect, test } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 
 import type { SandboxInfoWithGateway } from '/@/stores/openshell-sandboxes';
+import { AGENT_LABEL } from '/@api/openshell-gateway-info';
 
 import AgentWorkspaceStatCards from './AgentWorkspaceStatCards.svelte';
+
+beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+});
 
 function makeSandbox(overrides: Partial<SandboxInfoWithGateway> = {}): SandboxInfoWithGateway {
   return {
@@ -35,23 +40,23 @@ function makeSandbox(overrides: Partial<SandboxInfoWithGateway> = {}): SandboxIn
   };
 }
 
-test('should display count of unique configured agents', () => {
+test('should display count of unique configured agents', async () => {
   const sandboxes: SandboxInfoWithGateway[] = [
-    makeSandbox({ id: 'sb-1', labels: { 'ai.openkaiden.kaiden.agent': 'coder-v1' } }),
-    makeSandbox({ id: 'sb-2', labels: { 'ai.openkaiden.kaiden.agent': 'coder-v1' } }),
-    makeSandbox({ id: 'sb-3', labels: { 'ai.openkaiden.kaiden.agent': 'reviewer-v2' } }),
+    makeSandbox({ id: 'sb-1', labels: { [AGENT_LABEL]: 'coder-v1' } }),
+    makeSandbox({ id: 'sb-2', labels: { [AGENT_LABEL]: 'coder-v1' } }),
+    makeSandbox({ id: 'sb-3', labels: { [AGENT_LABEL]: 'reviewer-v2' } }),
     makeSandbox({ id: 'sb-4' }),
   ];
 
   render(AgentWorkspaceStatCards, { sandboxes });
 
   const agentCard = screen.getByText('Configured Agents').parentElement!;
-  expect(agentCard).toHaveTextContent('2');
+  await vi.waitFor(() => expect(agentCard).toHaveTextContent('2'));
 });
 
-test('should display 0 configured agents when no labels present', () => {
+test('should display 0 configured agents when no labels present', async () => {
   render(AgentWorkspaceStatCards, { sandboxes: [makeSandbox()] });
 
   const agentCard = screen.getByText('Configured Agents').parentElement!;
-  expect(agentCard).toHaveTextContent('0');
+  await vi.waitFor(() => expect(agentCard).toHaveTextContent('0'));
 });

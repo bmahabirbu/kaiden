@@ -4,7 +4,8 @@ import { Icon } from '@podman-desktop/ui-svelte/icons';
 
 import Card from '/@/lib/components/Card.svelte';
 import type { SandboxInfoWithGateway } from '/@/stores/openshell-sandboxes';
-import { AGENT_LABEL } from '/@api/openshell-gateway-info';
+
+import { getAgentId } from './workspace-utils';
 
 interface Props {
   sandboxes: SandboxInfoWithGateway[];
@@ -16,7 +17,7 @@ const activeSandboxCount = $derived(
   sandboxes.filter(s => s.phase.toLowerCase() === 'ready' || s.phase.toLowerCase() === 'running').length,
 );
 
-const configuredAgentCount = $derived(new Set(sandboxes.map(s => s.labels?.[AGENT_LABEL]).filter(Boolean)).size);
+const configuredAgentCount = $derived(new Set(sandboxes.map(getAgentId).filter(Boolean)).size);
 </script>
 
 <div class="grid grid-cols-3 gap-3.5 mb-5">
