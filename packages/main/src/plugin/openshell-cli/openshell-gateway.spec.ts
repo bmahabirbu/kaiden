@@ -61,6 +61,7 @@ const cliToolRegistry = {
 } as unknown as CliToolRegistry;
 
 const openshellCli = {
+  getCliPath: vi.fn(),
   listGateways: vi.fn(),
   selectGateway: vi.fn(),
 } as unknown as OpenshellCli;
@@ -71,6 +72,7 @@ beforeEach(() => {
     { name: 'openshell-gateway', path: GATEWAY_BINARY },
     { name: 'openshell', path: CLI_BINARY },
   ] as unknown as CliToolInfo[]);
+  vi.mocked(openshellCli.getCliPath).mockReturnValue(CLI_BINARY);
   gateway = new OpenshellGateway(exec, cliToolRegistry, openshellCli);
 });
 
