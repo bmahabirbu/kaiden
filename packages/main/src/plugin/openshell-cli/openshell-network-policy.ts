@@ -19,7 +19,6 @@
 import z from 'zod';
 
 import type { NetworkConfiguration } from '/@api/agent-workspace-info.js';
-import type { PolicyUpdateOptions } from '/@api/openshell-gateway-info.js';
 
 // ── OpenShell sandbox policy schema ────────────────────────────────
 
@@ -129,47 +128,6 @@ export const OPENSHELL_CONTAINER_HOST = 'host.openshell.internal';
 
 const LOCALHOST_ALIASES = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]'];
 
-export function buildNetworkPolicyEndpoints(network: NetworkConfiguration): string[] | undefined {
-  if (network.mode === 'allow') {
-    return undefined;
-  }
-
-  if (!network.hosts?.length) {
-    return [];
-  }
-
-  return network.hosts.flatMap(host => [`${host}:443:full`, `${host}:80:full`]);
-}
-
-export function buildNetworkPolicyOperations(
-  sandboxName: string,
-  network: NetworkConfiguration,
-): PolicyUpdateOptions[] {
-  const removeOp: PolicyUpdateOptions = {
-    sandboxName,
-    removeRule: NETWORK_RULE_NAME,
-  };
-
-  const endpoints = buildNetworkPolicyEndpoints(network);
-  if (!endpoints?.length) {
-    return [removeOp];
-  }
-
-  const operations = [removeOp];
-
-  for (const endpoint of endpoints) {
-    operations.push({
-      sandboxName,
-      ruleName: NETWORK_RULE_NAME,
-      addEndpoints: [endpoint],
-      binary: '/**',
-      wait: true,
-    });
-  }
-
-  return operations;
-}
-
 // ── Model endpoint policy ─────────────────────────────────────────
 
 export interface ModelEndpoint {
@@ -233,29 +191,33 @@ export function parseModelEndpoint(endpoint: string): ModelEndpoint | undefined 
   return { host: parsed.hostname, port };
 }
 
-/**
- * Builds {@link PolicyUpdateOptions} to allow the sandbox to reach
- * the model inference endpoint. Follows the pattern from the issue:
- * `openshell policy update <sandbox> --add-endpoint <host>:<port> --binary '**'`
- */
-export function buildModelPolicyOperations(sandboxName: string, endpoint: string): PolicyUpdateOptions[] {
-  const removeOp: PolicyUpdateOptions = {
-    sandboxName,
-    removeRule: MODEL_RULE_NAME,
-  };
+export function buildPolicyObject(network?: NetworkConfiguration, modelEndpoint?: string): OpenshellPolicy | undefined {
+  const networkPolicies: Record<string, OpenshellNetworkPolicyEntry> = {};
 
-  const parsed = parseModelEndpoint(endpoint);
-  if (!parsed) {
-    return [removeOp];
+  if (network && network.mode !== 'allow' && network.hosts?.length) {
+    const endpoints: OpenshellEndpoint[] = network.hosts.flatMap(host => [
+      { host, port: 443, access: 'full' as const },
+      { host, port: 80, access: 'full' as const },
+    ]);
+    networkPolicies[NETWORK_RULE_NAME] = {
+      endpoints,
+      binaries: [{ path: '/**' }],
+    };
   }
 
-  const addOp: PolicyUpdateOptions = {
-    sandboxName,
-    ruleName: MODEL_RULE_NAME,
-    addEndpoints: [`${parsed.host}:${parsed.port}`],
-    binary: '/**',
-    wait: true,
-  };
+  if (modelEndpoint) {
+    const parsed = parseModelEndpoint(modelEndpoint);
+    if (parsed) {
+      networkPolicies[MODEL_RULE_NAME] = {
+        endpoints: [{ host: parsed.host, port: parsed.port }],
+        binaries: [{ path: '/**' }],
+      };
+    }
+  }
 
-  return [removeOp, addOp];
+  if (Object.keys(networkPolicies).length === 0) {
+    return undefined;
+  }
+
+  return { version: 1, network_policies: networkPolicies };
 }

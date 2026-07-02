@@ -91,15 +91,7 @@ export interface CreateSandboxOptions {
   uploads?: Array<{ local: string; remote: string }>;
   command?: string[];
   noTty?: boolean;
-}
-
-export interface PolicyUpdateOptions {
-  sandboxName: string;
-  ruleName?: string;
-  removeRule?: string;
-  addEndpoints?: string[];
-  binary?: string;
-  wait?: boolean;
+  policy?: string;
 }
 
 export interface GatewayAddOptions {
