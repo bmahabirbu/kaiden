@@ -61,7 +61,7 @@ if (values.all) {
   console.error('--platform and --arch must be specified together');
   process.exit(1);
 } else {
-  targets = SUPPORTED_TARGETS.filter(t => t.platform === process.platform && t.arch === process.arch);
+  targets = SUPPORTED_TARGETS.filter(t => t.platform === process.platform);
 }
 
 if (targets.length === 0) {
