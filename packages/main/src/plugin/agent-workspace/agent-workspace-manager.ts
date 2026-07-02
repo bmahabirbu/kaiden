@@ -56,7 +56,7 @@ import { AGENT_LABEL, decodeWorkspaceLabels, WORKSPACE_LABEL } from '/@api/opens
 const HOME_VARIABLE = '${HOME}';
 const LABEL_MAX_LENGTH = 63;
 const SOURCES_VARIABLE = '$SOURCES';
-const MOUNT_HOME_VARIABLE = '$HOME';
+const MOUNT_HOME_PREFIX = '$HOME';
 
 type OpenshellUpload = { local: string; remote: string };
 
@@ -191,7 +191,7 @@ export class AgentWorkspaceManager implements Disposable {
       }
     }
 
-    uploads.push(...this.buildOpenshellFilesystemUploads(options.sourcePath, workspace));
+    uploads.push(...(await this.buildOpenshellFilesystemUploads(options.sourcePath, workspace)));
 
     const sandboxName = options.name ?? basename(options.sourcePath);
     const env = workspace.environment
@@ -200,8 +200,7 @@ export class AgentWorkspaceManager implements Disposable {
         acc[entry.name] = entry.value as string;
         return acc;
       }, {});
-    const normalizedUploads = await this.normalizeOpenshellUploads(uploads);
-    const dedupedUploads = this.dedupeOpenshellUploads(normalizedUploads);
+    const dedupedUploads = this.dedupeOpenshellUploads(uploads);
 
     await this.openshellCli.createSandbox({
       name: sandboxName,
@@ -274,19 +273,15 @@ export class AgentWorkspaceManager implements Disposable {
     const remoteBase = this.resolveOpenshellSkillsDestination(destinationSkillsFolder);
     return skills.map(skillPath => ({
       local: skillPath,
-      remote: posix.join(remoteBase, basename(skillPath)),
+      remote: remoteBase,
     }));
   }
 
-  private buildOpenshellFilesystemUploads(
+  private async buildOpenshellFilesystemUploads(
     sourcePath: string,
     workspace: AgentWorkspaceConfiguration,
-  ): OpenshellUpload[] {
-    const sandboxSourcesPath = this.resolveOpenshellSourcesPath(sourcePath);
-    const uploads: OpenshellUpload[] = [
-      { local: sourcePath, remote: sandboxSourcesPath },
-      { local: join(sourcePath, '.kaiden', 'workspace.json'), remote: '.kaiden/workspace.json' },
-    ];
+  ): Promise<OpenshellUpload[]> {
+    const uploads: OpenshellUpload[] = [{ local: sourcePath, remote: '.' }];
 
     for (const mount of workspace.mounts ?? []) {
       const local = this.resolveOpenshellHostPath(mount.host, sourcePath);
@@ -294,9 +289,25 @@ export class AgentWorkspaceManager implements Disposable {
       if (!local || !remote) {
         continue;
       }
-      uploads.push({ local, remote });
+      const resolvedRemote = await this.resolveUploadRemotePath(local, remote);
+      uploads.push({ local, remote: resolvedRemote });
     }
     return uploads;
+  }
+
+  private async resolveUploadRemotePath(local: string, remote: string): Promise<string> {
+    try {
+      const stats = await lstat(local);
+      if (stats.isDirectory()) {
+        const localBase = basename(local);
+        if (localBase !== '' && posix.basename(remote) === localBase) {
+          return posix.dirname(remote);
+        }
+      }
+    } catch {
+      // Leave remote unchanged when the local path cannot be inspected.
+    }
+    return remote;
   }
 
   private resolveOpenshellHostPath(path: string, sourcePath: string): string | undefined {
@@ -307,11 +318,11 @@ export class AgentWorkspaceManager implements Disposable {
       const resolved = resolve(sourcePath, `.${path.slice(SOURCES_VARIABLE.length)}`);
       return this.ensureContainedPath(resolved, sourcePath);
     }
-    if (path === MOUNT_HOME_VARIABLE) {
+    if (path === MOUNT_HOME_PREFIX) {
       return homedir();
     }
-    if (path.startsWith(`${MOUNT_HOME_VARIABLE}/`)) {
-      const resolved = resolve(homedir(), `.${path.slice(MOUNT_HOME_VARIABLE.length)}`);
+    if (path.startsWith(`${MOUNT_HOME_PREFIX}/`)) {
+      const resolved = resolve(homedir(), `.${path.slice(MOUNT_HOME_PREFIX.length)}`);
       return this.ensureContainedPath(resolved, homedir());
     }
     if (path.startsWith('~/')) {
@@ -324,30 +335,25 @@ export class AgentWorkspaceManager implements Disposable {
     return undefined;
   }
 
-  private resolveOpenshellSandboxPath(path: string, sourcePath: string): string | undefined {
-    const sandboxSourcesPath = this.resolveOpenshellSourcesPath(sourcePath);
+  private resolveOpenshellSandboxPath(path: string, _sourcePath: string): string | undefined {
     if (path === SOURCES_VARIABLE) {
-      return sandboxSourcesPath;
+      return '.';
     }
     if (path.startsWith(`${SOURCES_VARIABLE}/`)) {
-      const resolved = posix.normalize(posix.join(sandboxSourcesPath, `.${path.slice(SOURCES_VARIABLE.length)}`));
-      return this.ensureContainedPosixPath(resolved, sandboxSourcesPath);
+      const resolved = posix.normalize(posix.join('.', `.${path.slice(SOURCES_VARIABLE.length)}`));
+      return this.ensureContainedPosixPath(resolved, '.');
     }
-    if (path === MOUNT_HOME_VARIABLE) {
+    if (path === MOUNT_HOME_PREFIX) {
       return '~';
     }
-    if (path.startsWith(`${MOUNT_HOME_VARIABLE}/`)) {
-      const resolved = posix.normalize(posix.join('~', `.${path.slice(MOUNT_HOME_VARIABLE.length)}`));
+    if (path.startsWith(`${MOUNT_HOME_PREFIX}/`)) {
+      const resolved = posix.normalize(posix.join('~', `.${path.slice(MOUNT_HOME_PREFIX.length)}`));
       return this.ensureContainedPosixPath(resolved, '~');
     }
     if (path.startsWith('/')) {
       return posix.normalize(path);
     }
     return undefined;
-  }
-
-  private resolveOpenshellSourcesPath(_sourcePath: string): string {
-    return '.';
   }
 
   private ensureContainedPath(resolved: string, base: string): string | undefined {
@@ -367,30 +373,11 @@ export class AgentWorkspaceManager implements Disposable {
     if (resolved === normalizedBase) {
       return resolved;
     }
-    const prefix = normalizedBase === '.' ? '' : `${normalizedBase}/`;
-    if (!resolved.startsWith(prefix) || resolved.startsWith('../')) {
-      return undefined;
+    // When base is '.', any non-traversal relative path is contained.
+    if (normalizedBase === '.') {
+      return resolved.startsWith('../') ? undefined : resolved;
     }
-    return resolved;
-  }
-
-  private async normalizeOpenshellUploads(uploads: OpenshellUpload[]): Promise<OpenshellUpload[]> {
-    return Promise.all(
-      uploads.map(async upload => {
-        try {
-          const stats = await lstat(upload.local);
-          if (stats.isDirectory()) {
-            const localBase = basename(upload.local);
-            if (localBase !== '' && posix.basename(upload.remote) === localBase) {
-              return { local: upload.local, remote: posix.dirname(upload.remote) };
-            }
-          }
-        } catch {
-          // Leave upload unchanged when the local path cannot be inspected.
-        }
-        return upload;
-      }),
-    );
+    return resolved.startsWith(`${normalizedBase}/`) ? resolved : undefined;
   }
 
   private dedupeOpenshellUploads(uploads: OpenshellUpload[]): OpenshellUpload[] {

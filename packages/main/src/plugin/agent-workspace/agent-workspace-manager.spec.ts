@@ -392,10 +392,7 @@ describe('create – OpenShell mode', () => {
 
     expect(openshellCli.createSandbox).toHaveBeenCalledWith(
       expect.objectContaining({
-        uploads: expect.arrayContaining([
-          { local: '/tmp/my-project', remote: '.' },
-          { local: join('/tmp/my-project', '.kaiden', 'workspace.json'), remote: '.kaiden/workspace.json' },
-        ]),
+        uploads: expect.arrayContaining([{ local: '/tmp/my-project', remote: '.' }]),
       }),
     );
   });
@@ -439,19 +436,6 @@ describe('create – OpenShell mode', () => {
     );
   });
 
-  test('uploads workspace sources and workspace.json to the openshell sandbox', async () => {
-    await manager.create(defaultOptions);
-
-    expect(openshellCli.createSandbox).toHaveBeenCalledWith(
-      expect.objectContaining({
-        uploads: expect.arrayContaining([
-          { local: '/tmp/my-project', remote: '.' },
-          { local: join('/tmp/my-project', '.kaiden', 'workspace.json'), remote: '.kaiden/workspace.json' },
-        ]),
-      }),
-    );
-  });
-
   test('uploads safe resolved mounts to the openshell sandbox', async () => {
     await manager.create({
       ...defaultOptions,
@@ -482,10 +466,7 @@ describe('create – OpenShell mode', () => {
     });
 
     const sandboxOptions = vi.mocked(openshellCli.createSandbox).mock.calls[0]?.[0];
-    expect(sandboxOptions?.uploads).toEqual([
-      { local: '/tmp/my-project', remote: '.' },
-      { local: join('/tmp/my-project', '.kaiden', 'workspace.json'), remote: '.kaiden/workspace.json' },
-    ]);
+    expect(sandboxOptions?.uploads).toEqual([{ local: '/tmp/my-project', remote: '.' }]);
   });
 
   test('uploads broad host access mounts when creating an openshell sandbox', async () => {
@@ -501,7 +482,6 @@ describe('create – OpenShell mode', () => {
     expect(sandboxOptions?.uploads).toEqual(
       expect.arrayContaining([
         { local: '/tmp/my-project', remote: '.' },
-        { local: join('/tmp/my-project', '.kaiden', 'workspace.json'), remote: '.kaiden/workspace.json' },
         { local: homedir(), remote: '~' },
         { local: '/', remote: '/' },
       ]),
