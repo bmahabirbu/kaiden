@@ -247,11 +247,16 @@ let error = $state('');
 
 let currentStepId = $derived(wizardSteps[wizard.draft.currentStepIndex]?.id ?? '');
 let isLastStep = $derived(wizard.draft.currentStepIndex === wizardSteps.length - 1);
-let isCurrentStepComplete = $derived(
-  currentStepId === 'workspace'
-    ? wizard.draft.sessionName.trim() !== '' && wizard.draft.sourcePath.trim() !== ''
-    : true,
-);
+let hasModel = $derived(wizard.draft.selectedModel !== undefined);
+let isCurrentStepComplete = $derived.by(() => {
+  if (currentStepId === 'workspace') {
+    return wizard.draft.sessionName.trim() !== '' && wizard.draft.sourcePath.trim() !== '';
+  }
+  if (currentStepId === 'agent-model') {
+    return hasModel;
+  }
+  return true;
+});
 
 function goNext(): void {
   if (wizard.draft.currentStepIndex < wizardSteps.length - 1) wizard.draft.currentStepIndex++;
@@ -392,7 +397,7 @@ function buildMountsFrom(fileAccess: string, mounts: CustomMount[]): AgentWorksp
 }
 
 async function startAsIs(): Promise<void> {
-  if (!wizard.draft.sourcePath.trim()) return;
+  if (!wizard.draft.sourcePath.trim() || !wizard.draft.selectedModel) return;
 
   const draftSnapshot = $state.snapshot(wizard.draft);
 
@@ -401,6 +406,7 @@ async function startAsIs(): Promise<void> {
       sourcePath: draftSnapshot.sourcePath,
       runtime: $agentWorkspaceRuntime,
       agent: draftSnapshot.selectedAgent,
+      model: getModelId(draftSnapshot.selectedModel!),
       name: draftSnapshot.sessionName || getDefaultSessionName(draftSnapshot.sourcePath),
       project: draftSnapshot.selectedProjectId,
     });
@@ -421,7 +427,7 @@ async function startAsIs(): Promise<void> {
 }
 
 async function startWorkspace(): Promise<void> {
-  if (!wizard.draft.sessionName.trim() || !wizard.draft.sourcePath.trim()) return;
+  if (!wizard.draft.sessionName.trim() || !wizard.draft.sourcePath.trim() || !wizard.draft.selectedModel) return;
 
   const draftSnapshot = $state.snapshot(wizard.draft);
 
@@ -453,7 +459,7 @@ async function startWorkspace(): Promise<void> {
       sourcePath: draftSnapshot.sourcePath,
       runtime: $agentWorkspaceRuntime,
       agent: draftSnapshot.selectedAgent,
-      model: draftSnapshot.selectedModel ? getModelId(draftSnapshot.selectedModel) : undefined,
+      model: getModelId(draftSnapshot.selectedModel!),
       name: draftSnapshot.sessionName,
       skills: selectedSkillPaths.length > 0 ? selectedSkillPaths : undefined,
       network,
@@ -520,6 +526,7 @@ async function startWorkspace(): Promise<void> {
                 configExists={wizard.draft.configExists}
                 bind:configAction={wizard.draft.configAction}
                 onStartAsIs={startAsIs}
+                startAsIsDisabled={!hasModel}
                 projects={[...$workspaceProjectInfos]}
                 selectedProjectId={wizard.draft.selectedProjectId}
                 onProjectSelect={handleProjectSelect} />
@@ -568,12 +575,12 @@ async function startWorkspace(): Promise<void> {
               {/if}
               <Button onclick={cancel}>Cancel</Button>
               {#if currentStepId === 'workspace'}
-                <Button type="secondary" disabled={!isCurrentStepComplete} onclick={startWorkspace}>
+                <Button type="secondary" disabled={!isCurrentStepComplete || !hasModel} onclick={startWorkspace}>
                   Use all defaults and create workspace
                 </Button>
               {/if}
               {#if isLastStep}
-                <Button onclick={startWorkspace}>
+                <Button disabled={!hasModel} onclick={startWorkspace}>
                   Start Workspace
                 </Button>
               {:else}

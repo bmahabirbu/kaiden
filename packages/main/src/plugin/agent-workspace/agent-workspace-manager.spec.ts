@@ -258,6 +258,11 @@ describe('watchInstancesFile', () => {
   });
 });
 
+test('rejects with a descriptive error when model is missing at runtime', async () => {
+  const options = { sourcePath: '/tmp/p', agent: 'claude' } as AgentWorkspaceCreateOptions;
+  await expect(manager.create(options)).rejects.toThrow(/model is required to create a workspace/);
+});
+
 describe('create – OpenShell mode', () => {
   const defaultOptions: AgentWorkspaceCreateOptions = {
     sourcePath: '/tmp/my-project',
@@ -721,6 +726,7 @@ describe('ensureModelSecret', () => {
   const baseOptions: AgentWorkspaceCreateOptions = {
     sourcePath: '/tmp/my-project',
     agent: 'claude',
+    model: 'anthropic::claude-sonnet-4::',
     name: 'my-workspace',
   };
 
@@ -730,13 +736,6 @@ describe('ensureModelSecret', () => {
       model: 'anthropic::claude-sonnet-4-20250514::',
       workspaceConfiguration: { secrets: ['anthropic'] },
     } as AgentWorkspaceCreateOptions;
-    await manager.ensureModelSecret(options);
-
-    expect(secretManager.getSecretForModel).not.toHaveBeenCalled();
-  });
-
-  test('skips when no model is provided', async () => {
-    const options = { ...baseOptions };
     await manager.ensureModelSecret(options);
 
     expect(secretManager.getSecretForModel).not.toHaveBeenCalled();
