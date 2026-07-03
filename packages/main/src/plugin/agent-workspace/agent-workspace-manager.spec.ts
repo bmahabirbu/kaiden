@@ -16,8 +16,9 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { access, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { access, lstat, readFile, rm, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import type {
   Agent,
@@ -162,6 +163,21 @@ beforeEach(() => {
     get: vi.fn().mockReturnValue(undefined),
   } as unknown as ReturnType<IConfigurationRegistry['getConfiguration']>);
   vi.mocked(configurationRegistry.getConfigurationProperties).mockReturnValue({});
+  vi.mocked(lstat).mockImplementation(async path => {
+    const value = String(path);
+    const isDirectory =
+      value === '/tmp/my-project' ||
+      value.endsWith('shared-lib') ||
+      value.endsWith('skills/github') ||
+      value.endsWith('skills\\github') ||
+      value.endsWith('skills/kubernetes') ||
+      value.endsWith('skills\\kubernetes');
+    return {
+      isDirectory: () => isDirectory,
+      isFile: () => !isDirectory,
+      isSymbolicLink: () => false,
+    } as Awaited<ReturnType<typeof lstat>>;
+  });
   manager = new AgentWorkspaceManager(
     apiSender,
     ipcHandle,
@@ -292,13 +308,15 @@ describe('create – OpenShell mode', () => {
     const options = { ...defaultOptions, secrets: ['my-secret'] };
     await manager.create(options);
 
-    expect(openshellCli.createSandbox).toHaveBeenCalledWith({
-      name: 'my-sandbox',
-      providers: ['my-secret'],
-      labels: { ...encodeWorkspaceLabels('/tmp/my-project'), [AGENT_LABEL]: 'claude' },
-      noTty: true,
-      command: ['true'],
-    });
+    expect(openshellCli.createSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'my-sandbox',
+        providers: ['my-secret'],
+        labels: { ...encodeWorkspaceLabels('/tmp/my-project'), [AGENT_LABEL]: 'claude' },
+        noTty: true,
+        command: ['true'],
+      }),
+    );
   });
 
   test('returns { id: sandboxName }', async () => {
@@ -377,16 +395,20 @@ describe('create – OpenShell mode', () => {
 
     expect(openshellCli.createSandbox).toHaveBeenCalledWith(
       expect.objectContaining({
-        uploads: [{ local: expect.any(String), remote: '/home/user/.config/agent/config.toml' }],
+        uploads: expect.arrayContaining([
+          { local: expect.any(String), remote: '/home/user/.config/agent/config.toml' },
+        ]),
       }),
     );
   });
 
-  test('does not include uploads when agent has no config files', async () => {
+  test('uploads workspace filesystem even when agent has no config files', async () => {
     await manager.create(defaultOptions);
 
     expect(openshellCli.createSandbox).toHaveBeenCalledWith(
-      expect.not.objectContaining({ uploads: expect.anything() }),
+      expect.objectContaining({
+        uploads: expect.arrayContaining([{ local: '/tmp/my-project', remote: '.' }]),
+      }),
     );
   });
 
@@ -404,7 +426,9 @@ describe('create – OpenShell mode', () => {
 
     expect(openshellCli.createSandbox).toHaveBeenCalledWith(
       expect.objectContaining({
-        uploads: [{ local: expect.any(String), remote: '/home/user/.config/agent/config.toml' }],
+        uploads: expect.arrayContaining([
+          { local: expect.any(String), remote: '/home/user/.config/agent/config.toml' },
+        ]),
       }),
     );
   });
@@ -419,11 +443,50 @@ describe('create – OpenShell mode', () => {
 
     expect(openshellCli.createSandbox).toHaveBeenCalledWith(
       expect.objectContaining({
-        uploads: [
-          { local: '/home/user/.kaiden/skills/github', remote: '.claude/skills/github' },
-          { local: '/home/user/.kaiden/skills/kubernetes', remote: '.claude/skills/kubernetes' },
-        ],
+        uploads: expect.arrayContaining([
+          { local: '/home/user/.kaiden/skills/github', remote: '.claude/skills' },
+          { local: '/home/user/.kaiden/skills/kubernetes', remote: '.claude/skills' },
+        ]),
       }),
+    );
+  });
+
+  test('uploads safe resolved mounts to the openshell sandbox', async () => {
+    await manager.create({
+      ...defaultOptions,
+      mounts: [
+        { host: '$SOURCES/subdir', target: '$SOURCES/subdir', ro: false },
+        { host: '$HOME/.gitconfig', target: '$HOME/.gitconfig', ro: true },
+      ],
+    });
+
+    expect(openshellCli.createSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        uploads: expect.arrayContaining([
+          { local: '/tmp/my-project', remote: '.' },
+          { local: resolve('/tmp/my-project', './subdir'), remote: 'subdir' },
+          { local: join(homedir(), '.gitconfig'), remote: '~/.gitconfig' },
+        ]),
+      }),
+    );
+  });
+
+  test('uploads broad host access mounts when creating an openshell sandbox', async () => {
+    await manager.create({
+      ...defaultOptions,
+      mounts: [
+        { host: '$HOME', target: '$HOME', ro: false },
+        { host: '/', target: '/', ro: false },
+      ],
+    });
+
+    const sandboxOptions = vi.mocked(openshellCli.createSandbox).mock.calls[0]?.[0];
+    expect(sandboxOptions?.uploads).toEqual(
+      expect.arrayContaining([
+        { local: '/tmp/my-project', remote: '.' },
+        { local: homedir(), remote: '~' },
+        { local: '/', remote: '/' },
+      ]),
     );
   });
 
@@ -440,7 +503,7 @@ describe('create – OpenShell mode', () => {
 
     expect(openshellCli.createSandbox).toHaveBeenCalledWith(
       expect.objectContaining({
-        uploads: [{ local: '/home/user/.kaiden/skills/github', remote: '.agents/skills/github' }],
+        uploads: expect.arrayContaining([{ local: '/home/user/.kaiden/skills/github', remote: '.agents/skills' }]),
       }),
     );
   });
