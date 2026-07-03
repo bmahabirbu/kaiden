@@ -313,6 +313,19 @@ export class OpenshellCli {
     return z.array(GatewayInfoSchema).parse(data);
   }
 
+  async checkEndpointStatus(endpoint: string): Promise<boolean> {
+    const args = ['status', '--gateway-endpoint', endpoint];
+    if (endpoint.startsWith('http://')) {
+      args.push('--gateway-insecure');
+    }
+    try {
+      await this.runCli(args, { quiet: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async getGatewayStatus(): Promise<string> {
     const cliPath = this.getCliPath();
     try {
@@ -380,15 +393,22 @@ export class OpenshellCli {
   }
   // ── helpers ───────────────────────────────────────────────────────
 
-  private async runCli(args: string[], options?: { redact?: boolean; env?: { [p: string]: string } }): Promise<void> {
+  private async runCli(
+    args: string[],
+    options?: { redact?: boolean; env?: { [p: string]: string }; quiet?: boolean },
+  ): Promise<void> {
     const cliPath = this.getCliPath();
     const displayArgs = options?.redact ? this.redactSensitiveArgs(args) : args;
-    console.log(`Executing: ${cliPath} ${displayArgs.join(' ')}`);
+    if (!options?.quiet) {
+      console.log(`Executing: ${cliPath} ${displayArgs.join(' ')}`);
+    }
     try {
       await this.exec.exec(cliPath, args, options?.env ? { env: options.env } : undefined);
     } catch (err: unknown) {
       const detail = this.extractCliError(err);
-      console.error(`openshell failed: ${cliPath} ${displayArgs.join(' ')} — ${detail}`);
+      if (!options?.quiet) {
+        console.error(`openshell failed: ${cliPath} ${displayArgs.join(' ')} — ${detail}`);
+      }
       throw new Error(detail);
     }
   }

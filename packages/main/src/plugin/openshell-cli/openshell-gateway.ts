@@ -24,7 +24,6 @@ import { inject, injectable, preDestroy } from 'inversify';
 
 import { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
 import { OpenshellCli } from '/@/plugin/openshell-cli/openshell-cli.js';
-import { Exec } from '/@/plugin/util/exec.js';
 import type { OpenshellGatewayStartOptions } from '/@api/openshell-gateway-info.js';
 
 const DEFAULT_PORT = 17670;
@@ -48,8 +47,6 @@ export class OpenshellGateway implements Disposable {
   #bindAddress: string = DEFAULT_BIND_ADDRESS;
 
   constructor(
-    @inject(Exec)
-    private readonly exec: Exec,
     @inject(CliToolRegistry)
     private readonly cliToolRegistry: CliToolRegistry,
     @inject(OpenshellCli)
@@ -66,7 +63,7 @@ export class OpenshellGateway implements Disposable {
             if (!gw.active) {
               await this.openshellCli.selectGateway(gw.name);
             }
-            console.log(`[openshell-gateway] gateway '${gw.name}' is healthy and selected`);
+            console.log(`[openshell-gateway] gateway detected (${gw.endpoint}) and is healthy`);
             return;
           }
         }
@@ -95,17 +92,7 @@ export class OpenshellGateway implements Disposable {
 
   private async isEndpointHealthy(endpoint?: string): Promise<boolean> {
     const target = endpoint ?? `http://${this.#bindAddress}:${this.#port}`;
-    const cliPath = this.getCliPath();
-    const args = ['status', '--gateway-endpoint', target];
-    if (target.startsWith('http://')) {
-      args.push('--gateway-insecure');
-    }
-    try {
-      await this.exec.exec(cliPath, args);
-      return true;
-    } catch {
-      return false;
-    }
+    return this.openshellCli.checkEndpointStatus(target);
   }
 
   private isLocalEndpoint(endpoint: string): boolean {
@@ -120,11 +107,6 @@ export class OpenshellGateway implements Disposable {
   getGatewayBinaryPath(): string | undefined {
     const tool = this.cliToolRegistry.getCliToolInfos().find(t => t.name === 'openshell-gateway');
     return tool?.path;
-  }
-
-  private getCliPath(): string {
-    const tool = this.cliToolRegistry.getCliToolInfos().find(t => t.name === 'openshell');
-    return tool?.path ?? 'openshell';
   }
 
   async start(options?: OpenshellGatewayStartOptions): Promise<void> {
@@ -239,18 +221,14 @@ export class OpenshellGateway implements Disposable {
     const endpoint = `http://${this.#bindAddress}:${this.#port}`;
     console.log(`[openshell-gateway] waiting for server at ${endpoint}`);
 
-    const cliPath = this.getCliPath();
     for (let attempt = 0; attempt < MAX_HEALTH_CHECK_ATTEMPTS; attempt++) {
       if (!this.isRunning()) {
         throw new Error('Gateway process exited before becoming ready');
       }
 
-      try {
-        await this.exec.exec(cliPath, ['status', '--gateway-endpoint', endpoint, '--gateway-insecure']);
+      if (await this.openshellCli.checkEndpointStatus(endpoint)) {
         console.log('[openshell-gateway] server is ready');
         return;
-      } catch {
-        // not ready yet
       }
 
       await new Promise<void>(resolve => setTimeout(resolve, HEALTH_CHECK_INTERVAL_MS));
@@ -261,9 +239,8 @@ export class OpenshellGateway implements Disposable {
 
   private async registerWithCli(): Promise<void> {
     const endpoint = `http://${this.#bindAddress}:${this.#port}`;
-    const cliPath = this.getCliPath();
     try {
-      await this.exec.exec(cliPath, ['gateway', 'add', endpoint, '--local', '--name', 'kaiden-local']);
+      await this.openshellCli.addGateway({ endpoint, local: true, name: 'kaiden-local' });
       console.log(`[openshell-gateway] registered with CLI as kaiden-local at ${endpoint}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
