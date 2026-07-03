@@ -16,9 +16,9 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { access, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, lstat, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { basename, join, posix } from 'node:path';
+import { basename, isAbsolute, join, posix, resolve } from 'node:path';
 
 import type { Disposable, FileSystemWatcher } from '@openkaiden/api';
 import type { WebContents } from 'electron';
@@ -52,6 +52,10 @@ import { AGENT_LABEL, decodeWorkspaceLabels, WORKSPACE_LABEL } from '/@api/opens
 
 const HOME_VARIABLE = '${HOME}';
 const LABEL_MAX_LENGTH = 63;
+const SOURCES_VARIABLE = '$SOURCES';
+const MOUNT_HOME_PREFIX = '$HOME';
+
+type OpenshellUpload = { local: string; remote: string };
 
 export function encodeWorkspaceLabels(sourcePath: string): Record<string, string> {
   const encoded = Buffer.from(sourcePath).toString('base64url');
@@ -138,7 +142,7 @@ export class AgentWorkspaceManager implements Disposable {
 
     const workspace = await writeWorkspaceConfig(options);
     const agent = this.agentRegistry.getAgentRegistration(options.agent);
-    const uploads: Array<{ local: string; remote: string }> = [];
+    const uploads: OpenshellUpload[] = [];
 
     if (agent) {
       const writable = await Promise.all(
@@ -184,6 +188,8 @@ export class AgentWorkspaceManager implements Disposable {
       }
     }
 
+    uploads.push(...(await this.buildOpenshellFilesystemUploads(options.sourcePath, workspace)));
+
     const sandboxName = options.name ?? basename(options.sourcePath);
     const env = workspace.environment
       ?.filter(entry => typeof entry.value === 'string' && entry.value !== '')
@@ -191,6 +197,7 @@ export class AgentWorkspaceManager implements Disposable {
         acc[entry.name] = entry.value as string;
         return acc;
       }, {});
+    const dedupedUploads = this.dedupeOpenshellUploads(uploads);
 
     const t0 = performance.now();
 
@@ -207,7 +214,7 @@ export class AgentWorkspaceManager implements Disposable {
         providers: options.secrets,
         env: env && Object.keys(env).length > 0 ? env : undefined,
         labels: { ...encodeWorkspaceLabels(options.sourcePath), [AGENT_LABEL]: options.agent },
-        uploads: uploads.length > 0 ? uploads : undefined,
+        uploads: dedupedUploads.length > 0 ? dedupedUploads : undefined,
         noTty: true,
         command: ['true'],
         policy: policyFile,
@@ -242,10 +249,7 @@ export class AgentWorkspaceManager implements Disposable {
     }
   }
 
-  private buildOpenshellSkillUploads(
-    skills: string[] | undefined,
-    destinationSkillsFolder: string,
-  ): Array<{ local: string; remote: string }> {
+  private buildOpenshellSkillUploads(skills: string[] | undefined, destinationSkillsFolder: string): OpenshellUpload[] {
     if (!skills?.length) {
       return [];
     }
@@ -253,8 +257,96 @@ export class AgentWorkspaceManager implements Disposable {
     const remoteBase = this.resolveOpenshellSkillsDestination(destinationSkillsFolder);
     return skills.map(skillPath => ({
       local: skillPath,
-      remote: posix.join(remoteBase, basename(skillPath)),
+      remote: remoteBase,
     }));
+  }
+
+  private async buildOpenshellFilesystemUploads(
+    sourcePath: string,
+    workspace: AgentWorkspaceConfiguration,
+  ): Promise<OpenshellUpload[]> {
+    const uploads: OpenshellUpload[] = [{ local: sourcePath, remote: '.' }];
+
+    for (const mount of workspace.mounts ?? []) {
+      const local = this.resolveHostPath(mount.host, sourcePath);
+      const remote = this.resolveOpenshellSandboxPath(mount.target, sourcePath);
+      if (!local || !remote) {
+        continue;
+      }
+      const resolvedRemote = await this.resolveUploadRemotePath(local, remote);
+      uploads.push({ local, remote: resolvedRemote });
+    }
+    return uploads;
+  }
+
+  private async resolveUploadRemotePath(local: string, remote: string): Promise<string> {
+    try {
+      const stats = await lstat(local);
+      if (stats.isDirectory()) {
+        const localBase = basename(local);
+        if (localBase !== '' && posix.basename(remote) === localBase) {
+          return posix.dirname(remote);
+        }
+      }
+    } catch {
+      // Leave remote unchanged when the local path cannot be inspected.
+    }
+    return remote;
+  }
+
+  private resolveHostPath(path: string, sourcePath: string): string | undefined {
+    if (path === SOURCES_VARIABLE) {
+      return sourcePath;
+    }
+    if (path.startsWith(`${SOURCES_VARIABLE}/`)) {
+      return resolve(sourcePath, path.slice(SOURCES_VARIABLE.length + 1));
+    }
+    if (path === MOUNT_HOME_PREFIX) {
+      return homedir();
+    }
+    if (path.startsWith(`${MOUNT_HOME_PREFIX}/`)) {
+      return resolve(homedir(), path.slice(MOUNT_HOME_PREFIX.length + 1));
+    }
+    if (path.startsWith('~/')) {
+      return resolve(homedir(), path.slice(2));
+    }
+    if (isAbsolute(path)) {
+      return path;
+    }
+    return undefined;
+  }
+
+  private resolveOpenshellSandboxPath(path: string, _sourcePath: string): string | undefined {
+    if (path === SOURCES_VARIABLE) {
+      return '.';
+    }
+    if (path.startsWith(`${SOURCES_VARIABLE}/`)) {
+      return path.slice(SOURCES_VARIABLE.length + 1);
+    }
+    if (path === MOUNT_HOME_PREFIX) {
+      return '~';
+    }
+    if (path.startsWith(`${MOUNT_HOME_PREFIX}/`)) {
+      return posix.join('~', path.slice(MOUNT_HOME_PREFIX.length + 1));
+    }
+    if (path.startsWith('/')) {
+      return path;
+    }
+    return undefined;
+  }
+
+  private dedupeOpenshellUploads(uploads: OpenshellUpload[]): OpenshellUpload[] {
+    const deduped: OpenshellUpload[] = [];
+    const seen = new Set<string>();
+    for (const upload of uploads) {
+      const key = `${upload.local}\u0000${upload.remote}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      deduped.push(upload);
+    }
+    return deduped;
   }
 
   private resolveOpenshellSkillsDestination(destinationSkillsFolder: string): string {
