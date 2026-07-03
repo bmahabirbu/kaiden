@@ -730,6 +730,18 @@ describe('listSandboxesPerGateway', () => {
   });
 });
 
+describe('checkEndpointStatus', () => {
+  test('returns true when endpoint is healthy', async () => {
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
+    expect(await openshellCli.checkEndpointStatus('https://127.0.0.1:8443')).toBe(true);
+  });
+
+  test('returns false when endpoint is unreachable', async () => {
+    vi.mocked(exec.exec).mockRejectedValue(new Error('connection refused'));
+    expect(await openshellCli.checkEndpointStatus('http://127.0.0.1:17670')).toBe(false);
+  });
+});
+
 describe('getGatewayStatus', () => {
   test('executes status and returns trimmed output', async () => {
     const statusText = 'Server Status\n\n  Gateway: openshell\n  Status: Connected\n';

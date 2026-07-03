@@ -313,6 +313,19 @@ export class OpenshellCli {
     return z.array(GatewayInfoSchema).parse(data);
   }
 
+  async checkEndpointStatus(endpoint: string): Promise<boolean> {
+    const args = ['status', '--gateway-endpoint', endpoint];
+    if (endpoint.startsWith('http://')) {
+      args.push('--gateway-insecure');
+    }
+    try {
+      await this.runCli(args);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async getGatewayStatus(): Promise<string> {
     const cliPath = this.getCliPath();
     try {
