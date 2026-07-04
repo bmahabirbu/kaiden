@@ -18,19 +18,27 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { spawn } from 'node:child_process';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import type { Disposable } from '@openkaiden/api';
 import { inject, injectable, preDestroy } from 'inversify';
+import Mustache from 'mustache';
 
 import { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
+import { Directories } from '/@/plugin/directories.js';
 import { OpenshellCli } from '/@/plugin/openshell-cli/openshell-cli.js';
+import { Exec } from '/@/plugin/util/exec.js';
 import type { OpenshellGatewayStartOptions } from '/@api/openshell-gateway-info.js';
+
+import gatewayConfigTemplate from './openshell-gateway.toml.template?raw';
 
 const DEFAULT_PORT = 17670;
 const DEFAULT_BIND_ADDRESS = '127.0.0.1';
 const HEALTH_CHECK_INTERVAL_MS = 1000;
 const MAX_HEALTH_CHECK_ATTEMPTS = 30;
 const STOP_TIMEOUT_MS = 5000;
+const SUPERVISOR_IMAGE_BASE = 'ghcr.io/nvidia/openshell/supervisor';
 
 /**
  * Manages the `openshell-gateway` server binary lifecycle.
@@ -47,10 +55,14 @@ export class OpenshellGateway implements Disposable {
   #bindAddress: string = DEFAULT_BIND_ADDRESS;
 
   constructor(
+    @inject(Exec)
+    private readonly exec: Exec,
     @inject(CliToolRegistry)
     private readonly cliToolRegistry: CliToolRegistry,
     @inject(OpenshellCli)
     private readonly openshellCli: OpenshellCli,
+    @inject(Directories)
+    private readonly directories: Directories,
   ) {}
 
   async init(): Promise<void> {
@@ -130,7 +142,8 @@ export class OpenshellGateway implements Disposable {
       this.#bindAddress = options.bindAddress;
     }
 
-    const args = this.buildArgs(options?.disableTls ?? true);
+    const configPath = await this.createGatewayConfig(binaryPath, options?.supervisorImage);
+    const args = this.buildArgs(options?.disableTls ?? true, configPath);
     console.log(`[openshell-gateway] starting: ${binaryPath} ${args.join(' ')}`);
 
     this.#gatewayProcess = spawn(binaryPath, args, {
@@ -207,14 +220,61 @@ export class OpenshellGateway implements Disposable {
     this.stop().catch((err: unknown) => console.error('[openshell-gateway] failed to stop: ', err));
   }
 
-  private buildArgs(disableTls: boolean): string[] {
+  private buildArgs(disableTls: boolean, configPath?: string): string[] {
     const args: string[] = [];
+    if (configPath) {
+      args.push('--config', configPath);
+    }
     args.push('--port', String(this.#port));
     args.push('--bind-address', this.#bindAddress);
     if (disableTls) {
       args.push('--disable-tls');
     }
     return args;
+  }
+
+  private async getGatewayVersion(binaryPath: string): Promise<string> {
+    const result = await this.exec.exec(binaryPath, ['--version']);
+    const output = result.stdout.trim();
+    const token = output.split(' ').pop() ?? '';
+    const parts = token.split('.');
+    if (parts.length !== 3 || parts.some(p => p.length === 0 || !Number.isFinite(Number(p)))) {
+      throw new Error(`Unable to parse version from: ${output}`);
+    }
+    return token;
+  }
+
+  private async createGatewayConfig(binaryPath: string, supervisorImage?: string): Promise<string | undefined> {
+    try {
+      let image = supervisorImage;
+      if (!image) {
+        try {
+          const version = await this.getGatewayVersion(binaryPath);
+          image = `${SUPERVISOR_IMAGE_BASE}:${version}`;
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(`[openshell-gateway] unable to detect version for supervisor pinning: ${message}`);
+        }
+      }
+
+      const storageDirectory = join(this.directories.getDataDirectory(), 'openshell-gateway');
+      const configPath = join(storageDirectory, 'gateway.toml');
+      const config = Mustache.render(gatewayConfigTemplate, {
+        supervisorImage: image,
+      });
+
+      await mkdir(storageDirectory, { recursive: true });
+      await writeFile(configPath, config, 'utf-8');
+      if (image) {
+        console.log(`[openshell-gateway] supervisor image pinned to ${image}`);
+      }
+      console.log(`[openshell-gateway] generated local gateway config at ${configPath}`);
+      return configPath;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[openshell-gateway] failed to generate gateway config: ${message}`);
+      return undefined;
+    }
   }
 
   private async waitForReady(): Promise<void> {

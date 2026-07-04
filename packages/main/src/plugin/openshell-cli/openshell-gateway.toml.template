@@ -1,0 +1,7 @@
+[openshell]
+version = 1
+
+[openshell.drivers.podman]
+{{#supervisorImage}}
+supervisor_image = "{{{supervisorImage}}}"
+{{/supervisorImage}}
