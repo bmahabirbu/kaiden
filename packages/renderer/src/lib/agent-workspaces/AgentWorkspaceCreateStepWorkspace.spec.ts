@@ -155,3 +155,15 @@ test('selects replace radio when clicked', async () => {
 
   expect(screen.getByLabelText('Replace existing')).toBeChecked();
 });
+
+test('shows duplicate name error when nameDuplicate is true', () => {
+  render(AgentWorkspaceCreateStepWorkspace, { ...defaultProps, nameDuplicate: true });
+
+  expect(screen.getByText(/workspace with this name already exists/)).toBeInTheDocument();
+});
+
+test('hides duplicate name error when nameDuplicate is false', () => {
+  render(AgentWorkspaceCreateStepWorkspace, { ...defaultProps, nameDuplicate: false });
+
+  expect(screen.queryByText(/workspace with this name already exists/)).not.toBeInTheDocument();
+});
