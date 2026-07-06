@@ -46,6 +46,23 @@ const OpenClawConfigSchema = z.looseObject({
   mcp: McpConfigSchema.optional(),
 });
 
+const OpenClawConfigCodec = z.codec(z.string(), OpenClawConfigSchema, {
+  decode: (jsonString, ctx) => {
+    try {
+      return JSON.parse(jsonString);
+    } catch (err: unknown) {
+      ctx.issues.push({
+        code: 'invalid_format',
+        format: 'json',
+        input: jsonString,
+        message: err instanceof Error ? err.message : 'Invalid JSON',
+      });
+      return z.NEVER;
+    }
+  },
+  encode: value => JSON.stringify(value, undefined, 2),
+});
+
 export const OPENCLAW_CONFIG_PATH = '.openclaw/openclaw.json';
 
 export async function activate(extensionContext: ExtensionContext): Promise<void> {
@@ -77,7 +94,7 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
         return;
       }
 
-      const config = OpenClawConfigSchema.parse(JSON.parse(await configFile.read()));
+      const config = OpenClawConfigCodec.decode(await configFile.read());
 
       config.agents = {
         ...config.agents,
@@ -112,7 +129,7 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
         config.mcp = { ...config.mcp, servers };
       }
 
-      await configFile.update(JSON.stringify(config, undefined, 2));
+      await configFile.update(OpenClawConfigCodec.encode(config));
     },
   });
   extensionContext.subscriptions.push(disposable);

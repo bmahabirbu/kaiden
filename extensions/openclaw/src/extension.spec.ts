@@ -62,9 +62,9 @@ describe('activate', () => {
     await activate(extensionContextMock);
 
     const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
-    expect(agent.isSupportedModelType!({ name: 'openai' })).toBe(true);
-    expect(agent.isSupportedModelType!({ name: 'gemini' })).toBe(true);
-    expect(agent.isSupportedModelType!({ name: 'vertexai' })).toBe(false);
+    expect(agent.isSupportedModelType!({ name: 'openai' })).toBeTruthy();
+    expect(agent.isSupportedModelType!({ name: 'gemini' })).toBeTruthy();
+    expect(agent.isSupportedModelType!({ name: 'vertexai' })).toBeFalsy();
   });
 
   test('registers agent with openclaw.json configuration file', async () => {
