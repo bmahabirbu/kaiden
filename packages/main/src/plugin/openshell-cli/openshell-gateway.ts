@@ -55,14 +55,14 @@ export class OpenshellGateway implements Disposable {
   #bindAddress: string = DEFAULT_BIND_ADDRESS;
 
   constructor(
-    @inject(Exec)
-    private readonly exec: Exec,
     @inject(CliToolRegistry)
     private readonly cliToolRegistry: CliToolRegistry,
     @inject(OpenshellCli)
     private readonly openshellCli: OpenshellCli,
     @inject(Directories)
     private readonly directories: Directories,
+    @inject(Exec)
+    private readonly exec: Exec,
   ) {}
 
   async init(): Promise<void> {
@@ -220,6 +220,20 @@ export class OpenshellGateway implements Disposable {
     this.stop().catch((err: unknown) => console.error('[openshell-gateway] failed to stop: ', err));
   }
 
+  private async generateCerts(binaryPath: string, gatewayDir: string): Promise<void> {
+    await this.exec.exec(binaryPath, [
+      'generate-certs',
+      '--server-san',
+      '127.0.0.1',
+      '--server-san',
+      'localhost',
+      '--server-san',
+      'host.openshell.internal',
+      '--output-dir',
+      gatewayDir,
+    ]);
+  }
+
   private buildArgs(disableTls: boolean, configPath?: string): string[] {
     const args: string[] = [];
     if (configPath) {
@@ -259,8 +273,11 @@ export class OpenshellGateway implements Disposable {
 
       const storageDirectory = join(this.directories.getDataDirectory(), 'openshell-gateway');
       const configPath = join(storageDirectory, 'gateway.toml');
+      await this.generateCerts(binaryPath, storageDirectory);
       const config = Mustache.render(gatewayConfigTemplate, {
         supervisorImage: image,
+        gatewayDir: storageDirectory,
+        q: '"',
       });
 
       await mkdir(storageDirectory, { recursive: true });
