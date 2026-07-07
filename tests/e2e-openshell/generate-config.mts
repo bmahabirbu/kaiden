@@ -11,6 +11,7 @@ interface McpCommand {
 }
 
 interface Input {
+  agent: string;
   network?: { mode: 'allow' | 'deny'; hosts?: string[] };
   mcpCommands?: McpCommand[];
   modelEndpoint?: string;
@@ -30,14 +31,29 @@ for (const cmd of input.mcpCommands ?? []) {
   };
 }
 
-const opencodeConfig = {
-  $schema: 'https://opencode.ai/config.json',
-  mcp,
-};
+function buildAgentConfig(agent: string, mcpConfig: Record<string, object>): { uploadPath: string; contents: string } {
+  if (agent === 'opencode') {
+    return {
+      uploadPath: '.config/opencode/opencode.json',
+      contents: JSON.stringify(
+        {
+          $schema: 'https://opencode.ai/config.json',
+          mcp: mcpConfig,
+        },
+        undefined,
+        2,
+      ),
+    };
+  }
+
+  throw new Error(`Unsupported OpenShell E2E agent: ${agent}`);
+}
+
+const agentConfig = buildAgentConfig(input.agent, mcp);
 
 const output = {
   policy: policy ? stringify(policy) : null,
-  opencodeConfig: JSON.stringify(opencodeConfig, undefined, 2),
+  agentConfig,
 };
 
 process.stdout.write(JSON.stringify(output));
