@@ -22,7 +22,17 @@ import unittest
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 GENERATE_SCRIPT = os.path.join(os.path.dirname(__file__), 'generate-config.mts')
-MIN_OPENSHELL_VERSION = (0, 0, 77)
+OPENSHELL_PKG = os.path.join(REPO_ROOT, 'extensions', 'openshell', 'package.json')
+
+
+def get_pinned_openshell_version():
+    """Read the pinned openshellVersion from extensions/openshell/package.json."""
+    with open(OPENSHELL_PKG) as f:
+        pkg = json.load(f)
+    version_str = pkg.get('openshellVersion', '')
+    if not version_str:
+        raise RuntimeError(f'missing "openshellVersion" in {OPENSHELL_PKG}')
+    return tuple(int(x) for x in version_str.split('.'))
 
 
 def run(cmd, *, timeout=120, check=True, input_data=None, capture=True):
@@ -65,9 +75,10 @@ class PreflightMixin:
         if result.returncode != 0:
             raise unittest.SkipTest(f'openshell --version failed: {result.stderr}')
         version = parse_version(result.stdout)
-        if version < MIN_OPENSHELL_VERSION:
+        min_version = get_pinned_openshell_version()
+        if version < min_version:
             raise unittest.SkipTest(
-                f'openshell {result.stdout.strip()} < minimum {".".join(map(str, MIN_OPENSHELL_VERSION))}'
+                f'openshell {result.stdout.strip()} < pinned {".".join(map(str, min_version))}'
             )
         return result.stdout.strip()
 
