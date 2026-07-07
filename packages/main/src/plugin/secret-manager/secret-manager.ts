@@ -25,6 +25,7 @@ import type {
 import { inject, injectable } from 'inversify';
 
 import { IPCHandle } from '/@/plugin/api.js';
+import { OpenshellGateway } from '/@/plugin/openshell-cli/openshell-gateway.js';
 import { ProviderImpl } from '/@/plugin/provider-impl.js';
 import { ProviderRegistry } from '/@/plugin/provider-registry.js';
 import { SafeStorageRegistry } from '/@/plugin/safe-storage/safe-storage-registry.js';
@@ -60,6 +61,8 @@ export class SecretManager {
     private readonly configurationRegistry: IConfigurationRegistry,
     @inject(SafeStorageRegistry)
     private readonly safeStorageRegistry: SafeStorageRegistry,
+    @inject(OpenshellGateway)
+    private readonly openshellGateway: OpenshellGateway,
   ) {}
 
   private get cli(): SecretCliBackend {
@@ -95,17 +98,29 @@ export class SecretManager {
     return secrets.find(s => s.name === expectedName);
   }
 
-  private async onInferenceConnectionRegistered(event: RegisterInferenceConnectionEvent): Promise<void> {
-    const connection = event.connection;
-    const providerId = event.providerId;
+  async ensureSecretForModel(modelId: string): Promise<SecretInfo | undefined> {
+    const existing = await this.getSecretForModel(modelId);
+    if (existing) return existing;
+
+    const info = this.providerRegistry.getInferenceConnection(modelId);
+    if (!info) return undefined;
+
+    return this.createSecretForConnection(info.providerId, info.connection, false);
+  }
+
+  async createSecretForConnection(
+    providerId: string,
+    connection: InferenceProviderConnection,
+    checkDuplicates: boolean,
+  ): Promise<SecretInfo | undefined> {
     const provider = this.providerRegistry.getProvider(providerId);
     const { config, connectionProperties } = this.getConnectionProperties(connection, provider);
 
     const typeEntry = connectionProperties.find(([fullKey]) => fullKey.endsWith('_type'));
-    if (!typeEntry) return;
+    if (!typeEntry) return undefined;
 
     const secretType = config.get<string>(typeEntry[0]);
-    if (!secretType) return;
+    if (!secretType) return undefined;
 
     const flagsEntry = connectionProperties.find(([fullKey]) => fullKey.endsWith('._flags'));
     const flagsRaw = flagsEntry ? config.get<string | string[]>(flagsEntry[0]) : undefined;
@@ -149,14 +164,22 @@ export class SecretManager {
 
     const secretName = `${providerId}-${connection.id}`;
 
-    const existingSecrets = await this.list();
-    if (existingSecrets.some(s => s.name === secretName)) return;
+    if (checkDuplicates) {
+      const existingSecrets = await this.list();
+      if (existingSecrets.some(s => s.name === secretName)) return undefined;
+    }
 
     await this.create({
       name: secretName,
       type: secretType,
       value: value,
     });
+
+    return { name: secretName, type: secretType };
+  }
+
+  private async onInferenceConnectionRegistered(event: RegisterInferenceConnectionEvent): Promise<void> {
+    await this.createSecretForConnection(event.providerId, event.connection, true);
   }
 
   public getConnectionProperties(
@@ -201,6 +224,10 @@ export class SecretManager {
       this.onInferenceConnectionUnregistered(event).catch((err: unknown) => {
         console.error('Failed to delete openshell provider for inference connection:', err);
       });
+    });
+
+    this.openshellGateway.onDidGatewayStart(() => {
+      this.apiSender.send('secret-manager-update');
     });
 
     this.ipcHandle(
