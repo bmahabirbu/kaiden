@@ -33,12 +33,14 @@ class GeneratedConfig:
     policy: str
     agent_config_contents: str
     agent_config_upload_path: str
+    skill_uploads: list[dict[str, str]]
 
 
 @dataclass
 class SandboxCase:
     name: str
     config: dict
+    generated_config: GeneratedConfig
     history: list[CommandRecord] = field(default_factory=list)
 
     def exec(self, command, *, timeout=60, label=None):
@@ -223,6 +225,7 @@ def generate_configs(input_config, *, history=None):
                 policy=output['policy'],
                 agent_config_contents=output['agentConfig']['contents'],
                 agent_config_upload_path=output['agentConfig']['uploadPath'],
+                skill_uploads=output['skillUploads'],
             )
 
     raise RuntimeError(

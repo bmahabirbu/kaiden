@@ -27,6 +27,7 @@ import type { IPty } from 'node-pty';
 import { spawn } from 'node-pty';
 
 import { AgentRegistry } from '/@/plugin/agent-registry.js';
+import type { OpenshellUpload } from '/@/plugin/agent-workspace/openshell-upload-utils.js';
 import { updateWorkspaceConfig, writeWorkspaceConfig } from '/@/plugin/agent-workspace/workspace-config-writer.js';
 import { WritableConfigurationFile } from '/@/plugin/agent-workspace/writable-configuration-file.js';
 import { IPCHandle, WebContentsType } from '/@/plugin/api.js';
@@ -54,12 +55,9 @@ import { IConfigurationRegistry } from '/@api/configuration/models.js';
 import type { GatewayInfo, GatewaySandboxes } from '/@api/openshell-gateway-info.js';
 import { AGENT_LABEL, decodeWorkspaceLabels, WORKSPACE_LABEL } from '/@api/openshell-gateway-info.js';
 
-const HOME_VARIABLE = '${HOME}';
 const LABEL_MAX_LENGTH = 63;
 const SOURCES_VARIABLE = '$SOURCES';
 const MOUNT_HOME_PREFIX = '$HOME';
-
-type OpenshellUpload = { local: string; remote: string };
 
 interface WorkspaceTerminalSession {
   callbackId: number;
@@ -359,24 +357,6 @@ export class AgentWorkspaceManager implements Disposable {
       deduped.push(upload);
     }
     return deduped;
-  }
-
-  private resolveOpenshellSkillsDestination(destinationSkillsFolder: string): string {
-    if (destinationSkillsFolder === HOME_VARIABLE) {
-      return '.';
-    }
-
-    for (const str of [`${HOME_VARIABLE}/`, '~/']) {
-      if (destinationSkillsFolder.startsWith(str)) {
-        return destinationSkillsFolder.slice(str.length);
-      }
-    }
-
-    if (destinationSkillsFolder.includes('..')) {
-      throw new Error(`Invalid destination skills folder: ${destinationSkillsFolder}`);
-    }
-
-    return destinationSkillsFolder;
   }
 
   /**

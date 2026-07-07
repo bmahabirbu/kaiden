@@ -129,6 +129,11 @@ def sandbox_case(agent_case, gateway_ready, tmp_path_factory):
         )
 
     policy_path, agent_config_path = write_generated_config(generated, temp_dir)
+    uploads = [
+        f'{agent_config_path}:{generated.agent_config_upload_path}',
+        *[f'{upload["local"]}:{upload["remote"]}' for upload in generated.skill_uploads],
+    ]
+    upload_args = [arg for upload in uploads for arg in ['--upload', upload]]
 
     create_result = run_command(
         [
@@ -137,8 +142,7 @@ def sandbox_case(agent_case, gateway_ready, tmp_path_factory):
             'create',
             '--name',
             sandbox_name,
-            '--upload',
-            f'{agent_config_path}:{generated.agent_config_upload_path}',
+            *upload_args,
             '--no-tty',
             '--policy',
             policy_path,
@@ -167,7 +171,7 @@ def sandbox_case(agent_case, gateway_ready, tmp_path_factory):
 
     sandbox_created = True
 
-    yield SandboxCase(name=sandbox_name, config=agent_case, history=history)
+    yield SandboxCase(name=sandbox_name, config=agent_case, generated_config=generated, history=history)
 
     if sandbox_created:
         delete_result = run_command(

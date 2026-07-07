@@ -18,6 +18,7 @@ tests/e2e-openshell/
 ├── agent_cases.py          # Add agent cases here
 ├── conftest.py             # Pytest fixtures: preflight, gateway, agent_case, sandbox_case
 ├── generate-config.mts     # Node shim importing Kaiden buildPolicyObject()
+├── openkaiden-api-runtime.mjs # Test runtime shim for loading real agent registrations
 ├── openshell_testkit.py    # Command helpers, transcripts, config generation, sandbox model
 └── test_sandbox_mcp.py     # Readable pytest assertions
 ```
@@ -30,6 +31,15 @@ Open `tests/e2e-openshell/agent_cases.py` and add a dict to `AGENT_CASES`:
 {
     'agent': 'myagent',
     'description': 'npm scoped MCP package via MyAgent',
+    'settingsPath': '.config/opencode/opencode.json',
+    'mcpName': 'ai.openkaiden.registry/playwright',
+    'skills': ['.agents/skills/svelte-code-writer'],
+    'skillName': 'svelte-code-writer',
+    'skillDestination': '.opencode/skills',
+    'skillReadCommand': ['sh', '-lc', 'cat "$HOME/.opencode/skills/svelte-code-writer/SKILL.md"'],
+    'skillReadOutput': 'name: svelte-code-writer',
+    'agentSkillListCommand': ['opencode', 'skill', 'list'],
+    'agentSkillListOutput': 'svelte-code-writer',
     'network': {'mode': 'deny', 'hosts': ['registry.npmjs.org']},
     'mcpCommands': [
         {
@@ -38,19 +48,24 @@ Open `tests/e2e-openshell/agent_cases.py` and add a dict to `AGENT_CASES`:
             'args': ['@playwright/mcp@0.0.73'],
         },
     ],
-    'verifyCommand': ['npx', '@playwright/mcp@0.0.73', '--help'],
-    'verifyOutput': 'Playwright MCP',
+    'spawnCommand': ['npx', '@playwright/mcp@0.0.73', '--help'],
+    'spawnOutput': 'Playwright MCP',
+    'registryProbeCommand': ['curl', '-fsS', 'https://registry.npmjs.org/@playwright%2fmcp'],
+    'registryProbeOutput': '"name":"@playwright/mcp"',
+    'agentMcpListCommand': ['opencode', 'mcp', 'list'],
+    'agentMcpListNameOutput': 'playwright',
+    'agentMcpListSpawnedOutput': 'connected',
 }
 ```
 
-If the new agent stores MCP config somewhere other than OpenCode's config file, add that agent to `buildAgentConfig()` in `tests/e2e-openshell/generate-config.mts`. That function returns the sandbox upload path and config file contents for each supported agent.
+If the new agent stores MCP config somewhere other than OpenCode's config file, add that agent to `loadAgentRegistration()` in `tests/e2e-openshell/generate-config.mts`. Prefer loading the real agent extension and running its registered `preWorkspaceStart()` hook so the test follows production behavior.
 
 ## Fixture flow
 
 - `openshell_preflight`: skips if `openshell` is missing, fails if the installed version is older than `extensions/openshell/package.json`.
 - `gateway_ready`: skips sandbox tests when the local OpenShell gateway is unreachable.
 - `agent_case`: parametrizes tests from `AGENT_CASES`.
-- `sandbox_case`: deletes any leftover sandbox, generates policy and agent config, creates the sandbox, verifies it appears in `openshell sandbox list`, yields a `SandboxCase`, then deletes the sandbox.
+- `sandbox_case`: deletes any leftover sandbox, generates policy, agent config, and skill uploads, creates the sandbox, verifies it appears in `openshell sandbox list`, yields a `SandboxCase`, then deletes the sandbox.
 
 Command transcripts are captured in `openshell_testkit.py` and included only on failures.
 
@@ -59,12 +74,17 @@ Command transcripts are captured in `openshell_testkit.py` and included only on 
 `test_sandbox_mcp.py` currently checks:
 
 1. OpenShell version satisfies the pinned requirement.
-2. Kaiden can generate a non-empty network policy and agent MCP config.
-3. The OpenShell gateway is reachable.
+2. The OpenShell gateway is reachable.
+3. Kaiden can generate a non-empty network policy and agent MCP config at the expected settings path.
 4. A sandbox can be created and listed.
 5. `node --version` works inside the sandbox.
 6. `which npx` works inside the sandbox.
-7. `test_verify_local_npm_mcp_installed` runs the configured local npm MCP command and checks expected output.
+7. `test_network_policy_allows_npm_scoped_package_metadata` uses `openshell sandbox exec` and `curl` to verify the policy allows the scoped npm registry metadata URL.
+8. `test_opencode_settings_contains_mcp_config` reads the uploaded OpenCode settings file and verifies the MCP entry.
+9. `test_opencode_skill_file_uploaded` reads the uploaded skill `SKILL.md` from OpenCode's skills directory.
+10. `test_opencode_skill_list_sees_uploaded_skill` runs the agent's skill list command and verifies the agent sees the uploaded skill.
+11. `test_verify_local_npm_mcp_spawned` runs the configured local npm MCP command and checks expected output.
+12. `test_opencode_mcp_list_sees_spawned_mcp` runs the agent's MCP list command and verifies the agent sees the MCP as spawned/connected, not merely present in config.
 
 ## How config generation works
 
@@ -76,14 +96,20 @@ node --import tsx tests/e2e-openshell/generate-config.mts
 
 Do not switch this back to `npx tsx`: the `tsx` CLI can open an IPC socket under `/tmp`, which is fragile in restricted test environments.
 
-The TypeScript shim imports `buildPolicyObject()` from `packages/main/src/plugin/openshell-cli/openshell-network-policy.ts`, so the E2E test uses Kaiden's production policy generation logic.
+The TypeScript shim imports or executes production behavior so the E2E test follows Kaiden's runtime behavior:
+
+- `buildPolicyObject()` from `packages/main/src/plugin/openshell-cli/openshell-network-policy.ts`
+- `buildOpenshellSkillUploads()` from `packages/main/src/plugin/agent-workspace/openshell-upload-utils.ts`
+- OpenCode's real extension registration from `extensions/opencode/src/extension.ts`
+
+`generate-config.mts` redirects `@openkaiden/api` to `openkaiden-api-runtime.mjs`, captures the registered agent, and runs that agent's `preWorkspaceStart()` hook. This avoids duplicating OpenCode MCP config generation in the tests.
 
 ## How to run
 
 ```bash
 pytest tests/e2e-openshell
 pytest tests/e2e-openshell --collect-only
-pytest tests/e2e-openshell -k verify_local_npm_mcp_installed -v -s
+pytest tests/e2e-openshell -k verify_local_npm_mcp_spawned -v -s
 ```
 
 Requirements:
@@ -99,4 +125,6 @@ When the gateway is unreachable, sandbox-backed tests should skip, while host/co
 
 - npm-based MCP servers need `registry.npmjs.org` in the allowed hosts.
 - Scoped npm packages use encoded slashes in registry URLs, so the generated policy must continue allowing those requests.
-- `test_verify_local_npm_mcp_installed` is intentionally named after the user-visible behavior: a local npm MCP package can be installed and executed inside the OpenShell sandbox.
+- Delegate sandbox behavior checks to OpenShell commands such as `openshell sandbox exec ... curl ...`.
+- Keep skill upload assertions in the same sandbox as MCP assertions. The goal is one agent workspace shape with multiple checks, not separate sandboxes.
+- Keep policy probes, MCP spawn tests, and agent integration tests separate: a registry URL being allowed, a local npm MCP package running in the sandbox, and an agent listing that MCP from its settings are three different behaviors.
