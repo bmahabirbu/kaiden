@@ -5,6 +5,21 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
+from agent_cases import AGENT_CASES, agent_case_id
+from openshell_testkit import (
+    SandboxCase,
+    assert_success,
+    fail_with_history,
+    generate_configs,
+    render_transcript,
+    require_gateway_ready,
+    require_openshell_preflight,
+    run_command,
+    write_generated_config,
+)
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OPENSHELL_PKG = REPO_ROOT / "extensions" / "openshell" / "package.json"
@@ -74,3 +89,91 @@ def pytest_report_header(config):
         openshell_line,
         gateway_line,
     ]
+
+
+@pytest.fixture(scope='session')
+def openshell_preflight():
+    return require_openshell_preflight()
+
+
+@pytest.fixture(scope='module')
+def gateway_ready(openshell_preflight):
+    history = []
+    return require_gateway_ready(history)
+
+
+@pytest.fixture(scope='module', params=AGENT_CASES, ids=agent_case_id)
+def agent_case(request):
+    return request.param
+
+
+@pytest.fixture(scope='module')
+def sandbox_case(agent_case, gateway_ready, tmp_path_factory):
+    agent = agent_case['agent']
+    sandbox_name = f'kdn-e2e-test_sandbox_mcp-{agent}'
+    temp_dir = tmp_path_factory.mktemp(f'kdn-e2e-{agent}')
+    history = []
+    sandbox_created = False
+
+    run_command(
+        ['openshell', 'sandbox', 'delete', sandbox_name],
+        timeout=30,
+    )
+
+    try:
+        generated = generate_configs(agent_case, history=history)
+    except RuntimeError as exc:
+        fail_with_history(
+            f'failed to generate Kaiden config files for {agent}: {exc}',
+            history,
+        )
+
+    policy_path, agent_config_path = write_generated_config(generated, temp_dir)
+
+    create_result = run_command(
+        [
+            'openshell',
+            'sandbox',
+            'create',
+            '--name',
+            sandbox_name,
+            '--upload',
+            f'{agent_config_path}:{generated.agent_config_upload_path}',
+            '--no-tty',
+            '--policy',
+            policy_path,
+            '--',
+            'true',
+        ],
+        timeout=180,
+        label='creating sandbox',
+        history=history,
+    )
+    assert_success(
+        create_result,
+        f'Sandbox creation failed (exit {create_result.returncode})',
+        history,
+    )
+
+    list_result = run_command(
+        ['openshell', 'sandbox', 'list'],
+        timeout=30,
+        label='listing sandboxes',
+        history=history,
+    )
+    assert_success(list_result, 'openshell sandbox list failed', history)
+    if sandbox_name not in list_result.stdout:
+        fail_with_history(f'Sandbox {sandbox_name} not found after creation', history)
+
+    sandbox_created = True
+
+    yield SandboxCase(name=sandbox_name, config=agent_case, history=history)
+
+    if sandbox_created:
+        delete_result = run_command(
+            ['openshell', 'sandbox', 'delete', sandbox_name],
+            timeout=30,
+            label=f'deleting sandbox {sandbox_name}',
+        )
+        if delete_result.returncode != 0:
+            print(render_transcript(delete_result, label='sandbox delete'), flush=True)
