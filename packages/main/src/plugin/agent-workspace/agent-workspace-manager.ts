@@ -81,6 +81,7 @@ export class AgentWorkspaceManager implements Disposable {
     { write: (param: string) => void; resize: (w: number, h: number) => void }
   >();
   private readonly terminalProcesses = new Map<number, IPty>();
+  private readonly commandExecutedWorkspaces = new Set<string>();
 
   constructor(
     @inject(ApiSenderType)
@@ -401,6 +402,7 @@ export class AgentWorkspaceManager implements Disposable {
     task.status = 'in-progress';
     try {
       await this.openshellCli.deleteSandbox(workspaceName);
+      this.commandExecutedWorkspaces.delete(id);
       this.apiSender.send('agent-workspace-update');
       task.status = 'success';
       return { id };
@@ -606,11 +608,35 @@ export class AgentWorkspaceManager implements Disposable {
         if (!workspace) {
           throw new Error(`workspace "${id}" not found. Use "workspace list" to see available workspaces.`);
         }
+
+        const shouldExecuteCommand = !this.commandExecutedWorkspaces.has(id);
+        let agentCommand: string | undefined;
+        if (shouldExecuteCommand && workspace.labels) {
+          const agentId = workspace.labels[AGENT_LABEL];
+          if (agentId) {
+            try {
+              const agent = await this.agentRegistry.getAgent(agentId);
+              agentCommand = agent?.command;
+            } catch (err: unknown) {
+              console.error(`Failed to resolve agent command for workspace "${id}":`, err);
+            }
+          }
+        }
+
+        if (agentCommand) {
+          this.commandExecutedWorkspaces.add(id);
+        }
+
+        let commandSent = false;
         const invocation = this.shellInAgentWorkspace(
           workspace.name,
           (content: string) => {
             if (!this.webContents.isDestroyed()) {
               this.webContents.send('agent-workspace:terminal-onData', onDataId, content);
+            }
+            if (!commandSent && agentCommand) {
+              commandSent = true;
+              invocation.write(`${agentCommand}\n`);
             }
           },
           (error: string) => {
@@ -696,5 +722,6 @@ export class AgentWorkspaceManager implements Disposable {
     }
     this.terminalProcesses.clear();
     this.terminalCallbacks.clear();
+    this.commandExecutedWorkspaces.clear();
   }
 }
