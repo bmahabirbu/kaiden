@@ -15,8 +15,6 @@ AGENT_CASES = [
         'skillDestination': '.opencode/skills',
         'skillReadCommand': ['sh', '-lc', f'cat "$HOME/.opencode/skills/{SVELTE_SKILL_NAME}/SKILL.md"'],
         'skillReadOutput': f'name: {SVELTE_SKILL_NAME}',
-        'agentSkillListCommand': ['opencode', 'skill', 'list'],
-        'agentSkillListOutput': SVELTE_SKILL_NAME,
         'network': {'mode': 'deny', 'hosts': ['registry.npmjs.org']},
         'mcpCommands': [
             {

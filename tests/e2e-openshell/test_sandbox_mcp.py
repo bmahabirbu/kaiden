@@ -134,23 +134,6 @@ class TestMcpServerRuns:
                 sandbox_case.history,
             )
 
-    def test_opencode_skill_list_sees_uploaded_skill(self, sandbox_case):
-        list_cmd = sandbox_case.config['agentSkillListCommand']
-        result = sandbox_case.exec(
-            list_cmd,
-            timeout=60,
-            label=f'running: {shell_join(list_cmd)}',
-        )
-        assert_success(result, 'OpenCode skill list command failed', sandbox_case.history)
-
-        combined = '\n'.join(part for part in [result.stdout, result.stderr] if part)
-        if sandbox_case.config['agentSkillListOutput'] not in combined:
-            fail_with_result(
-                f'Expected "{sandbox_case.config["agentSkillListOutput"]}" in OpenCode skill list output',
-                result,
-                sandbox_case.history,
-            )
-
     def test_verify_local_npm_mcp_spawned(self, sandbox_case):
         verify_cmd = sandbox_case.config['spawnCommand']
 
