@@ -2,13 +2,13 @@ import { existsSync, readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { stringify } from 'yaml';
 
-import { buildOpenshellSkillUploads } from '../../packages/main/src/plugin/agent-workspace/openshell-upload-utils.js';
 import {
   buildPolicyObject,
   rewriteLocalhostUrl,
 } from '../../packages/main/src/plugin/openshell-cli/openshell-network-policy.js';
 import { registeredAgents, resetRegisteredAgents } from './openkaiden-api-runtime.mjs';
 
+const HOME_VARIABLE = '${HOME}';
 const openkaidenApiRuntimeUrl = new URL('./openkaiden-api-runtime.mjs', import.meta.url).href;
 const claudeExtensionRuntimeUrl = new URL('./claude-extension-runtime.mjs', import.meta.url).href;
 
@@ -76,6 +76,8 @@ interface AgentRegistration {
     };
   }): Promise<void>;
 }
+
+type OpenshellUpload = { local: string; remote: string };
 
 interface OpenCodeExtensionModule {
   activate(context: { subscriptions: unknown[] }): Promise<void>;
@@ -172,8 +174,38 @@ async function buildAgentConfigs(registration: AgentRegistration): Promise<{
 function buildSkillUploads(
   registration: AgentRegistration,
   skills: string[] | undefined,
-): { local: string; remote: string }[] {
+): OpenshellUpload[] {
   return buildOpenshellSkillUploads(skills, registration.destinationSkillsFolder);
+}
+
+function buildOpenshellSkillUploads(skills: string[] | undefined, destinationSkillsFolder: string): OpenshellUpload[] {
+  if (!skills?.length) {
+    return [];
+  }
+
+  const remoteBase = resolveOpenshellSkillsDestination(destinationSkillsFolder);
+  return skills.map(skillPath => ({
+    local: skillPath,
+    remote: remoteBase,
+  }));
+}
+
+function resolveOpenshellSkillsDestination(destinationSkillsFolder: string): string {
+  if (destinationSkillsFolder === HOME_VARIABLE) {
+    return '.';
+  }
+
+  for (const str of [`${HOME_VARIABLE}/`, '~/']) {
+    if (destinationSkillsFolder.startsWith(str)) {
+      return destinationSkillsFolder.slice(str.length);
+    }
+  }
+
+  if (destinationSkillsFolder.includes('..')) {
+    throw new Error(`Invalid destination skills folder: ${destinationSkillsFolder}`);
+  }
+
+  return destinationSkillsFolder;
 }
 
 const agentRegistration = await loadAgentRegistration(input.agent);
