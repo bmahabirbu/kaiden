@@ -38,8 +38,6 @@ Open `tests/e2e-openshell/agent_cases.py` and add a dict to `AGENT_CASES`:
     'skillDestination': '.opencode/skills',
     'skillReadCommand': ['sh', '-lc', 'cat "$HOME/.opencode/skills/svelte-code-writer/SKILL.md"'],
     'skillReadOutput': 'name: svelte-code-writer',
-    'agentSkillListCommand': ['opencode', 'skill', 'list'],
-    'agentSkillListOutput': 'svelte-code-writer',
     'network': {'mode': 'deny', 'hosts': ['registry.npmjs.org']},
     'mcpCommands': [
         {
@@ -82,9 +80,8 @@ Command transcripts are captured in `openshell_testkit.py` and included only on 
 7. `test_network_policy_allows_npm_scoped_package_metadata` uses `openshell sandbox exec` and `curl` to verify the policy allows the scoped npm registry metadata URL.
 8. `test_opencode_settings_contains_mcp_config` reads the uploaded OpenCode settings file and verifies the MCP entry.
 9. `test_opencode_skill_file_uploaded` reads the uploaded skill `SKILL.md` from OpenCode's skills directory.
-10. `test_opencode_skill_list_sees_uploaded_skill` runs the agent's skill list command and verifies the agent sees the uploaded skill.
-11. `test_verify_local_npm_mcp_spawned` runs the configured local npm MCP command and checks expected output.
-12. `test_opencode_mcp_list_sees_spawned_mcp` runs the agent's MCP list command and verifies the agent sees the MCP as spawned/connected, not merely present in config.
+10. `test_verify_local_npm_mcp_spawned` runs the configured local npm MCP command and checks expected output.
+11. `test_opencode_mcp_list_sees_spawned_mcp` runs the agent's MCP list command and verifies the agent sees the MCP as spawned/connected, not merely present in config.
 
 ## How config generation works
 
@@ -127,4 +124,5 @@ When the gateway is unreachable, sandbox-backed tests should skip, while host/co
 - Scoped npm packages use encoded slashes in registry URLs, so the generated policy must continue allowing those requests.
 - Delegate sandbox behavior checks to OpenShell commands such as `openshell sandbox exec ... curl ...`.
 - Keep skill upload assertions in the same sandbox as MCP assertions. The goal is one agent workspace shape with multiple checks, not separate sandboxes.
+- Skills do not have an MCP-style spawn or documented OpenCode CLI list command. If the skill is uploaded to the agent's documented discovery location, assume OpenCode can discover it.
 - Keep policy probes, MCP spawn tests, and agent integration tests separate: a registry URL being allowed, a local npm MCP package running in the sandbox, and an agent listing that MCP from its settings are three different behaviors.
