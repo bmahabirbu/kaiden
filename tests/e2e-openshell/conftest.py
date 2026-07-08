@@ -1,4 +1,5 @@
 import json
+import os
 import platform
 import re
 import shutil
@@ -23,6 +24,9 @@ from openshell_testkit import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OPENSHELL_PKG = REPO_ROOT / "extensions" / "openshell" / "package.json"
+DEFAULT_LOCAL_OPENAI_MODEL = 'qwen3.5:9b'
+DEFAULT_LOCAL_OPENAI_PORT = 8134
+DEFAULT_LOCAL_OPENAI_CTX_SIZE = 16384
 
 
 def _read_pinned_version():
@@ -48,12 +52,59 @@ def _run(cmd, timeout=15):
         return None
 
 
+def _first_env(names):
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return None
+
+
+def _env_flag(name):
+    return os.environ.get(name, '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
 def _gateway_endpoint(output):
     if not output:
         return None
     output = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", output)
     match = re.search(r"Server:\s*(\S+)", output)
     return match.group(1) if match else None
+
+
+def _local_openai_header_lines():
+    if not _env_flag('KAIDEN_E2E_LOCAL'):
+        return []
+
+    model = _first_env(['KAIDEN_E2E_LOCAL_MODEL', 'KAIDEN_E2E_RAMALAMA_MODEL']) or DEFAULT_LOCAL_OPENAI_MODEL
+    port = _first_env(['KAIDEN_E2E_LOCAL_PORT', 'KAIDEN_E2E_RAMALAMA_PORT']) or str(DEFAULT_LOCAL_OPENAI_PORT)
+    ctx_size = (
+        _first_env(['KAIDEN_E2E_LOCAL_CTX_SIZE', 'KAIDEN_E2E_RAMALAMA_CTX_SIZE'])
+        or str(DEFAULT_LOCAL_OPENAI_CTX_SIZE)
+    )
+    base_url = _first_env(
+        [
+            'KAIDEN_E2E_OPENAI_BASE_URL',
+            'KAIDEN_E2E_LOCAL_OPENAI_BASE_URL',
+            'OPENAI_BASE_URL',
+            'KAIDEN_E2E_RAMALAMA_BASE_URL',
+            'RAMALAMA_OPENAI_BASE_URL',
+        ]
+    ) or f'http://localhost:{port}/v1'
+
+    version_result = _run(['ramalama', '--version'])
+    if version_result is None:
+        ramalama = 'ramalama --version did not run'
+    elif version_result.returncode != 0:
+        ramalama = f'ramalama --version failed: {version_result.stderr.strip() or "no stderr"}'
+    else:
+        ramalama = (version_result.stdout + version_result.stderr).strip() or 'ramalama --version returned no output'
+
+    return [
+        f'openshell e2e local OpenAI: enabled; launcher: {ramalama}',
+        f'openshell e2e local OpenAI: target: {base_url}; model: {model}; ctx: {ctx_size}',
+        'openshell e2e local OpenAI: /v1/models readiness is checked by the test fixture',
+    ]
 
 
 def pytest_report_header(config):
@@ -66,6 +117,7 @@ def pytest_report_header(config):
             f"openshell e2e host: {host}",
             f"openshell e2e openshell: missing from PATH (pinned {pinned})",
             "openshell e2e gateway: unavailable",
+            *_local_openai_header_lines(),
         ]
 
     version_result = _run(["openshell", "--version"])
@@ -88,6 +140,7 @@ def pytest_report_header(config):
         f"openshell e2e host: {host}",
         openshell_line,
         gateway_line,
+        *_local_openai_header_lines(),
     ]
 
 
