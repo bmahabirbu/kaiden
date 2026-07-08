@@ -1,0 +1,20 @@
+{
+  "agents": [
+    {
+      "agent": "opencode",
+      "enabled": true,
+      "commands": {
+        "mcpList": ["opencode", "mcp", "list"],
+        "prompt": ["opencode", "run", "{prompt}", "--model", "{provider}/{model}"]
+      }
+    },
+    {
+      "agent": "claude",
+      "enabled": true,
+      "commands": {
+        "mcpList": ["claude", "mcp", "list"],
+        "prompt": ["claude", "-p", "{prompt}"]
+      }
+    }
+  ]
+}

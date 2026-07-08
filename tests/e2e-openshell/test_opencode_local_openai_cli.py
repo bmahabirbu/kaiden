@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 import pytest
 
+from agent_cases import agent_prompt_command
 from openshell_testkit import (
     SandboxCase,
     assert_success,
@@ -28,7 +29,6 @@ from openshell_testkit import (
 )
 
 
-OPENCODE_SETTINGS_PATH = '.config/opencode/opencode.json'
 OPENAI_PROVIDER_ID = 'openai'
 SMOKE_PROMPT = '2+2=? Reply with just the number.'
 DEFAULT_LOCAL_OPENAI_MODEL = 'qwen3.5:9b'
@@ -247,7 +247,6 @@ def opencode_local_openai_sandbox(local_openai_cli_config, gateway_ready, tmp_pa
         generated = generate_configs(
             {
                 'agent': 'opencode',
-                'settingsPath': OPENCODE_SETTINGS_PATH,
                 'modelLabel': local_openai_cli_config.model,
                 'llmMetadataName': local_openai_cli_config.provider_id,
                 'modelEndpoint': local_openai_cli_config.base_url,
@@ -330,7 +329,8 @@ def test_opencode_run_responds_with_local_openai(opencode_local_openai_sandbox):
     opencode_model = opencode_local_openai_sandbox.config['opencodeModel']
     assert opencode_model == f'{local_openai_provider}/{local_openai_model}'
 
-    run_cmd = ['opencode', 'run', SMOKE_PROMPT, '--model', opencode_model]
+    run_cmd = agent_prompt_command('opencode', SMOKE_PROMPT, provider=local_openai_provider, model=local_openai_model)
+    assert run_cmd == ['opencode', 'run', SMOKE_PROMPT, '--model', opencode_model]
     run_result = opencode_local_openai_sandbox.exec(
         run_cmd,
         timeout=240,
