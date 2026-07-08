@@ -119,12 +119,6 @@ def _read_models(base_url, *, skip_on_failure=True):
     return [entry.get('id') for entry in models if isinstance(entry, dict) and entry.get('id')]
 
 
-def _write_pytest_line(config, line):
-    terminal = config.pluginmanager.get_plugin('terminalreporter')
-    if terminal:
-        terminal.write_line(line)
-
-
 def _require_ramalama():
     result = _run_ramalama(['ramalama', '--version'], timeout=15)
     if result is None:
@@ -237,13 +231,7 @@ def local_openai_cli_config(request, gateway_ready):
         if configured_model and configured_model not in models:
             pytest.skip(f'Configured OpenAI-compatible model {configured_model} was not returned by /models')
 
-        provider_id = OPENAI_PROVIDER_ID
-        _write_pytest_line(
-            request.config,
-            f'openshell e2e local OpenAI: ready at {base_url}; provider {provider_id}; model {model}',
-        )
-
-        yield LocalOpenAIConfig(base_url=base_url, model=model, provider_id=provider_id)
+        yield LocalOpenAIConfig(base_url=base_url, model=model, provider_id=OPENAI_PROVIDER_ID)
 
 
 @pytest.fixture(scope='module')
