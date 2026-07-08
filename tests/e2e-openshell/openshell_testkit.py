@@ -33,6 +33,7 @@ class GeneratedConfig:
     policy: str
     agent_config_contents: str
     agent_config_upload_path: str
+    agent_config_files: list[dict[str, str]]
     skill_uploads: list[dict[str, str]]
 
 
@@ -225,6 +226,7 @@ def generate_configs(input_config, *, history=None):
                 policy=output['policy'],
                 agent_config_contents=output['agentConfig']['contents'],
                 agent_config_upload_path=output['agentConfig']['uploadPath'],
+                agent_config_files=output.get('agentConfigs', [output['agentConfig']]),
                 skill_uploads=output['skillUploads'],
             )
 
@@ -236,10 +238,18 @@ def generate_configs(input_config, *, history=None):
 
 def write_generated_config(generated, directory):
     policy_path = directory / 'policy.yaml'
-    agent_config_path = directory / 'agent-config.json'
     policy_path.write_text(generated.policy)
-    agent_config_path.write_text(generated.agent_config_contents)
-    return policy_path, agent_config_path
+    agent_config_paths = []
+    for index, config_file in enumerate(generated.agent_config_files):
+        agent_config_path = directory / f'agent-config-{index}.json'
+        agent_config_path.write_text(config_file['contents'])
+        agent_config_paths.append(
+            {
+                'local': agent_config_path,
+                'remote': config_file['uploadPath'],
+            }
+        )
+    return policy_path, agent_config_paths
 
 
 def assert_success(result, message, history=None):
