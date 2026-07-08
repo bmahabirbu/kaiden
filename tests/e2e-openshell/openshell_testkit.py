@@ -1,4 +1,5 @@
 import json
+import os
 import shlex
 import shutil
 import subprocess
@@ -35,6 +36,7 @@ class GeneratedConfig:
     agent_config_upload_path: str
     agent_config_files: list[dict[str, str]]
     skill_uploads: list[dict[str, str]]
+    workspace_environment: list[dict[str, str]]
 
 
 @dataclass
@@ -122,7 +124,11 @@ def fail_with_result(message, result, history=None):
     pytest.fail('\n'.join(sections), pytrace=False)
 
 
-def run_command(cmd, *, timeout=120, input_data=None, label=None, history=None):
+def run_command(cmd, *, timeout=120, input_data=None, label=None, history=None, env=None):
+    process_env = None
+    if env is not None:
+        process_env = {**os.environ, **env}
+
     try:
         completed = subprocess.run(
             [str(part) for part in cmd],
@@ -132,6 +138,7 @@ def run_command(cmd, *, timeout=120, input_data=None, label=None, history=None):
             check=False,
             input=input_data,
             cwd=REPO_ROOT,
+            env=process_env,
         )
         result = CommandResult(
             cmd=[str(part) for part in cmd],
@@ -228,6 +235,7 @@ def generate_configs(input_config, *, history=None):
                 agent_config_upload_path=output['agentConfig']['uploadPath'],
                 agent_config_files=output.get('agentConfigs', [output['agentConfig']]),
                 skill_uploads=output['skillUploads'],
+                workspace_environment=output.get('workspaceEnvironment', []),
             )
 
     raise RuntimeError(

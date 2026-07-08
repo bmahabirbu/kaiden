@@ -3,7 +3,10 @@ import { registerHooks } from 'node:module';
 import { stringify } from 'yaml';
 
 import { buildOpenshellSkillUploads } from '../../packages/main/src/plugin/agent-workspace/openshell-upload-utils.js';
-import { buildPolicyObject } from '../../packages/main/src/plugin/openshell-cli/openshell-network-policy.js';
+import {
+  buildPolicyObject,
+  rewriteLocalhostUrl,
+} from '../../packages/main/src/plugin/openshell-cli/openshell-network-policy.js';
 import { registeredAgents, resetRegisteredAgents } from './openkaiden-api-runtime.mjs';
 
 const openkaidenApiRuntimeUrl = new URL('./openkaiden-api-runtime.mjs', import.meta.url).href;
@@ -40,12 +43,15 @@ interface Input {
   network?: { mode: 'allow' | 'deny'; hosts?: string[] };
   mcpCommands?: McpCommand[];
   skills?: string[];
+  modelLabel?: string;
+  llmMetadataName?: string;
   modelEndpoint?: string;
 }
 
 const input: Input = JSON.parse(readFileSync('/dev/stdin', 'utf-8'));
+const modelEndpoint = input.modelEndpoint ? rewriteLocalhostUrl(input.modelEndpoint) : undefined;
 
-const policy = buildPolicyObject(input.network, input.modelEndpoint);
+const policy = buildPolicyObject(input.network, modelEndpoint);
 
 interface AgentConfigurationFile {
   path: string;
@@ -63,7 +69,10 @@ interface AgentRegistration {
       endpoint?: string;
     };
     configurationFiles: AgentConfigurationFile[];
-    workspace: { mcp?: { commands?: McpCommand[] } };
+    workspace: {
+      environment?: { name: string; value: string }[];
+      mcp?: { commands?: McpCommand[] };
+    };
   }): Promise<void>;
 }
 
@@ -101,7 +110,10 @@ function resolveCommonJsModule<T>(module: unknown): T {
   return (record.default ?? record['module.exports'] ?? module) as T;
 }
 
-async function buildAgentConfigs(registration: AgentRegistration): Promise<{ uploadPath: string; contents: string }[]> {
+async function buildAgentConfigs(registration: AgentRegistration): Promise<{
+  configs: { uploadPath: string; contents: string }[];
+  workspaceEnvironment: { name: string; value: string }[];
+}> {
   if (!registration.configurationFiles.length) {
     throw new Error(`Agent ${registration.id} did not register a configuration file`);
   }
@@ -119,22 +131,32 @@ async function buildAgentConfigs(registration: AgentRegistration): Promise<{ upl
     }),
   );
 
+  const workspace: {
+    environment?: { name: string; value: string }[];
+    mcp?: { commands?: McpCommand[] };
+  } = {
+    environment: [],
+    ...(input.mcpCommands?.length ? { mcp: { commands: input.mcpCommands } } : {}),
+  };
+
   await registration.preWorkspaceStart({
     model: {
-      model: { label: 'gpt-4o' },
+      model: { label: input.modelLabel ?? 'gpt-4o' },
+      ...(input.llmMetadataName ? { llmMetadata: { name: input.llmMetadataName } } : {}),
+      ...(modelEndpoint ? { endpoint: modelEndpoint } : {}),
     },
     configurationFiles: writableConfigFiles,
-    workspace: {
-      ...(input.mcpCommands?.length ? { mcp: { commands: input.mcpCommands } } : {}),
-    },
+    workspace,
   });
 
-  return Promise.all(
+  const configs = await Promise.all(
     writableConfigFiles.map(async file => ({
       uploadPath: file.path,
       contents: await file.read(),
     })),
   );
+
+  return { configs, workspaceEnvironment: workspace.environment ?? [] };
 }
 
 function buildSkillUploads(
@@ -145,7 +167,7 @@ function buildSkillUploads(
 }
 
 const agentRegistration = await loadAgentRegistration(input.agent);
-const agentConfigs = await buildAgentConfigs(agentRegistration);
+const { configs: agentConfigs, workspaceEnvironment } = await buildAgentConfigs(agentRegistration);
 const agentConfig = agentConfigs.find(config => config.uploadPath === input.settingsPath) ?? agentConfigs[0];
 
 const output = {
@@ -153,6 +175,7 @@ const output = {
   agentConfig,
   agentConfigs,
   skillUploads: buildSkillUploads(agentRegistration, input.skills),
+  workspaceEnvironment,
 };
 
 process.stdout.write(JSON.stringify(output));

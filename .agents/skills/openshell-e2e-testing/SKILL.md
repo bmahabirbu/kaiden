@@ -33,6 +33,7 @@ tests/e2e-openshell/
 ├── generate-config.mts     # Node shim importing Kaiden buildPolicyObject()
 ├── openkaiden-api-runtime.mjs # Test runtime shim for loading real agent registrations
 ├── openshell_testkit.py    # Command helpers, transcripts, config generation, sandbox model
+├── test_opencode_local_openai_cli.py # OpenCode smoke test against a local OpenAI-compatible endpoint
 └── test_sandbox_mcp.py     # Readable pytest assertions
 ```
 
@@ -120,13 +121,27 @@ The TypeScript shim imports or executes production behavior so the E2E test foll
 
 Claude activation also needs light test stubs for provider/manager dependencies. Keep those in `claude-extension-runtime.mjs`; do not duplicate Claude's `.claude.json` writer in Python.
 
+The local OpenAI-compatible OpenCode smoke test intentionally follows the same OpenCode config path Kaiden uses.
+Pytest may discover or start a local endpoint, but it still passes `modelLabel`, `llmMetadataName: "openai"`,
+and `modelEndpoint` into `generate-config.mts`; the real OpenCode `preWorkspaceStart()` hook writes
+`provider.openai` with `@ai-sdk/openai-compatible` and the rewritten sandbox base URL. Do not inject
+`OPENAI_API_KEY` or hand-write an OpenCode provider block in Python for this case, because that can change
+OpenCode provider loading behavior.
+
 ## How to run
 
 ```bash
 pytest tests/e2e-openshell
 pytest tests/e2e-openshell --collect-only
 pytest tests/e2e-openshell -k verify_local_npm_mcp_spawned -v -s
+KAIDEN_E2E_LOCAL=true pytest tests/e2e-openshell/test_opencode_local_openai_cli.py -q
 ```
+
+`KAIDEN_E2E_LOCAL=true` is a manual local-only OpenCode inference smoke test. When RamaLama is available,
+the test validates `ramalama --version`, starts `ramalama serve` for the default local model, waits for
+`/v1/models`, uses the exact returned model id, and lets Kaiden's OpenCode shim generate the config.
+The local RamaLama launcher uses `--ctx-size 16384` by default because OpenCode's initial agent context
+can exceed 4096 tokens; override with `KAIDEN_E2E_LOCAL_CTX_SIZE` or `KAIDEN_E2E_RAMALAMA_CTX_SIZE` when needed.
 
 Requirements:
 
