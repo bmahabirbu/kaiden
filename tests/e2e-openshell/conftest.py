@@ -128,9 +128,9 @@ def sandbox_case(agent_case, gateway_ready, tmp_path_factory):
             history,
         )
 
-    policy_path, agent_config_path = write_generated_config(generated, temp_dir)
+    policy_path, agent_config_paths = write_generated_config(generated, temp_dir)
     uploads = [
-        f'{agent_config_path}:{generated.agent_config_upload_path}',
+        *[f'{config["local"]}:{config["remote"]}' for config in agent_config_paths],
         *[f'{upload["local"]}:{upload["remote"]}' for upload in generated.skill_uploads],
     ]
     upload_args = [arg for upload in uploads for arg in ['--upload', upload]]

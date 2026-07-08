@@ -9,6 +9,23 @@ export const agents = {
   },
 };
 
+export const provider = {
+  createProvider(providerConfig) {
+    return {
+      ...providerConfig,
+      registerInferenceProviderConnectionFactory() {
+        return { dispose() {} };
+      },
+      registerInferenceProviderConnection() {
+        return { dispose() {} };
+      },
+      registerSkill() {
+        return { dispose() {} };
+      },
+    };
+  },
+};
+
 export function resetRegisteredAgents() {
   registeredAgents.length = 0;
 }

@@ -11,12 +11,25 @@ The tests in `tests/e2e-openshell/` create real OpenShell sandboxes using the sa
 
 They are intentionally pytest-native. Avoid adding custom test runners or step-state machines.
 
+## Design rationale
+
+Use pytest as the harness because these tests are primarily CLI and sandbox orchestration: preflight checks, temp files, subprocess transcripts, sandbox lifecycle, skips, and parametrized agent cases. Keep Kaiden behavior in TypeScript by using `generate-config.mts` as a small Node/TS helper that generates config artifacts from production helpers and real agent registrations.
+
+The language split is intentional:
+
+- Python owns orchestration and readable failure reporting.
+- The Node/TS helper owns Kaiden config generation, policy generation, agent `preWorkspaceStart()` behavior, and skill upload normalization.
+- OpenShell owns the integration boundary through real `openshell sandbox create/exec/delete` commands.
+
+Keep Python out of Kaiden config semantics. The pytest layer should pass JSON into the Node/TS helper, receive JSON back, and then handle OpenShell uploads and assertions. Do not reimplement agent config writers in Python. If `generate-config.mts` grows beyond a narrow adapter, prefer extracting a first-class Kaiden test helper or small Node CLI over duplicating production behavior in pytest.
+
 ## Project structure
 
 ```
 tests/e2e-openshell/
 ├── agent_cases.py          # Add agent cases here
 ├── conftest.py             # Pytest fixtures: preflight, gateway, agent_case, sandbox_case
+├── claude-extension-runtime.mjs # Test runtime stubs for Claude activation dependencies
 ├── generate-config.mts     # Node shim importing Kaiden buildPolicyObject()
 ├── openkaiden-api-runtime.mjs # Test runtime shim for loading real agent registrations
 ├── openshell_testkit.py    # Command helpers, transcripts, config generation, sandbox model
@@ -33,6 +46,9 @@ Open `tests/e2e-openshell/agent_cases.py` and add a dict to `AGENT_CASES`:
     'description': 'npm scoped MCP package via MyAgent',
     'settingsPath': '.config/opencode/opencode.json',
     'mcpName': 'ai.openkaiden.registry/playwright',
+    'mcpSettingsKey': 'mcp',
+    'mcpEntryType': 'local',
+    'mcpCommandStyle': 'array',
     'skills': ['.agents/skills/svelte-code-writer'],
     'skillName': 'svelte-code-writer',
     'skillDestination': '.opencode/skills',
@@ -63,7 +79,7 @@ If the new agent stores MCP config somewhere other than OpenCode's config file, 
 - `openshell_preflight`: skips if `openshell` is missing, fails if the installed version is older than `extensions/openshell/package.json`.
 - `gateway_ready`: skips sandbox tests when the local OpenShell gateway is unreachable.
 - `agent_case`: parametrizes tests from `AGENT_CASES`.
-- `sandbox_case`: deletes any leftover sandbox, generates policy, agent config, and skill uploads, creates the sandbox, verifies it appears in `openshell sandbox list`, yields a `SandboxCase`, then deletes the sandbox.
+- `sandbox_case`: deletes any leftover sandbox, generates policy, agent config files, and skill uploads, creates the sandbox, verifies it appears in `openshell sandbox list`, yields a `SandboxCase`, then deletes the sandbox.
 
 Command transcripts are captured in `openshell_testkit.py` and included only on failures.
 
@@ -78,10 +94,10 @@ Command transcripts are captured in `openshell_testkit.py` and included only on 
 5. `node --version` works inside the sandbox.
 6. `which npx` works inside the sandbox.
 7. `test_network_policy_allows_npm_scoped_package_metadata` uses `openshell sandbox exec` and `curl` to verify the policy allows the scoped npm registry metadata URL.
-8. `test_opencode_settings_contains_mcp_config` reads the uploaded OpenCode settings file and verifies the MCP entry.
-9. `test_opencode_skill_file_uploaded` reads the uploaded skill `SKILL.md` from OpenCode's skills directory.
+8. `test_agent_settings_contains_mcp_config` reads the uploaded agent settings file and verifies the MCP entry.
+9. `test_agent_skill_file_uploaded` reads the uploaded skill `SKILL.md` from the agent's skills directory.
 10. `test_verify_local_npm_mcp_spawned` runs the configured local npm MCP command and checks expected output.
-11. `test_opencode_mcp_list_sees_spawned_mcp` runs the agent's MCP list command and verifies the agent sees the MCP as spawned/connected, not merely present in config.
+11. `test_agent_mcp_list_sees_spawned_mcp` runs the agent's MCP list command and verifies the agent sees the MCP as spawned/connected, not merely present in config.
 
 ## How config generation works
 
@@ -98,8 +114,11 @@ The TypeScript shim imports or executes production behavior so the E2E test foll
 - `buildPolicyObject()` from `packages/main/src/plugin/openshell-cli/openshell-network-policy.ts`
 - `buildOpenshellSkillUploads()` from `packages/main/src/plugin/agent-workspace/openshell-upload-utils.ts`
 - OpenCode's real extension registration from `extensions/opencode/src/extension.ts`
+- Claude's real extension registration from `extensions/claude/src/extension.ts`
 
-`generate-config.mts` redirects `@openkaiden/api` to `openkaiden-api-runtime.mjs`, captures the registered agent, and runs that agent's `preWorkspaceStart()` hook. This avoids duplicating OpenCode MCP config generation in the tests.
+`generate-config.mts` redirects `@openkaiden/api` to `openkaiden-api-runtime.mjs`, captures the registered agent, and runs that agent's `preWorkspaceStart()` hook. This avoids duplicating agent MCP config generation in the tests.
+
+Claude activation also needs light test stubs for provider/manager dependencies. Keep those in `claude-extension-runtime.mjs`; do not duplicate Claude's `.claude.json` writer in Python.
 
 ## How to run
 
