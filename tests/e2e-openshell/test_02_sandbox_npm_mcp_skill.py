@@ -65,13 +65,7 @@ def _skill_read_command(generated, case):
     return ['sh', '-lc', f'cat "$HOME/{skill_file}"']
 
 
-class TestPreflight:
-    def test_openshell_version_ready(self, openshell_preflight):
-        assert openshell_preflight['installed']
-
-    def test_gateway_ready(self, gateway_ready):
-        assert gateway_ready.returncode == 0
-
+class TestAgentConfigGeneration:
     def test_config_generation_ready(self, agent_case):
         history = []
         try:

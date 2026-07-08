@@ -34,10 +34,13 @@ tests/e2e-openshell/
 ├── generate-config.mts     # Node shim importing Kaiden buildPolicyObject()
 ├── openkaiden-api-runtime.mjs # Test runtime shim for loading real agent registrations
 ├── openshell_testkit.py    # Command helpers, transcripts, config generation, sandbox model
-├── test_opencode_local_openai_cli.py # OpenCode smoke test against a local OpenAI-compatible endpoint
-├── test_sandbox_mcp.py     # MCP plus skill upload pytest assertions
+├── test_00_openshell_preflight.py # Generic OpenShell availability checks
+├── test_01_openshell_uploads.py # Generic OpenShell source upload assertions
+├── test_02_sandbox_npm_mcp_skill.py # npm MCP plus skill upload pytest assertions
+├── test_03_prompt_openai_local_cli.py # Local OpenAI-compatible prompt smoke test
+├── test_03_prompt_vertex_cli.py # Vertex prompt smoke tests
 ├── test_sandbox_skills.py  # Optional skill-list CLI assertions
-└── test_vertex_cli.py      # Prompt-capable agent Vertex smoke tests
+└── vertex_cli_testkit.py
 ```
 
 ## How to add an agent
@@ -80,23 +83,30 @@ Command transcripts are captured in `openshell_testkit.py` and included only on 
 
 ## Current assertions
 
-`test_sandbox_mcp.py` currently checks:
+`test_00_openshell_preflight.py` checks:
 
 1. OpenShell version satisfies the pinned requirement.
 2. The OpenShell gateway is reachable.
-3. Kaiden can generate a non-empty network policy and at least one generated agent config containing the expected MCP command.
-4. A sandbox can be created and listed.
-5. `node --version` works inside the sandbox.
-6. `which npx` works inside the sandbox.
-7. `test_network_policy_allows_npm_scoped_package_metadata` uses `openshell sandbox exec` and `curl` to verify the policy allows the scoped npm registry metadata URL.
-8. `test_agent_settings_contains_mcp_config` reads the uploaded agent settings file and verifies the MCP entry.
-9. `test_agent_skill_file_uploaded` reads the uploaded skill `SKILL.md` from the Kaiden-generated agent skills destination.
-10. `test_verify_local_npm_mcp_spawned` runs the configured local npm MCP command and checks expected output.
-11. `test_agent_mcp_list_sees_spawned_mcp` runs the agent's MCP list command and verifies the agent sees the MCP as spawned/connected, not merely present in config.
+
+`test_01_openshell_uploads.py` covers generic OpenShell upload behavior that Kaiden relies on: uploading a source directory so it is accessible from the sandbox working directory, and uploading a `$SOURCES` subdirectory so it appears at the matching sandbox subdirectory.
+
+`test_02_sandbox_npm_mcp_skill.py` currently checks:
+
+1. Kaiden can generate a non-empty network policy and at least one generated agent config containing the expected MCP command.
+2. A sandbox can be created and listed.
+3. `node --version` works inside the sandbox.
+4. `which npx` works inside the sandbox.
+5. `test_network_policy_allows_npm_scoped_package_metadata` uses `openshell sandbox exec` and `curl` to verify the policy allows the scoped npm registry metadata URL.
+6. `test_agent_settings_contains_mcp_config` reads the uploaded agent settings file and verifies the MCP entry.
+7. `test_agent_skill_file_uploaded` reads the uploaded skill `SKILL.md` from the Kaiden-generated agent skills destination.
+8. `test_verify_local_npm_mcp_spawned` runs the configured local npm MCP command and checks expected output.
+9. `test_agent_mcp_list_sees_spawned_mcp` runs the agent's MCP list command and verifies the agent sees the MCP as spawned/connected, not merely present in config.
 
 `test_sandbox_skills.py` adds extra skill-list assertions only for registry entries with `commands.skillList`. Most agents do not expose a skill-list CLI, so the MCP sandbox's skill upload/location assertion remains the baseline skill regression.
 
-`test_vertex_cli.py` runs prompt smoke tests for registry entries with `commands.prompt`, using the real agent registration to decide provider support.
+`test_03_prompt_vertex_cli.py` runs Vertex prompt smoke tests for registry entries with `commands.prompt`, using the real agent registration to decide provider support.
+
+`test_03_prompt_openai_local_cli.py` runs the local OpenAI-compatible OpenCode prompt smoke test when explicitly enabled by environment.
 
 ## How config generation works
 
@@ -111,10 +121,9 @@ Do not switch this back to `npx tsx`: the `tsx` CLI can open an IPC socket under
 The TypeScript shim imports or executes production behavior so the E2E test follows Kaiden's runtime behavior:
 
 - `buildPolicyObject()` from `packages/main/src/plugin/openshell-cli/openshell-network-policy.ts`
-- `buildOpenshellSkillUploads()` from `packages/main/src/plugin/agent-workspace/openshell-upload-utils.ts`
 - the real extension registration from `extensions/<agent>/src/extension.ts`
 
-`generate-config.mts` redirects `@openkaiden/api` to `openkaiden-api-runtime.mjs`, captures the registered agent, checks model-type support when applicable, and runs that agent's `preWorkspaceStart()` hook. This avoids duplicating agent config generation in the tests.
+`generate-config.mts` redirects `@openkaiden/api` to `openkaiden-api-runtime.mjs`, captures the registered agent, checks model-type support when applicable, runs that agent's `preWorkspaceStart()` hook, and builds only the minimal upload descriptors needed by the OpenShell tests. This avoids duplicating agent config generation in the tests.
 
 Claude activation also needs light test stubs for provider/manager dependencies. Keep those in `claude-extension-runtime.mjs`; do not duplicate Claude's `.claude.json` writer in Python.
 
@@ -131,7 +140,7 @@ OpenCode provider loading behavior.
 pytest tests/e2e-openshell
 pytest tests/e2e-openshell --collect-only
 pytest tests/e2e-openshell -k verify_local_npm_mcp_spawned -v -s
-KAIDEN_E2E_LOCAL=true pytest tests/e2e-openshell/test_opencode_local_openai_cli.py -q
+KAIDEN_E2E_LOCAL=true pytest tests/e2e-openshell/test_03_prompt_openai_local_cli.py -q
 ```
 
 `KAIDEN_E2E_LOCAL=true` is a manual local-only OpenCode inference smoke test. When RamaLama is available,
@@ -154,6 +163,7 @@ When the gateway is unreachable, sandbox-backed tests should skip, while host/co
 - npm-based MCP servers need `registry.npmjs.org` in the allowed hosts.
 - Scoped npm packages use encoded slashes in registry URLs, so the generated policy must continue allowing those requests.
 - Delegate sandbox behavior checks to OpenShell commands such as `openshell sandbox exec ... curl ...`.
+- Keep generic OpenShell upload regressions outside the agent matrix unless they require agent-specific config.
 - Keep skill upload assertions in the same sandbox as MCP assertions. The goal is one agent workspace shape with multiple checks, not separate sandboxes.
 - Skills do not always have a documented CLI list command. If the skill is uploaded to the agent's registered destination, assume the agent can discover it unless the agent also has `commands.skillList`, in which case assert the CLI sees it too.
 - Keep policy probes, MCP spawn tests, and agent integration tests separate: a registry URL being allowed, a local npm MCP package running in the sandbox, and an agent listing that MCP from its settings are three different behaviors.
