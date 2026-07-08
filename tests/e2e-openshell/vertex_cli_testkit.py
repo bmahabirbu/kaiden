@@ -106,7 +106,6 @@ def vertex_agent_sandbox(
     vertex_cli_config,
     tmp_path_factory,
     agent,
-    settings_path,
     model_endpoint,
     sandbox_name,
     description,
@@ -126,7 +125,6 @@ def vertex_agent_sandbox(
             generated = generate_configs(
                 {
                     'agent': agent,
-                    'settingsPath': settings_path,
                     'modelLabel': vertex_cli_config.model,
                     'llmMetadataName': VERTEX_LLM_METADATA_NAME,
                     'modelEndpoint': model_endpoint,
@@ -134,6 +132,8 @@ def vertex_agent_sandbox(
                 history=history,
             )
         except RuntimeError as exc:
+            if f'Agent {agent} does not support model type {VERTEX_LLM_METADATA_NAME}' in str(exc):
+                pytest.skip(str(exc))
             fail_with_history(f'failed to generate {description} Vertex config: {exc}', history)
 
         if not generated.policy:

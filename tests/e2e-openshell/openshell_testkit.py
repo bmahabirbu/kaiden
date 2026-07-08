@@ -245,8 +245,11 @@ def generate_configs(input_config, *, history=None):
 
 
 def write_generated_config(generated, directory):
-    policy_path = directory / 'policy.yaml'
-    policy_path.write_text(generated.policy)
+    policy_path = None
+    if generated.policy:
+        policy_path = directory / 'policy.yaml'
+        policy_path.write_text(generated.policy)
+
     agent_config_paths = []
     for index, config_file in enumerate(generated.agent_config_files):
         agent_config_path = directory / f'agent-config-{index}.json'

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { stringify } from 'yaml';
 
@@ -39,7 +39,7 @@ interface McpCommand {
 
 interface Input {
   agent: string;
-  settingsPath: string;
+  settingsPath?: string;
   network?: { mode: 'allow' | 'deny'; hosts?: string[] };
   mcpCommands?: McpCommand[];
   skills?: string[];
@@ -62,6 +62,7 @@ interface AgentRegistration {
   id: string;
   configurationFiles: AgentConfigurationFile[];
   destinationSkillsFolder: string;
+  isSupportedModelType?(type: { name: string }): boolean | Promise<boolean>;
   preWorkspaceStart(context: {
     model: {
       model: { label: string };
@@ -83,13 +84,15 @@ interface OpenCodeExtensionModule {
 async function loadAgentRegistration(agent: string): Promise<AgentRegistration> {
   resetRegisteredAgents();
 
-  if (agent === 'opencode') {
-    await activateExtension('../../extensions/opencode/src/extension.ts');
-  } else if (agent === 'claude') {
-    await activateExtension('../../extensions/claude/src/extension.ts');
-  } else {
-    throw new Error(`Unsupported OpenShell E2E agent: ${agent}`);
+  if (!/^[a-z0-9-]+$/u.test(agent)) {
+    throw new Error(`Invalid OpenShell E2E agent id: ${agent}`);
   }
+  const extensionUrl = new URL(`../../extensions/${agent}/src/extension.ts`, import.meta.url);
+  if (!existsSync(extensionUrl)) {
+    throw new Error(`Unsupported OpenShell E2E agent: ${agent}; expected ${extensionUrl.pathname}`);
+  }
+
+  await activateExtension(extensionUrl.href);
 
   const registration = registeredAgents.find((entry: AgentRegistration) => entry.id === agent);
   if (registration) {
@@ -99,8 +102,8 @@ async function loadAgentRegistration(agent: string): Promise<AgentRegistration> 
   throw new Error(`Unsupported OpenShell E2E agent: ${agent}`);
 }
 
-async function activateExtension(path: string): Promise<void> {
-  const extensionModule = await import(path);
+async function activateExtension(url: string): Promise<void> {
+  const extensionModule = await import(url);
   const extension = resolveCommonJsModule<OpenCodeExtensionModule>(extensionModule);
   await extension.activate({ subscriptions: [] });
 }
@@ -139,6 +142,13 @@ async function buildAgentConfigs(registration: AgentRegistration): Promise<{
     ...(input.mcpCommands?.length ? { mcp: { commands: input.mcpCommands } } : {}),
   };
 
+  if (input.llmMetadataName && registration.isSupportedModelType) {
+    const supported = await registration.isSupportedModelType({ name: input.llmMetadataName });
+    if (!supported) {
+      throw new Error(`Agent ${registration.id} does not support model type ${input.llmMetadataName}`);
+    }
+  }
+
   await registration.preWorkspaceStart({
     model: {
       model: { label: input.modelLabel ?? 'gpt-4o' },
@@ -168,7 +178,9 @@ function buildSkillUploads(
 
 const agentRegistration = await loadAgentRegistration(input.agent);
 const { configs: agentConfigs, workspaceEnvironment } = await buildAgentConfigs(agentRegistration);
-const agentConfig = agentConfigs.find(config => config.uploadPath === input.settingsPath) ?? agentConfigs[0];
+const agentConfig = input.settingsPath
+  ? (agentConfigs.find(config => config.uploadPath === input.settingsPath) ?? agentConfigs[0])
+  : agentConfigs[0];
 
 const output = {
   policy: policy ? stringify(policy) : null,
