@@ -21,7 +21,7 @@ interface Props {
   projects?: WorkspaceProjectInfo[];
   selectedProjectId?: string;
   onProjectSelect?: (project: WorkspaceProjectInfo | undefined) => void;
-  nameDuplicate?: boolean;
+  errors?: { name?: string };
 }
 
 let {
@@ -39,7 +39,7 @@ let {
   projects = [],
   selectedProjectId,
   onProjectSelect,
-  nameDuplicate = false,
+  errors = {},
 }: Props = $props();
 
 function markNameEdited(): void {
@@ -133,8 +133,8 @@ function toggleProject(): void {
       placeholder="e.g., Frontend Refactoring"
       class="w-full"
       oninput={markNameEdited}
-      error={nameDuplicate ? 'A workspace with this name already exists. Please choose a different name.' : ''}
-      aria-invalid={nameDuplicate}
+      error={errors?.name ?? ''}
+      aria-invalid={!!errors?.name}
     />
   </div>
 

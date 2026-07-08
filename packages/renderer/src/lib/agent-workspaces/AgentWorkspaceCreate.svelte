@@ -249,14 +249,17 @@ let error = $state('');
 let currentStepId = $derived(wizardSteps[wizard.draft.currentStepIndex]?.id ?? '');
 let isLastStep = $derived(wizard.draft.currentStepIndex === wizardSteps.length - 1);
 let hasModel = $derived(wizard.draft.selectedModel !== undefined);
-let isNameDuplicate = $derived.by(() => {
+let validationErrors = $derived.by(() => {
+  const errors: { name?: string } = {};
   const name = wizard.draft.sessionName.trim().toLowerCase();
-  if (!name) return false;
-  return $allOpenshellSandboxes.some(s => s.name.toLowerCase() === name);
+  if (name && $allOpenshellSandboxes.some(s => s.name.toLowerCase() === name)) {
+    errors.name = 'A workspace with this name already exists. Please choose a different name.';
+  }
+  return errors;
 });
 let isCurrentStepComplete = $derived.by(() => {
   if (currentStepId === 'workspace') {
-    return wizard.draft.sessionName.trim() !== '' && wizard.draft.sourcePath.trim() !== '' && !isNameDuplicate;
+    return wizard.draft.sessionName.trim() !== '' && wizard.draft.sourcePath.trim() !== '' && !validationErrors.name;
   }
   if (currentStepId === 'agent-model') {
     return hasModel;
@@ -536,7 +539,7 @@ async function startWorkspace(): Promise<void> {
                 projects={[...$workspaceProjectInfos]}
                 selectedProjectId={wizard.draft.selectedProjectId}
                 onProjectSelect={handleProjectSelect}
-                nameDuplicate={isNameDuplicate} />
+                errors={validationErrors} />
             {:else if currentStepId === 'agent-model'}
               <AgentWorkspaceCreateStepAgentModel bind:selectedAgent={wizard.draft.selectedAgent} bind:selectedModel={wizard.draft.selectedModel} />
             {:else if currentStepId === 'tools-secrets'}
