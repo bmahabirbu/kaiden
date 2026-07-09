@@ -77,12 +77,13 @@ if AGENT_SKILL_CASES:
         assert_success(create_result, f'{agent} skill sandbox creation failed', history)
         sandbox_created = True
 
-        yield SandboxCase(name=sandbox_name, config=agent_skill_case, generated_config=generated, history=history)
-
-        if sandbox_created:
-            delete_result = cleanup_sandbox(sandbox_name, label=f'deleting sandbox {sandbox_name}')
-            if delete_result and delete_result.returncode != 0:
-                print(render_transcript(delete_result, label='sandbox delete'), flush=True)
+        try:
+            yield SandboxCase(name=sandbox_name, config=agent_skill_case, generated_config=generated, history=history)
+        finally:
+            if sandbox_created:
+                delete_result = cleanup_sandbox(sandbox_name, label=f'deleting sandbox {sandbox_name}')
+                if delete_result and delete_result.returncode != 0:
+                    print(render_transcript(delete_result, label='sandbox delete'), flush=True)
 
     class TestSkillDiscovery:
         def test_agent_skill_file_uploaded(self, skill_sandbox_case):

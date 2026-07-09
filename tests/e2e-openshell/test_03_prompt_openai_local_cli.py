@@ -32,9 +32,9 @@ from openshell_testkit import (
 
 OPENAI_PROVIDER_ID = 'openai'
 SMOKE_PROMPT = '2+2=? Reply with just the number.'
-DEFAULT_LOCAL_OPENAI_MODEL = 'qwen3.5:9b'
-DEFAULT_LOCAL_OPENAI_PORT = 8134
-DEFAULT_LOCAL_OPENAI_CTX_SIZE = 16384
+DEFAULT_RAMALAMA_MODEL = 'qwen3.5:9b'
+DEFAULT_RAMALAMA_PORT = 8134
+DEFAULT_RAMALAMA_CTX_SIZE = 16384
 RAMALAMA_CONTAINER_NAME = 'kaiden-e2e-openai'
 
 
@@ -123,13 +123,13 @@ def _read_models(base_url, *, skip_on_failure=True):
 def _require_ramalama():
     result = _run_ramalama(['ramalama', '--version'], timeout=15)
     if result is None:
-        pytest.skip('KAIDEN_E2E_LOCAL=true but ramalama --version did not run')
+        pytest.skip('KAIDEN_E2E_RAMALAMA=true but ramalama --version did not run')
     if result.returncode != 0:
-        pytest.skip(f'KAIDEN_E2E_LOCAL=true but ramalama --version failed: {result.stderr.strip()}')
+        pytest.skip(f'KAIDEN_E2E_RAMALAMA=true but ramalama --version failed: {result.stderr.strip()}')
 
     version_output = (result.stdout + result.stderr).strip()
     if not version_output:
-        pytest.skip('KAIDEN_E2E_LOCAL=true but ramalama --version returned no output')
+        pytest.skip('KAIDEN_E2E_RAMALAMA=true but ramalama --version returned no output')
     return version_output
 
 
@@ -183,18 +183,15 @@ def _foreground_ramalama_server(model, port, ctx_size, base_url):
 
 @contextmanager
 def _detected_local_openai_server():
-    if not _env_flag('KAIDEN_E2E_LOCAL'):
+    if not _env_flag('KAIDEN_E2E_RAMALAMA'):
         yield None
         return
 
     _require_ramalama()
 
-    model = _first_env(['KAIDEN_E2E_LOCAL_MODEL', 'KAIDEN_E2E_RAMALAMA_MODEL']) or DEFAULT_LOCAL_OPENAI_MODEL
-    port = int(_first_env(['KAIDEN_E2E_LOCAL_PORT', 'KAIDEN_E2E_RAMALAMA_PORT']) or DEFAULT_LOCAL_OPENAI_PORT)
-    ctx_size = int(
-        _first_env(['KAIDEN_E2E_LOCAL_CTX_SIZE', 'KAIDEN_E2E_RAMALAMA_CTX_SIZE'])
-        or DEFAULT_LOCAL_OPENAI_CTX_SIZE
-    )
+    model = os.environ.get('KAIDEN_E2E_RAMALAMA_MODEL') or DEFAULT_RAMALAMA_MODEL
+    port = int(os.environ.get('KAIDEN_E2E_RAMALAMA_PORT') or DEFAULT_RAMALAMA_PORT)
+    ctx_size = int(os.environ.get('KAIDEN_E2E_RAMALAMA_CTX_SIZE') or DEFAULT_RAMALAMA_CTX_SIZE)
     base_url = f'http://localhost:{port}/v1'
 
     with _detached_ramalama_server(model, port, ctx_size, base_url) as detached:
@@ -212,7 +209,6 @@ def local_openai_cli_config(request, gateway_ready):
         base_url = local_base_url or _first_env(
             [
                 'KAIDEN_E2E_OPENAI_BASE_URL',
-                'KAIDEN_E2E_LOCAL_OPENAI_BASE_URL',
                 'OPENAI_BASE_URL',
                 'KAIDEN_E2E_RAMALAMA_BASE_URL',
                 'RAMALAMA_OPENAI_BASE_URL',
@@ -220,7 +216,7 @@ def local_openai_cli_config(request, gateway_ready):
         )
         if not base_url:
             pytest.skip(
-                'OpenAI-compatible endpoint not configured; set KAIDEN_E2E_OPENAI_BASE_URL or KAIDEN_E2E_LOCAL=true'
+                'OpenAI-compatible endpoint not configured; set KAIDEN_E2E_OPENAI_BASE_URL or KAIDEN_E2E_RAMALAMA=true'
             )
 
         models = _read_models(base_url)
@@ -293,21 +289,22 @@ def opencode_local_openai_sandbox(local_openai_cli_config, gateway_ready, tmp_pa
     assert_success(create_sandbox_result, 'OpenCode local OpenAI sandbox creation failed', history)
     sandbox_created = True
 
-    yield SandboxCase(
-        name=sandbox_name,
-        config={
-            'localOpenAIModel': local_openai_cli_config.model,
-            'localOpenAIProvider': local_openai_cli_config.provider_id,
-            'opencodeModel': f'{local_openai_cli_config.provider_id}/{local_openai_cli_config.model}',
-        },
-        generated_config=generated,
-        history=history,
-    )
-
-    if sandbox_created:
-        delete_result = cleanup_sandbox(sandbox_name, label=f'deleting sandbox {sandbox_name}')
-        if delete_result and delete_result.returncode != 0:
-            print(render_transcript(delete_result, label='sandbox delete'), flush=True)
+    try:
+        yield SandboxCase(
+            name=sandbox_name,
+            config={
+                'localOpenAIModel': local_openai_cli_config.model,
+                'localOpenAIProvider': local_openai_cli_config.provider_id,
+                'opencodeModel': f'{local_openai_cli_config.provider_id}/{local_openai_cli_config.model}',
+            },
+            generated_config=generated,
+            history=history,
+        )
+    finally:
+        if sandbox_created:
+            delete_result = cleanup_sandbox(sandbox_name, label=f'deleting sandbox {sandbox_name}')
+            if delete_result and delete_result.returncode != 0:
+                print(render_transcript(delete_result, label='sandbox delete'), flush=True)
 
 
 def test_opencode_run_responds_with_local_openai(opencode_local_openai_sandbox):
