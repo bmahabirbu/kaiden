@@ -375,6 +375,21 @@ describe('create – OpenShell mode', () => {
     expect(result).toEqual({ id: 'my-project' });
   });
 
+  test('passes agent baseImage as from option to createSandbox', async () => {
+    vi.mocked(agentRegistry.getAgentRegistration).mockReturnValue({
+      ...mockAgent,
+      baseImage: 'registry.example.com/agent-base:v1',
+    });
+
+    await manager.create(defaultOptions);
+
+    expect(openshellCli.createSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: 'registry.example.com/agent-base:v1',
+      }),
+    );
+  });
+
   test('calls agent.preWorkspaceStart with correct context', async () => {
     const preWorkspaceStart = vi.fn();
     vi.mocked(agentRegistry.getAgentRegistration).mockReturnValue({ ...mockAgent, preWorkspaceStart });
