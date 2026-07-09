@@ -15,6 +15,7 @@ from openshell_testkit import (
     generate_configs,
     render_transcript,
     run_command,
+    sandbox_base_image_args,
     shell_join,
     write_generated_config,
 )
@@ -64,6 +65,7 @@ if AGENT_SKILL_CASES:
                 'create',
                 '--name',
                 sandbox_name,
+                *sandbox_base_image_args(generated),
                 *upload_args,
                 '--no-tty',
                 *policy_args,

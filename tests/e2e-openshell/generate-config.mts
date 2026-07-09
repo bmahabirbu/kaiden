@@ -61,6 +61,7 @@ interface AgentConfigurationFile {
 interface AgentRegistration {
   id: string;
   configurationFiles: AgentConfigurationFile[];
+  baseImage?: string;
   destinationSkillsFolder: string;
   isSupportedModelType?(type: { name: string }): boolean | Promise<boolean>;
   preWorkspaceStart(context: {
@@ -218,6 +219,7 @@ const output = {
   policy: policy ? stringify(policy) : null,
   agentConfig,
   agentConfigs,
+  baseImage: agentRegistration.baseImage ?? null,
   skillUploads: buildSkillUploads(agentRegistration, input.skills),
   workspaceEnvironment,
 };
