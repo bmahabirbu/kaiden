@@ -145,18 +145,20 @@ pytest tests/e2e-openshell --collect-only
 pytest tests/e2e-openshell -k verify_local_npm_mcp_spawned -v -s
 KAIDEN_E2E_KEEP_SANDBOXES=true pytest tests/e2e-openshell -k sandbox -v -s
 KAIDEN_E2E_GITHUB_TOKEN=... pytest tests/e2e-openshell/test_01_openshell_github_credentials.py -q
-KAIDEN_E2E_LOCAL=true pytest tests/e2e-openshell/test_03_prompt_openai_local_cli.py -q
+KAIDEN_E2E_RAMALAMA=true pytest tests/e2e-openshell/test_03_prompt_openai_local_cli.py -q
 ```
 
 Set `KAIDEN_E2E_KEEP_SANDBOXES=true` to skip sandbox cleanup after tests, which is useful when inspecting a sandbox manually after a failure. The tests still delete an existing sandbox with the same deterministic name before creating a new one.
 
+When interrupting a run with Ctrl-C, pytest should still run fixture teardown for any sandbox that reached creation. The harness prints a short interruption message and then follows the normal cleanup behavior, including `KAIDEN_E2E_KEEP_SANDBOXES=true` when set.
+
 Set `KAIDEN_E2E_GITHUB_TOKEN` to run the GitHub credential upload test. The test exposes that value as `GITHUB_TOKEN` only for `openshell provider create --from-existing`, matching the documented GitHub provider flow without putting the secret in command transcripts. Use `gh api /user` for this regression; avoid `gh auth status` because it can require GitHub GraphQL access beyond the default REST policy.
 
-`KAIDEN_E2E_LOCAL=true` is a manual local-only OpenCode inference smoke test. When RamaLama is available,
+`KAIDEN_E2E_RAMALAMA=true` is a manual local-only OpenCode inference smoke test. When RamaLama is available,
 the test validates `ramalama --version`, starts `ramalama serve` for the default local model, waits for
 `/v1/models`, uses the exact returned model id, and lets Kaiden's OpenCode shim generate the config.
 The local RamaLama launcher uses `--ctx-size 16384` by default because OpenCode's initial agent context
-can exceed 4096 tokens; override with `KAIDEN_E2E_LOCAL_CTX_SIZE` or `KAIDEN_E2E_RAMALAMA_CTX_SIZE` when needed.
+can exceed 4096 tokens; override with `KAIDEN_E2E_RAMALAMA_CTX_SIZE` when needed.
 
 Requirements:
 

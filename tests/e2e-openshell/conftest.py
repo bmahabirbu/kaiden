@@ -4,6 +4,7 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -26,9 +27,9 @@ from openshell_testkit import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OPENSHELL_PKG = REPO_ROOT / "extensions" / "openshell" / "package.json"
-DEFAULT_LOCAL_OPENAI_MODEL = 'qwen3.5:9b'
-DEFAULT_LOCAL_OPENAI_PORT = 8134
-DEFAULT_LOCAL_OPENAI_CTX_SIZE = 16384
+DEFAULT_RAMALAMA_MODEL = 'qwen3.5:9b'
+DEFAULT_RAMALAMA_PORT = 8134
+DEFAULT_RAMALAMA_CTX_SIZE = 16384
 GITHUB_TOKEN_ENV = 'KAIDEN_E2E_GITHUB_TOKEN'
 
 
@@ -75,20 +76,16 @@ def _gateway_endpoint(output):
     return match.group(1) if match else None
 
 
-def _local_openai_header_lines():
-    if not _env_flag('KAIDEN_E2E_LOCAL'):
+def _ramalama_header_lines():
+    if not _env_flag('KAIDEN_E2E_RAMALAMA'):
         return []
 
-    model = _first_env(['KAIDEN_E2E_LOCAL_MODEL', 'KAIDEN_E2E_RAMALAMA_MODEL']) or DEFAULT_LOCAL_OPENAI_MODEL
-    port = _first_env(['KAIDEN_E2E_LOCAL_PORT', 'KAIDEN_E2E_RAMALAMA_PORT']) or str(DEFAULT_LOCAL_OPENAI_PORT)
-    ctx_size = (
-        _first_env(['KAIDEN_E2E_LOCAL_CTX_SIZE', 'KAIDEN_E2E_RAMALAMA_CTX_SIZE'])
-        or str(DEFAULT_LOCAL_OPENAI_CTX_SIZE)
-    )
+    model = os.environ.get('KAIDEN_E2E_RAMALAMA_MODEL') or DEFAULT_RAMALAMA_MODEL
+    port = os.environ.get('KAIDEN_E2E_RAMALAMA_PORT') or str(DEFAULT_RAMALAMA_PORT)
+    ctx_size = os.environ.get('KAIDEN_E2E_RAMALAMA_CTX_SIZE') or str(DEFAULT_RAMALAMA_CTX_SIZE)
     base_url = _first_env(
         [
             'KAIDEN_E2E_OPENAI_BASE_URL',
-            'KAIDEN_E2E_LOCAL_OPENAI_BASE_URL',
             'OPENAI_BASE_URL',
             'KAIDEN_E2E_RAMALAMA_BASE_URL',
             'RAMALAMA_OPENAI_BASE_URL',
@@ -104,9 +101,9 @@ def _local_openai_header_lines():
         ramalama = (version_result.stdout + version_result.stderr).strip() or 'ramalama --version returned no output'
 
     return [
-        f'openshell e2e local OpenAI: enabled; launcher: {ramalama}',
-        f'openshell e2e local OpenAI: target: {base_url}; model: {model}; ctx: {ctx_size}',
-        'openshell e2e local OpenAI: /v1/models readiness is checked by the test fixture',
+        f'openshell e2e RamaLama: enabled; launcher: {ramalama}',
+        f'openshell e2e RamaLama: target: {base_url}; model: {model}; ctx: {ctx_size}',
+        'openshell e2e RamaLama: /v1/models readiness is checked by the test fixture',
     ]
 
 
@@ -134,7 +131,7 @@ def pytest_report_header(config):
             "openshell e2e gateway: unavailable",
             *_keep_sandbox_header_lines(),
             *_github_credentials_header_lines(),
-            *_local_openai_header_lines(),
+            *_ramalama_header_lines(),
         ]
 
     version_result = _run(["openshell", "--version"])
@@ -159,8 +156,16 @@ def pytest_report_header(config):
         gateway_line,
         *_keep_sandbox_header_lines(),
         *_github_credentials_header_lines(),
-        *_local_openai_header_lines(),
+        *_ramalama_header_lines(),
     ]
+
+
+def pytest_keyboard_interrupt(excinfo):
+    print(
+        f'\nOpenShell E2E interrupted; running fixture cleanup unless {KEEP_SANDBOXES_ENV}=true.',
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 @pytest.fixture(scope='session')
@@ -243,9 +248,10 @@ def sandbox_case(agent_case, gateway_ready, tmp_path_factory):
 
     sandbox_created = True
 
-    yield SandboxCase(name=sandbox_name, config=agent_case, generated_config=generated, history=history)
-
-    if sandbox_created:
-        delete_result = cleanup_sandbox(sandbox_name, label=f'deleting sandbox {sandbox_name}')
-        if delete_result and delete_result.returncode != 0:
-            print(render_transcript(delete_result, label='sandbox delete'), flush=True)
+    try:
+        yield SandboxCase(name=sandbox_name, config=agent_case, generated_config=generated, history=history)
+    finally:
+        if sandbox_created:
+            delete_result = cleanup_sandbox(sandbox_name, label=f'deleting sandbox {sandbox_name}')
+            if delete_result and delete_result.returncode != 0:
+                print(render_transcript(delete_result, label='sandbox delete'), flush=True)
