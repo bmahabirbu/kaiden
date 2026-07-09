@@ -9,6 +9,7 @@ from agent_cases import AGENT_SKILL_CASES, agent_case_id
 from openshell_testkit import (
     SandboxCase,
     assert_success,
+    cleanup_sandbox,
     fail_with_history,
     fail_with_result,
     generate_configs,
@@ -79,12 +80,8 @@ if AGENT_SKILL_CASES:
         yield SandboxCase(name=sandbox_name, config=agent_skill_case, generated_config=generated, history=history)
 
         if sandbox_created:
-            delete_result = run_command(
-                ['openshell', 'sandbox', 'delete', sandbox_name],
-                timeout=30,
-                label=f'deleting sandbox {sandbox_name}',
-            )
-            if delete_result.returncode != 0:
+            delete_result = cleanup_sandbox(sandbox_name, label=f'deleting sandbox {sandbox_name}')
+            if delete_result and delete_result.returncode != 0:
                 print(render_transcript(delete_result, label='sandbox delete'), flush=True)
 
     class TestSkillDiscovery:

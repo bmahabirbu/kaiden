@@ -35,6 +35,7 @@ tests/e2e-openshell/
 ├── openkaiden-api-runtime.mjs # Test runtime shim for loading real agent registrations
 ├── openshell_testkit.py    # Command helpers, transcripts, config generation, sandbox model
 ├── test_00_openshell_preflight.py # Generic OpenShell availability checks
+├── test_01_openshell_github_credentials.py # Generic GitHub credential upload assertions
 ├── test_01_openshell_uploads.py # Generic OpenShell source upload assertions
 ├── test_02_sandbox_npm_mcp_skill.py # npm MCP plus skill upload pytest assertions
 ├── test_03_prompt_openai_local_cli.py # Local OpenAI-compatible prompt smoke test
@@ -90,6 +91,8 @@ Command transcripts are captured in `openshell_testkit.py` and included only on 
 
 `test_01_openshell_uploads.py` covers generic OpenShell upload behavior that Kaiden relies on: uploading a source directory so it is accessible from the sandbox working directory, and uploading a `$SOURCES` subdirectory so it appears at the matching sandbox subdirectory.
 
+`test_01_openshell_github_credentials.py` covers generic provider credential behavior for GitHub: creating a GitHub provider from existing host credentials, attaching it to a sandbox, and verifying the sandbox can use the uploaded `GITHUB_TOKEN` with GitHub's REST API.
+
 `test_02_sandbox_npm_mcp_skill.py` currently checks:
 
 1. Kaiden can generate a non-empty network policy and at least one generated agent config containing the expected MCP command.
@@ -140,8 +143,14 @@ OpenCode provider loading behavior.
 pytest tests/e2e-openshell
 pytest tests/e2e-openshell --collect-only
 pytest tests/e2e-openshell -k verify_local_npm_mcp_spawned -v -s
+KAIDEN_E2E_KEEP_SANDBOXES=true pytest tests/e2e-openshell -k sandbox -v -s
+KAIDEN_E2E_GITHUB_TOKEN=... pytest tests/e2e-openshell/test_01_openshell_github_credentials.py -q
 KAIDEN_E2E_LOCAL=true pytest tests/e2e-openshell/test_03_prompt_openai_local_cli.py -q
 ```
+
+Set `KAIDEN_E2E_KEEP_SANDBOXES=true` to skip sandbox cleanup after tests, which is useful when inspecting a sandbox manually after a failure. The tests still delete an existing sandbox with the same deterministic name before creating a new one.
+
+Set `KAIDEN_E2E_GITHUB_TOKEN` to run the GitHub credential upload test. The test exposes that value as `GITHUB_TOKEN` only for `openshell provider create --from-existing`, matching the documented GitHub provider flow without putting the secret in command transcripts. Use `gh api /user` for this regression; avoid `gh auth status` because it can require GitHub GraphQL access beyond the default REST policy.
 
 `KAIDEN_E2E_LOCAL=true` is a manual local-only OpenCode inference smoke test. When RamaLama is available,
 the test validates `ramalama --version`, starts `ramalama serve` for the default local model, waits for

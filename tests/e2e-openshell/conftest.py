@@ -10,8 +10,10 @@ import pytest
 
 from agent_cases import AGENT_CASES, agent_case_id
 from openshell_testkit import (
+    KEEP_SANDBOXES_ENV,
     SandboxCase,
     assert_success,
+    cleanup_sandbox,
     fail_with_history,
     generate_configs,
     render_transcript,
@@ -27,6 +29,7 @@ OPENSHELL_PKG = REPO_ROOT / "extensions" / "openshell" / "package.json"
 DEFAULT_LOCAL_OPENAI_MODEL = 'qwen3.5:9b'
 DEFAULT_LOCAL_OPENAI_PORT = 8134
 DEFAULT_LOCAL_OPENAI_CTX_SIZE = 16384
+GITHUB_TOKEN_ENV = 'KAIDEN_E2E_GITHUB_TOKEN'
 
 
 def _read_pinned_version():
@@ -107,6 +110,18 @@ def _local_openai_header_lines():
     ]
 
 
+def _keep_sandbox_header_lines():
+    if not _env_flag(KEEP_SANDBOXES_ENV):
+        return []
+    return [f'openshell e2e cleanup: preserving sandboxes ({KEEP_SANDBOXES_ENV}=true)']
+
+
+def _github_credentials_header_lines():
+    if not os.environ.get(GITHUB_TOKEN_ENV):
+        return []
+    return [f'openshell e2e GitHub credentials: enabled ({GITHUB_TOKEN_ENV}=set)']
+
+
 def pytest_report_header(config):
     host = f"{platform.system()} {platform.machine()}"
     pinned = _read_pinned_version()
@@ -117,6 +132,8 @@ def pytest_report_header(config):
             f"openshell e2e host: {host}",
             f"openshell e2e openshell: missing from PATH (pinned {pinned})",
             "openshell e2e gateway: unavailable",
+            *_keep_sandbox_header_lines(),
+            *_github_credentials_header_lines(),
             *_local_openai_header_lines(),
         ]
 
@@ -140,6 +157,8 @@ def pytest_report_header(config):
         f"openshell e2e host: {host}",
         openshell_line,
         gateway_line,
+        *_keep_sandbox_header_lines(),
+        *_github_credentials_header_lines(),
         *_local_openai_header_lines(),
     ]
 
@@ -227,10 +246,6 @@ def sandbox_case(agent_case, gateway_ready, tmp_path_factory):
     yield SandboxCase(name=sandbox_name, config=agent_case, generated_config=generated, history=history)
 
     if sandbox_created:
-        delete_result = run_command(
-            ['openshell', 'sandbox', 'delete', sandbox_name],
-            timeout=30,
-            label=f'deleting sandbox {sandbox_name}',
-        )
-        if delete_result.returncode != 0:
+        delete_result = cleanup_sandbox(sandbox_name, label=f'deleting sandbox {sandbox_name}')
+        if delete_result and delete_result.returncode != 0:
             print(render_transcript(delete_result, label='sandbox delete'), flush=True)

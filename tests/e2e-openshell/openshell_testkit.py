@@ -12,6 +12,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GENERATE_SCRIPT = Path(__file__).with_name('generate-config.mts')
 OPENSHELL_PKG = REPO_ROOT / 'extensions' / 'openshell' / 'package.json'
+KEEP_SANDBOXES_ENV = 'KAIDEN_E2E_KEEP_SANDBOXES'
 
 
 @dataclass
@@ -61,6 +62,29 @@ def get_pinned_openshell_version():
 
 def shell_join(cmd):
     return ' '.join(shlex.quote(str(part)) for part in cmd)
+
+
+def env_flag(name):
+    return os.environ.get(name, '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def keep_sandboxes():
+    return env_flag(KEEP_SANDBOXES_ENV)
+
+
+def cleanup_sandbox(sandbox_name, *, timeout=30, label=None):
+    if keep_sandboxes():
+        print(
+            f'Preserving OpenShell sandbox {sandbox_name}; unset {KEEP_SANDBOXES_ENV} to restore cleanup.',
+            flush=True,
+        )
+        return None
+
+    return run_command(
+        ['openshell', 'sandbox', 'delete', sandbox_name],
+        timeout=timeout,
+        label=label or f'deleting sandbox {sandbox_name}',
+    )
 
 
 def normalize_output(value):
