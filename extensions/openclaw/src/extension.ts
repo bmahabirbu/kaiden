@@ -22,7 +22,12 @@ import { z } from 'zod';
 
 const OpenClawAgentsSchema = z
   .looseObject({
-    defaults: z.looseObject({}).catch({}).optional(),
+    defaults: z
+      .looseObject({
+        model: z.string().optional(),
+      })
+      .catch({})
+      .optional(),
   })
   .catch({});
 
@@ -55,13 +60,17 @@ const OpenClawConfigCodec = z.codec(z.string(), OpenClawConfigSchema, {
         code: 'invalid_format',
         format: 'json',
         input: jsonString,
-        message: err instanceof Error ? err.message : 'Invalid JSON',
+        message: String(err),
       });
       return z.NEVER;
     }
   },
   encode: value => JSON.stringify(value, undefined, 2),
 });
+
+function nonEmpty(obj: Record<string, string> | undefined): Record<string, string> | undefined {
+  return obj && Object.keys(obj).length > 0 ? obj : undefined;
+}
 
 export const OPENCLAW_CONFIG_PATH = '.openclaw/openclaw.json';
 
@@ -74,6 +83,7 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
       icon: './icon.png',
       logo: './icon.png',
     },
+    tags: ['Local'],
     command: 'openclaw',
     acp: { args: ['acp'] },
     configurationFiles: [
@@ -96,13 +106,8 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
 
       const config = OpenClawConfigCodec.decode(await configFile.read());
 
-      config.agents = {
-        ...config.agents,
-        defaults: {
-          ...(config.agents?.defaults ?? {}),
-          model: context.model.model.label,
-        },
-      };
+      config.agents ??= {};
+      config.agents.defaults = { ...config.agents.defaults, model: context.model.model.label };
 
       const mcpServers = context.workspace.mcp?.servers;
       const mcpCommands = context.workspace.mcp?.commands;
@@ -114,7 +119,7 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
           servers[server.name] = {
             transport: 'streamable-http',
             url: server.url,
-            ...(server.headers && Object.keys(server.headers).length > 0 ? { headers: server.headers } : {}),
+            headers: nonEmpty(server.headers),
           };
         }
 
@@ -122,11 +127,12 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
           servers[cmd.name] = {
             command: cmd.command,
             args: cmd.args ?? [],
-            ...(cmd.env && Object.keys(cmd.env).length > 0 ? { env: cmd.env } : {}),
+            env: nonEmpty(cmd.env),
           };
         }
 
-        config.mcp = { ...config.mcp, servers };
+        config.mcp ??= {};
+        config.mcp.servers = servers;
       }
 
       await configFile.update(OpenClawConfigCodec.encode(config));
