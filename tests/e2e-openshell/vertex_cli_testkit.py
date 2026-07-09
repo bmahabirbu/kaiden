@@ -9,6 +9,7 @@ import pytest
 from openshell_testkit import (
     SandboxCase,
     assert_success,
+    cleanup_sandbox,
     fail_with_history,
     generate_configs,
     render_transcript,
@@ -228,12 +229,8 @@ def vertex_agent_sandbox(
         )
     finally:
         if sandbox_created:
-            delete_result = run_command(
-                ['openshell', 'sandbox', 'delete', sandbox_name],
-                timeout=30,
-                label=f'deleting sandbox {sandbox_name}',
-            )
-            if delete_result.returncode != 0:
+            delete_result = cleanup_sandbox(sandbox_name, label=f'deleting sandbox {sandbox_name}')
+            if delete_result and delete_result.returncode != 0:
                 print(render_transcript(delete_result, label='sandbox delete'), flush=True)
 
         if provider_created:

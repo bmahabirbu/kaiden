@@ -6,6 +6,7 @@ E2E regression tests for OpenShell source directory uploads.
 from openshell_testkit import (
     SandboxCase,
     assert_success,
+    cleanup_sandbox,
     fail_with_result,
     render_transcript,
     run_command,
@@ -46,12 +47,8 @@ def _create_sandbox(sandbox_name, upload_args, history):
 
 
 def _delete_sandbox(sandbox_name):
-    result = run_command(
-        ['openshell', 'sandbox', 'delete', sandbox_name],
-        timeout=30,
-        label=f'deleting sandbox {sandbox_name}',
-    )
-    if result.returncode != 0:
+    result = cleanup_sandbox(sandbox_name, label=f'deleting sandbox {sandbox_name}')
+    if result and result.returncode != 0:
         print(render_transcript(result, label='sandbox delete'), flush=True)
 
 
