@@ -16,30 +16,6 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import { type Writable, writable } from 'svelte/store';
+import { readable } from 'svelte/store';
 
-import { AgentWorkspaceSettings } from '/@api/agent-workspace/agent-workspace-settings';
-
-import { configurationProperties } from './configurationProperties';
-
-const AGENT_WORKSPACE_RUNTIME = `${AgentWorkspaceSettings.SectionName}.${AgentWorkspaceSettings.Runtime}`;
-const DEFAULT_RUNTIME = 'podman';
-let requestId = 0;
-
-export const agentWorkspaceRuntime: Writable<string> = writable(DEFAULT_RUNTIME);
-
-configurationProperties.subscribe(() => {
-  if (!window?.getConfigurationValue) {
-    return;
-  }
-
-  const currentRequestId = ++requestId;
-  window
-    .getConfigurationValue<string>(AGENT_WORKSPACE_RUNTIME)
-    ?.then(value => {
-      if (currentRequestId === requestId) {
-        agentWorkspaceRuntime.set(value ?? DEFAULT_RUNTIME);
-      }
-    })
-    ?.catch((err: unknown) => console.error(`Error getting configuration value ${AGENT_WORKSPACE_RUNTIME}`, err));
-});
+export const agentWorkspaceRuntime = readable('openshell');

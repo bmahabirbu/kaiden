@@ -70,7 +70,6 @@ const mockAgentInfos: AgentInfo[] = [
     description: 'Autonomous coding agent.',
     command: 'goose',
     destinationSkillsFolder: '/home/test/.agents/skills',
-    supportedRuntimes: ['podman'],
     supportedModelTypes: [{ name: 'ollama' }],
   },
 ];
@@ -193,7 +192,7 @@ beforeEach(() => {
   catalogModelsWritable = writable([]);
   connectionSummariesWritable = writable([]);
   vi.mocked(agentsStore).agentInfos = writable(mockAgentInfos);
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable('podman');
+  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable('openshell');
   vi.mocked(configurationPropertiesStore).configurationProperties = writable([]);
   vi.mocked(modelCatalogStore).disabledModels = writable(new Set<string>());
   vi.mocked(providersStore).providerInfos = providerInfosWritable;

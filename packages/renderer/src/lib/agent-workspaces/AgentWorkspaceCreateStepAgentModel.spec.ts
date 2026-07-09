@@ -111,7 +111,6 @@ const mockAgentInfos: AgentInfo[] = [
     description: 'Autonomous coding agent.',
     command: 'goose',
     destinationSkillsFolder: '/home/test/.agents/skills',
-    supportedRuntimes: ['podman'],
     supportedModelTypes: [{ name: 'anthropic' }, { name: 'openai' }, { name: 'ollama' }, { name: 'gemini' }],
   },
 ];
@@ -176,7 +175,7 @@ beforeEach(() => {
   vi.mocked(agentsStore).agentInfos = writable<AgentInfo[]>(mockAgentInfos);
   vi.mocked(providersStore).providerInfos = writable<ProviderInfo[]>([]);
   vi.mocked(modelsStore).catalogModels = writable<CatalogModelInfo[]>([]);
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('podman');
+  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('openshell');
   vi.mocked(modelCatalogStore).disabledModels = writable<Set<string>>(new Set());
   vi.mocked(inferenceConnectionSummariesStore).inferenceConnectionSummariesData = writable<
     Readonly<InferenceConnectionSummary[]>
@@ -362,24 +361,6 @@ test('Open Models catalog link visible when agent selected', async () => {
   expect(screen.getByText('Open Models catalog')).toBeInTheDocument();
 });
 
-test('agents without runtimes field are always shown', () => {
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('docker');
-
-  render(AgentWorkspaceCreateStepAgentModel);
-
-  expect(screen.getByText('OpenCode')).toBeInTheDocument();
-  expect(screen.getByText('Claude Code')).toBeInTheDocument();
-  expect(screen.getByText('Cursor')).toBeInTheDocument();
-});
-
-test('agent with matching runtime is shown', () => {
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('podman');
-
-  render(AgentWorkspaceCreateStepAgentModel);
-
-  expect(screen.getByText('Goose')).toBeInTheDocument();
-});
-
 test('OpenCode excludes Vertex AI models', async () => {
   setProviders([mockAnthropicProvider, mockVertexProvider, mockOllamaProvider]);
 
@@ -443,12 +424,4 @@ test('recommended agent is sorted first regardless of other tags', () => {
   expect(options[0]).toHaveTextContent('Recommended Agent');
   expect(options[1]).toHaveTextContent('Cloud Agent');
   expect(options[2]).toHaveTextContent('No Tag Agent');
-});
-
-test('agent with non-matching runtime is hidden', () => {
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('docker');
-
-  render(AgentWorkspaceCreateStepAgentModel);
-
-  expect(screen.queryByText('Goose')).not.toBeInTheDocument();
 });

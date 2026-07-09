@@ -156,11 +156,10 @@ beforeEach(() => {
       description: 'Autonomous coding agent.',
       command: 'goose',
       destinationSkillsFolder: '/home/test/.agents/skills',
-      supportedRuntimes: ['podman'],
       supportedModelTypes: [{ name: 'anthropic' }, { name: 'openai' }, { name: 'ollama' }, { name: 'gemini' }],
     },
   ]);
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('podman');
+  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('openshell');
   vi.mocked(skillsStore).skillInfos = writable<SkillInfo[]>([]);
   vi.mocked(mcpStore).mcpRemoteServerInfos = writable<MCPRemoteServerInfo[]>([]);
   vi.mocked(secretVaultStore).secretVaultInfos = writable<readonly SecretVaultInfo[]>([]);
@@ -1154,27 +1153,7 @@ test('Expect Deny All resets to empty host list when switching from Developer Pr
   expect((screen.getByLabelText('Custom host 1') as HTMLInputElement).value).toBe('');
 });
 
-test('Expect Unrestricted network option disabled when runtime is openshell', async () => {
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('openshell');
-  render(AgentWorkspaceCreate);
-
-  await navigateToNetworkingStep();
-
-  expect(screen.getByRole('radio', { name: 'Use Unrestricted' })).toBeDisabled();
-});
-
-test('Expect Unrestricted network option enabled when runtime is podman', async () => {
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('podman');
-  render(AgentWorkspaceCreate);
-
-  await navigateToNetworkingStep();
-
-  expect(screen.getByRole('radio', { name: 'Use Unrestricted' })).toBeEnabled();
-});
-
-test('Expect createAgentWorkspace called with runtime from agentWorkspaceRuntime store', async () => {
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('openshell');
-
+test('Expect createAgentWorkspace called with openshell runtime', async () => {
   render(AgentWorkspaceCreate);
 
   await fireEvent.input(screen.getByPlaceholderText('/path/to/project'), {
@@ -1185,21 +1164,6 @@ test('Expect createAgentWorkspace called with runtime from agentWorkspaceRuntime
   expect(window.createAgentWorkspace).toHaveBeenCalledWith(
     expect.objectContaining({
       runtime: 'openshell',
-    }),
-  );
-});
-
-test('Expect createAgentWorkspace called with podman runtime by default', async () => {
-  render(AgentWorkspaceCreate);
-
-  await fireEvent.input(screen.getByPlaceholderText('/path/to/project'), {
-    target: { value: '/home/user/my-repo' },
-  });
-  await fireEvent.click(screen.getByRole('button', { name: 'Use all defaults and create workspace' }));
-
-  expect(window.createAgentWorkspace).toHaveBeenCalledWith(
-    expect.objectContaining({
-      runtime: 'podman',
     }),
   );
 });
@@ -1533,7 +1497,7 @@ test('Expect Start workspace as-is calls createAgentWorkspace with model', async
   expect(window.createAgentWorkspace).toHaveBeenCalledWith(
     expect.objectContaining({
       sourcePath: '/home/user/existing-project',
-      runtime: 'podman',
+      runtime: 'openshell',
       agent: 'opencode',
       model: 'anthropic::claude-sonnet-4::',
       name: 'existing-project',
@@ -1892,23 +1856,7 @@ describe('when projects exist', () => {
 });
 
 describe('project filesystem mapping', () => {
-  test('Expect allow network mapped to open mode', async () => {
-    const openNetProject: WorkspaceProjectInfo = {
-      ...sampleProject,
-      id: 'open-net',
-      network: { mode: 'allow' },
-    };
-    setProjects([openNetProject]);
-    render(AgentWorkspaceCreate);
-
-    await fireEvent.click(screen.getByRole('button', { name: /Saved project/ }));
-    await fireEvent.click(screen.getByRole('option', { name: /My App/ }));
-
-    expect(wizard.draft.selectedNetwork).toBe('open');
-  });
-
-  test('Expect allow network falls back to registries when runtime is openshell', async () => {
-    vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('openshell');
+  test('Expect allow network falls back to registries', async () => {
     const openNetProject: WorkspaceProjectInfo = {
       ...sampleProject,
       id: 'open-net',
