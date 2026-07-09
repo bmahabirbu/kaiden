@@ -36,6 +36,7 @@ class GeneratedConfig:
     agent_config_contents: str
     agent_config_upload_path: str
     agent_config_files: list[dict[str, str]]
+    base_image: str | None
     skill_uploads: list[dict[str, str]]
     workspace_environment: list[dict[str, str]]
 
@@ -188,6 +189,10 @@ def sandbox_exec(name, command, *, timeout=60, label=None, history=None):
     return run_command(cmd, timeout=timeout + 15, label=label, history=history)
 
 
+def sandbox_base_image_args(generated):
+    return ['--from', generated.base_image] if generated.base_image else []
+
+
 def parse_version(version_str):
     parts = version_str.strip().split()[-1]
     return tuple(int(x) for x in parts.split('.'))
@@ -258,6 +263,7 @@ def generate_configs(input_config, *, history=None):
                 agent_config_contents=output['agentConfig']['contents'],
                 agent_config_upload_path=output['agentConfig']['uploadPath'],
                 agent_config_files=output.get('agentConfigs', [output['agentConfig']]),
+                base_image=output.get('baseImage'),
                 skill_uploads=output['skillUploads'],
                 workspace_environment=output.get('workspaceEnvironment', []),
             )

@@ -25,6 +25,7 @@ from openshell_testkit import (
     generate_configs,
     render_transcript,
     run_command,
+    sandbox_base_image_args,
     shell_join,
     write_generated_config,
 )
@@ -274,6 +275,7 @@ def opencode_local_openai_sandbox(local_openai_cli_config, gateway_ready, tmp_pa
             'create',
             '--name',
             sandbox_name,
+            *sandbox_base_image_args(generated),
             *env_args,
             *upload_args,
             '--no-tty',

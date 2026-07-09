@@ -21,6 +21,7 @@ from openshell_testkit import (
     require_gateway_ready,
     require_openshell_preflight,
     run_command,
+    sandbox_base_image_args,
     write_generated_config,
 )
 
@@ -219,6 +220,7 @@ def sandbox_case(agent_case, gateway_ready, tmp_path_factory):
             'create',
             '--name',
             sandbox_name,
+            *sandbox_base_image_args(generated),
             *upload_args,
             '--no-tty',
             '--policy',

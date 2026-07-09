@@ -14,6 +14,7 @@ from openshell_testkit import (
     generate_configs,
     render_transcript,
     run_command,
+    sandbox_base_image_args,
     write_generated_config,
 )
 
@@ -204,6 +205,7 @@ def vertex_agent_sandbox(
                 'create',
                 '--name',
                 sandbox_name,
+                *sandbox_base_image_args(generated),
                 '--provider',
                 provider_name,
                 *env_args,
