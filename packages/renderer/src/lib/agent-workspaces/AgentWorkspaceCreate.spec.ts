@@ -25,7 +25,6 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { resetDraft, wizard } from '/@/stores/agent-workspace-create-draft.svelte';
 import * as agentsStore from '/@/stores/agents';
-import * as agentWorkspaceRuntimeStore from '/@/stores/agentworkspace-runtime';
 import * as mcpStore from '/@/stores/mcp-remote-servers';
 import * as modelCatalogStore from '/@/stores/model-catalog';
 import * as modelsStore from '/@/stores/models';
@@ -49,7 +48,6 @@ import AgentWorkspaceCreate from './AgentWorkspaceCreate.svelte';
 
 vi.mock(import('/@/navigation'));
 vi.mock(import('/@/stores/agents'));
-vi.mock(import('/@/stores/agentworkspace-runtime'));
 vi.mock(import('/@/stores/skills'));
 vi.mock(import('/@/stores/mcp-remote-servers'));
 vi.mock(import('/@/stores/secret-vault'));
@@ -159,7 +157,6 @@ beforeEach(() => {
       supportedModelTypes: [{ name: 'anthropic' }, { name: 'openai' }, { name: 'ollama' }, { name: 'gemini' }],
     },
   ]);
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('openshell');
   vi.mocked(skillsStore).skillInfos = writable<SkillInfo[]>([]);
   vi.mocked(mcpStore).mcpRemoteServerInfos = writable<MCPRemoteServerInfo[]>([]);
   vi.mocked(secretVaultStore).secretVaultInfos = writable<readonly SecretVaultInfo[]>([]);
@@ -1153,21 +1150,6 @@ test('Expect Deny All resets to empty host list when switching from Developer Pr
   expect((screen.getByLabelText('Custom host 1') as HTMLInputElement).value).toBe('');
 });
 
-test('Expect createAgentWorkspace called with openshell runtime', async () => {
-  render(AgentWorkspaceCreate);
-
-  await fireEvent.input(screen.getByPlaceholderText('/path/to/project'), {
-    target: { value: '/home/user/my-repo' },
-  });
-  await fireEvent.click(screen.getByRole('button', { name: 'Use all defaults and create workspace' }));
-
-  expect(window.createAgentWorkspace).toHaveBeenCalledWith(
-    expect.objectContaining({
-      runtime: 'openshell',
-    }),
-  );
-});
-
 test('Expect createAgentWorkspace called with workspaceConfiguration from settings for selected agent', async () => {
   vi.mocked(window.getConfigurationValue).mockResolvedValue({
     defaultAgent: 'claude',
@@ -1497,7 +1479,6 @@ test('Expect Start workspace as-is calls createAgentWorkspace with model', async
   expect(window.createAgentWorkspace).toHaveBeenCalledWith(
     expect.objectContaining({
       sourcePath: '/home/user/existing-project',
-      runtime: 'openshell',
       agent: 'opencode',
       model: 'anthropic::claude-sonnet-4::',
       name: 'existing-project',
@@ -1856,7 +1837,7 @@ describe('when projects exist', () => {
 });
 
 describe('project filesystem mapping', () => {
-  test('Expect allow network falls back to registries', async () => {
+  test('Expect allow network maps to open', async () => {
     const openNetProject: WorkspaceProjectInfo = {
       ...sampleProject,
       id: 'open-net',
@@ -1868,7 +1849,7 @@ describe('project filesystem mapping', () => {
     await fireEvent.click(screen.getByRole('button', { name: /Saved project/ }));
     await fireEvent.click(screen.getByRole('option', { name: /My App/ }));
 
-    expect(wizard.draft.selectedNetwork).toBe('registries');
+    expect(wizard.draft.selectedNetwork).toBe('open');
   });
 
   test('Expect deny network without hosts mapped to blocked mode', async () => {

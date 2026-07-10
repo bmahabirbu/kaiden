@@ -24,7 +24,6 @@ import { router } from 'tinro';
 import { beforeEach, expect, test, vi } from 'vitest';
 
 import { withConfirmation } from '/@/lib/dialogs/messagebox-utils';
-import * as agentWorkspaceRuntimeStore from '/@/stores/agentworkspace-runtime';
 import * as mcpStore from '/@/stores/mcp-remote-servers';
 import type { SandboxInfoWithGateway } from '/@/stores/openshell-sandboxes';
 import * as ragStore from '/@/stores/rag-environments';
@@ -41,7 +40,6 @@ vi.mock(import('/@/stores/skills'));
 vi.mock(import('/@/stores/rag-environments'));
 vi.mock(import('/@/navigation'));
 vi.mock(import('/@/stores/mcp-remote-servers'));
-vi.mock(import('/@/stores/agentworkspace-runtime'));
 vi.mock(import('/@/lib/dialogs/messagebox-utils'));
 
 const routerStore = writable({
@@ -75,7 +73,6 @@ beforeEach(() => {
   vi.mocked(skillsStore).skillInfos = writable<readonly SkillInfo[]>([]);
   vi.mocked(ragStore).ragEnvironments = writable<RagEnvironment[]>([]);
   vi.mocked(mcpStore).mcpRemoteServerInfos = writable<readonly MCPRemoteServerInfo[]>([]);
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('openshell');
 });
 
 test('Expect General section is active by default with workspace info', () => {

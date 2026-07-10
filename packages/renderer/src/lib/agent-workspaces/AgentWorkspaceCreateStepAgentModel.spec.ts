@@ -23,7 +23,6 @@ import { writable } from 'svelte/store';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import * as agentsStore from '/@/stores/agents';
-import * as agentWorkspaceRuntimeStore from '/@/stores/agentworkspace-runtime';
 import * as configurationPropertiesStore from '/@/stores/configurationProperties';
 import * as inferenceConnectionSummariesStore from '/@/stores/inference-connection-summaries';
 import * as modelCatalogStore from '/@/stores/model-catalog';
@@ -40,7 +39,6 @@ vi.mock(import('/@/stores/agents'));
 vi.mock(import('/@/stores/providers'));
 vi.mock(import('/@/stores/model-catalog'));
 vi.mock(import('/@/stores/models'));
-vi.mock(import('/@/stores/agentworkspace-runtime'));
 vi.mock(import('/@/stores/inference-connection-summaries'));
 vi.mock(import('/@/stores/configurationProperties'));
 
@@ -175,7 +173,6 @@ beforeEach(() => {
   vi.mocked(agentsStore).agentInfos = writable<AgentInfo[]>(mockAgentInfos);
   vi.mocked(providersStore).providerInfos = writable<ProviderInfo[]>([]);
   vi.mocked(modelsStore).catalogModels = writable<CatalogModelInfo[]>([]);
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('openshell');
   vi.mocked(modelCatalogStore).disabledModels = writable<Set<string>>(new Set());
   vi.mocked(inferenceConnectionSummariesStore).inferenceConnectionSummariesData = writable<
     Readonly<InferenceConnectionSummary[]>

@@ -83,9 +83,7 @@ $effect(() => {
   <div>
     <h3 class="text-base font-semibold text-[var(--pd-modal-text)] mb-1">Choose your coding agent</h3>
     <p class="text-xs text-[var(--pd-content-card-text)] opacity-70 mb-3">
-      Pick one runtime for <code class="text-[11px] bg-purple-500/10 text-purple-300 px-1.5 py-0.5 rounded">kdn</code> in
-      this workspace. API keys and providers are configured in Settings; the list below shows models that match the
-      selected agent.
+      API keys and providers are configured in Settings; the list below shows models that match the selected agent.
     </p>
 
     <div class="grid grid-cols-4 gap-3" role="listbox" aria-label="Coding agent">

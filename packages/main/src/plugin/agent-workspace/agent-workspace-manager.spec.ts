@@ -291,7 +291,6 @@ describe('create – OpenShell mode', () => {
   const defaultOptions: AgentWorkspaceCreateOptions = {
     sourcePath: '/tmp/my-project',
     agent: 'claude',
-    runtime: 'podman',
     name: 'my-sandbox',
     model: 'ramalama::granite-4.6::',
   };
