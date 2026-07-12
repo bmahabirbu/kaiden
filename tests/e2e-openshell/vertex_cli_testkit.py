@@ -12,6 +12,7 @@ from openshell_testkit import (
     cleanup_sandbox,
     fail_with_history,
     generate_configs,
+    generated_upload_args,
     render_transcript,
     run_command,
     sandbox_base_image_args,
@@ -111,6 +112,7 @@ def vertex_agent_sandbox(
     model_endpoint,
     sandbox_name,
     description,
+    skills=None,
     config=None,
 ):
     provider_name = f'{sandbox_name}-{os.getpid()}'
@@ -124,13 +126,17 @@ def vertex_agent_sandbox(
 
     try:
         try:
+            input_config = {
+                'agent': agent,
+                'modelLabel': vertex_cli_config.model,
+                'llmMetadataName': VERTEX_LLM_METADATA_NAME,
+                'modelEndpoint': model_endpoint,
+            }
+            if skills:
+                input_config['skills'] = skills
+
             generated = generate_configs(
-                {
-                    'agent': agent,
-                    'modelLabel': vertex_cli_config.model,
-                    'llmMetadataName': VERTEX_LLM_METADATA_NAME,
-                    'modelEndpoint': model_endpoint,
-                },
+                input_config,
                 history=history,
             )
         except RuntimeError as exc:
@@ -187,11 +193,7 @@ def vertex_agent_sandbox(
         assert_success(set_inference_result, 'OpenShell inference route setup failed', history)
 
         policy_path, agent_config_paths = write_generated_config(generated, temp_dir)
-        upload_args = [
-            arg
-            for config_file in agent_config_paths
-            for arg in ['--upload', f'{config_file["local"]}:{config_file["remote"]}']
-        ]
+        upload_args = generated_upload_args(generated, agent_config_paths)
         env_args = [
             arg
             for entry in generated.workspace_environment
