@@ -15,6 +15,12 @@ They are intentionally pytest-native. Avoid adding custom test runners or step-s
 
 Use pytest as the harness because these tests are primarily CLI and sandbox orchestration: preflight checks, temp files, subprocess transcripts, sandbox lifecycle, skips, and parametrized agent cases. Keep Kaiden behavior in TypeScript by using `generate-config.mts` as a small Node/TS helper that generates config artifacts from production helpers and real agent registrations.
 
+## Change boundaries
+
+OpenShell E2E regression-test changes should stay in test files and test harness helpers. Do not include production code edits in a regression-test commit or PR just to make a test pass.
+
+If an E2E test exposes a production bug, split the production fix into its own focused branch, commit, and PR. Keep the regression-test branch limited to test coverage unless the user explicitly asks for a combined special-case change.
+
 The language split is intentional:
 
 - Python owns orchestration and readable failure reporting.
