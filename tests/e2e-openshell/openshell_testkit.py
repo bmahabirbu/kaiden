@@ -293,6 +293,14 @@ def write_generated_config(generated, directory):
     return policy_path, agent_config_paths
 
 
+def generated_upload_args(generated, agent_config_paths):
+    uploads = [
+        *[f'{config["local"]}:{config["remote"]}' for config in agent_config_paths],
+        *[f'{upload["local"]}:{upload["remote"]}' for upload in generated.skill_uploads],
+    ]
+    return [arg for upload in uploads for arg in ['--upload', upload]]
+
+
 def assert_success(result, message, history=None):
     if result.returncode != 0 or result.timed_out:
         fail_with_result(message, result, history)

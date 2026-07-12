@@ -15,7 +15,13 @@ from dataclasses import dataclass
 
 import pytest
 
-from agent_cases import agent_prompt_command
+from agent_cases import (
+    BRIAN_FOOD_SKILL_OUTPUT,
+    BRIAN_FOOD_SKILL_NAME,
+    BRIAN_FOOD_SKILL_PATH,
+    BRIAN_FOOD_SKILL_PROMPT,
+    agent_prompt_command,
+)
 from openshell_testkit import (
     SandboxCase,
     assert_success,
@@ -23,6 +29,7 @@ from openshell_testkit import (
     fail_with_history,
     fail_with_result,
     generate_configs,
+    generated_upload_args,
     render_transcript,
     run_command,
     sandbox_base_image_args,
@@ -242,26 +249,22 @@ def opencode_local_openai_sandbox(local_openai_cli_config, gateway_ready, tmp_pa
     run_command(['openshell', 'sandbox', 'delete', sandbox_name], timeout=30)
 
     try:
-        generated = generate_configs(
-            {
-                'agent': 'opencode',
-                'modelLabel': local_openai_cli_config.model,
-                'llmMetadataName': local_openai_cli_config.provider_id,
-                'modelEndpoint': local_openai_cli_config.base_url,
-            },
-            history=history,
-        )
+        input_config = {
+            'agent': 'opencode',
+            'modelLabel': local_openai_cli_config.model,
+            'llmMetadataName': local_openai_cli_config.provider_id,
+            'modelEndpoint': local_openai_cli_config.base_url,
+            'skills': [BRIAN_FOOD_SKILL_PATH],
+        }
+
+        generated = generate_configs(input_config, history=history)
     except RuntimeError as exc:
         fail_with_history(f'failed to generate OpenCode local OpenAI config: {exc}', history)
 
     if not generated.policy:
         fail_with_history('expected Kaiden to generate an OpenShell policy for the local OpenAI endpoint', history)
     policy_path, agent_config_paths = write_generated_config(generated, temp_dir)
-    upload_args = [
-        arg
-        for config_file in agent_config_paths
-        for arg in ['--upload', f'{config_file["local"]}:{config_file["remote"]}']
-    ]
+    upload_args = generated_upload_args(generated, agent_config_paths)
     env_args = [
         arg
         for entry in generated.workspace_environment
@@ -345,6 +348,32 @@ def test_opencode_run_responds_with_local_openai(opencode_local_openai_sandbox):
     if '4' not in combined:
         fail_with_result(
             'expected opencode run to answer 2+2 with 4',
+            run_result,
+            opencode_local_openai_sandbox.history,
+        )
+
+
+def test_opencode_run_uses_uploaded_skill_with_local_openai(opencode_local_openai_sandbox):
+    local_openai_model = opencode_local_openai_sandbox.config['localOpenAIModel']
+    local_openai_provider = opencode_local_openai_sandbox.config['localOpenAIProvider']
+    run_cmd = agent_prompt_command(
+        'opencode',
+        BRIAN_FOOD_SKILL_PROMPT,
+        provider=local_openai_provider,
+        model=local_openai_model,
+    )
+
+    run_result = opencode_local_openai_sandbox.exec(
+        run_cmd,
+        timeout=240,
+        label=f'running: {shell_join(run_cmd)}',
+    )
+    assert_success(run_result, 'opencode run failed while answering from uploaded skill', opencode_local_openai_sandbox.history)
+
+    combined = '\n'.join(part for part in [run_result.stdout, run_result.stderr] if part).strip()
+    if BRIAN_FOOD_SKILL_OUTPUT not in combined.lower():
+        fail_with_result(
+            f'expected opencode run to answer from {BRIAN_FOOD_SKILL_NAME} skill with {BRIAN_FOOD_SKILL_OUTPUT}',
             run_result,
             opencode_local_openai_sandbox.history,
         )

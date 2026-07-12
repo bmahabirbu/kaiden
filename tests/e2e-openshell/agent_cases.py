@@ -6,6 +6,10 @@ PLAYWRIGHT_MCP_PACKAGE = '@playwright/mcp@0.0.73'
 PLAYWRIGHT_MCP_NAME = 'ai.openkaiden.registry/playwright'
 SVELTE_SKILL_PATH = '.agents/skills/svelte-code-writer'
 SVELTE_SKILL_NAME = 'svelte-code-writer'
+BRIAN_FOOD_SKILL_PATH = 'tests/e2e-openshell/fixtures/brian-food'
+BRIAN_FOOD_SKILL_NAME = 'brian-food'
+BRIAN_FOOD_SKILL_PROMPT = f'Using skill {BRIAN_FOOD_SKILL_NAME}, what does Brian like? Reply with just the food.'
+BRIAN_FOOD_SKILL_OUTPUT = 'cheese'
 AGENT_COMMAND_REGISTRY = Path(__file__).with_name('agent-command-registry.json')
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

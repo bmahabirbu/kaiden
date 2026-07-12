@@ -82,6 +82,8 @@ Provider compatibility should come from the registered Kaiden agent. For prompt 
 
 Command transcripts are captured in `openshell_testkit.py` and included only on failures.
 
+Pytest or Python syntax checks may create `__pycache__/` directories while validating these tests. Do not spend time deleting those cache files during normal work; leave them untracked and do not include them in commits.
+
 ## Current assertions
 
 `test_00_openshell_preflight.py` checks:
@@ -107,9 +109,9 @@ Command transcripts are captured in `openshell_testkit.py` and included only on 
 
 `test_sandbox_skills.py` adds extra skill-list assertions only for registry entries with `commands.skillList`. Most agents do not expose a skill-list CLI, so the MCP sandbox's skill upload/location assertion remains the baseline skill regression.
 
-`test_03_prompt_vertex_cli.py` runs Vertex prompt smoke tests for registry entries with `commands.prompt`, using the real agent registration to decide provider support.
+`test_03_prompt_vertex_cli.py` runs Vertex prompt smoke tests for registry entries with `commands.prompt`, using the real agent registration to decide provider support. It covers default prompt behavior and a skill-backed prompt in the same sandbox.
 
-`test_03_prompt_openai_local_cli.py` runs the local OpenAI-compatible OpenCode prompt smoke test when explicitly enabled by environment.
+`test_03_prompt_openai_local_cli.py` runs the local OpenAI-compatible OpenCode prompt smoke test when explicitly enabled by environment. It covers default prompt behavior and a skill-backed prompt in the same sandbox.
 
 ## How config generation works
 

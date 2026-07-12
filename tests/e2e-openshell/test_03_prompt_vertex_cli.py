@@ -5,7 +5,15 @@ Pure CLI E2E for prompt-capable agents running through OpenShell Vertex AI infer
 
 import pytest
 
-from agent_cases import AGENT_PROMPT_CASES, agent_case_id, agent_prompt_command
+from agent_cases import (
+    AGENT_PROMPT_CASES,
+    BRIAN_FOOD_SKILL_OUTPUT,
+    BRIAN_FOOD_SKILL_NAME,
+    BRIAN_FOOD_SKILL_PATH,
+    BRIAN_FOOD_SKILL_PROMPT,
+    agent_case_id,
+    agent_prompt_command,
+)
 from openshell_testkit import assert_success, fail_with_result, shell_join
 from vertex_cli_testkit import load_vertex_cli_config, vertex_agent_sandbox
 
@@ -34,6 +42,7 @@ def vertex_prompt_sandbox(agent_prompt_case, vertex_cli_config, gateway_ready, t
         model_endpoint=VERTEX_MODEL_ENDPOINT,
         sandbox_name=f'kdn-e2e-{agent_prompt_case["agent"]}-vertex',
         description=f'{agent_prompt_case["agent"]} Vertex',
+        skills=[BRIAN_FOOD_SKILL_PATH],
         config={'agent': agent_prompt_case['agent']},
     ) as sandbox:
         yield sandbox
@@ -63,6 +72,32 @@ def test_agent_prompt_responds_with_vertex_ai(vertex_prompt_sandbox):
     if '4' not in combined:
         fail_with_result(
             f'expected {agent} prompt command to answer 2+2 with 4',
+            run_result,
+            vertex_prompt_sandbox.history,
+        )
+
+
+def test_agent_prompt_uses_uploaded_skill_with_vertex_ai(vertex_prompt_sandbox):
+    agent = vertex_prompt_sandbox.config['agent']
+    vertex_model = vertex_prompt_sandbox.config['vertexModel']
+    run_cmd = agent_prompt_command(
+        agent,
+        BRIAN_FOOD_SKILL_PROMPT,
+        provider=VERTEX_COMMAND_PROVIDER,
+        model=vertex_model,
+    )
+
+    run_result = vertex_prompt_sandbox.exec(
+        run_cmd,
+        timeout=180,
+        label=f'running: {shell_join(run_cmd)}',
+    )
+    assert_success(run_result, f'{agent} prompt command failed while answering from uploaded skill', vertex_prompt_sandbox.history)
+
+    combined = '\n'.join(part for part in [run_result.stdout, run_result.stderr] if part).strip()
+    if BRIAN_FOOD_SKILL_OUTPUT not in combined.lower():
+        fail_with_result(
+            f'expected {agent} prompt command to answer from {BRIAN_FOOD_SKILL_NAME} skill with {BRIAN_FOOD_SKILL_OUTPUT}',
             run_result,
             vertex_prompt_sandbox.history,
         )
