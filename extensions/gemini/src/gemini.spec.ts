@@ -313,7 +313,8 @@ describe('factory', () => {
 
     expect(SAFE_STORAGE_MOCK.delete).toHaveBeenCalledWith('gemini:fake-uuid-1:token');
     expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection._type', undefined);
-    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection.GEMINI_API_KEY', undefined);
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection.OPENAI_API_KEY', undefined);
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection.OPENAI_BASE_URL', undefined);
   });
 });
 
@@ -353,7 +354,8 @@ describe('connection delete lifecycle', () => {
 
     // Verify configuration clearing
     expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection._type', undefined);
-    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection.GEMINI_API_KEY', undefined);
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection.OPENAI_API_KEY', undefined);
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection.OPENAI_BASE_URL', undefined);
 
     // Verify storage update - the tokens list is updated after per-connection secret
     expect(SAFE_STORAGE_MOCK.store).toHaveBeenCalledWith(TOKENS_KEY, JSON.stringify([]));
@@ -415,10 +417,14 @@ describe('workspace configuration', () => {
     expect(configuration.getConfiguration).toHaveBeenCalledWith(undefined, connection);
 
     // Verify configuration updates
-    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection._type', PROVIDER_ID);
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection._type', 'openai');
     expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith(
-      'gemini.connection.GEMINI_API_KEY',
+      'gemini.connection.OPENAI_API_KEY',
       `${PROVIDER_ID}:fake-uuid-1:token`,
+    );
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith(
+      'gemini.connection.OPENAI_BASE_URL',
+      'https://generativelanguage.googleapis.com/v1beta/openai/',
     );
   });
 
@@ -437,8 +443,8 @@ describe('workspace configuration', () => {
     expect(SAFE_STORAGE_MOCK.store).toHaveBeenCalledWith(`${PROVIDER_ID}:id-2:token`, 'key2');
 
     // Verify configuration updates for both connections
-    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection._type', PROVIDER_ID);
-    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection.GEMINI_API_KEY', `${PROVIDER_ID}:id-1:token`);
-    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection.GEMINI_API_KEY', `${PROVIDER_ID}:id-2:token`);
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection._type', 'openai');
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection.OPENAI_API_KEY', `${PROVIDER_ID}:id-1:token`);
+    expect(CONFIG_UPDATE_MOCK).toHaveBeenCalledWith('gemini.connection.OPENAI_API_KEY', `${PROVIDER_ID}:id-2:token`);
   });
 });
