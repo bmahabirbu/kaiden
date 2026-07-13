@@ -290,6 +290,7 @@ describe('factory', () => {
       name: 'dum*****',
       type: 'cloud',
       llmMetadata: { name: 'gemini' },
+      endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/',
       status: expect.any(Function),
       lifecycle: {
         delete: expect.any(Function),

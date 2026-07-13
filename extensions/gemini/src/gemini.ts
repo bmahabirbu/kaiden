@@ -74,7 +74,7 @@ export class Gemini implements Disposable {
     // register MCP Provider connection factory
     this.provider?.setInferenceProviderConnectionFactory({
       connectionTypes: ['cloud'],
-      llmMetadata: { name: 'gemini' },
+      llmMetadata: { name: PROVIDER_ID },
       create: this.mcpFactory.bind(this),
     });
 
@@ -175,7 +175,8 @@ export class Gemini implements Disposable {
       id,
       name: this.maskKey(token),
       type: 'cloud',
-      llmMetadata: { name: 'gemini' },
+      llmMetadata: { name: PROVIDER_ID },
+      endpoint: OPENAI_COMPAT_BASE_URL,
       sdk: google,
       status(): ProviderConnectionStatus {
         return status;
