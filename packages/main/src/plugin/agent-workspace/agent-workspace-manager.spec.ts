@@ -1257,6 +1257,88 @@ describe('dispose', () => {
   });
 });
 
+describe('terminal IPC session lifecycle', () => {
+  function createTerminalMockPty(): { pty: IPty; triggerData: (data: string) => void } {
+    let onDataCb: ((data: string) => void) | undefined;
+    const pty = {
+      onData: vi.fn((cb: (data: string) => void) => {
+        onDataCb = cb;
+        return { dispose: vi.fn() };
+      }),
+      onExit: vi.fn(() => ({ dispose: vi.fn() })),
+      write: vi.fn(),
+      resize: vi.fn(),
+      kill: vi.fn(),
+      pid: 789,
+    } as unknown as IPty;
+    return {
+      pty,
+      triggerData: (data: string): void => {
+        onDataCb?.(data);
+      },
+    };
+  }
+
+  function getIpcHandler<T>(channel: string): T {
+    return vi.mocked(ipcHandle).mock.calls.find(call => call[0] === channel)![1] as unknown as T;
+  }
+
+  test('closes an active workspace terminal before opening a fresh one', async () => {
+    vi.mocked(openshellCli.listSandboxesPerGateway).mockResolvedValue(TEST_SUMMARIES);
+    const { pty: firstPty, triggerData: triggerFirstData } = createTerminalMockPty();
+    vi.mocked(spawn).mockReturnValue(firstPty);
+
+    const terminalHandler =
+      getIpcHandler<(_listener: unknown, id: string, onDataId: number) => Promise<number>>('agent-workspace:terminal');
+
+    await terminalHandler({}, 'ws-1', 10);
+
+    const { pty: secondPty, triggerData: triggerSecondData } = createTerminalMockPty();
+    vi.mocked(spawn).mockReturnValue(secondPty);
+    await terminalHandler({}, 'ws-1', 11);
+    triggerFirstData('stale output');
+    triggerSecondData('output');
+
+    expect(firstPty.kill).toHaveBeenCalled();
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(webContents.send).not.toHaveBeenCalledWith('agent-workspace:terminal-onData', 11, 'stale output');
+    expect(webContents.send).toHaveBeenCalledWith('agent-workspace:terminal-onData', 11, 'output');
+  });
+
+  test('routes send and resize through the workspace terminal session and removes it on close', async () => {
+    vi.mocked(openshellCli.listSandboxesPerGateway).mockResolvedValue(TEST_SUMMARIES);
+    const { pty } = createTerminalMockPty();
+    vi.mocked(spawn).mockReturnValue(pty);
+
+    const terminalHandler =
+      getIpcHandler<(_listener: unknown, id: string, onDataId: number) => Promise<number>>('agent-workspace:terminal');
+    const sendHandler =
+      getIpcHandler<(_listener: unknown, onDataId: number, content: string) => Promise<void>>(
+        'agent-workspace:terminalSend',
+      );
+    const resizeHandler = getIpcHandler<
+      (_listener: unknown, onDataId: number, width: number, height: number) => Promise<void>
+    >('agent-workspace:terminalResize');
+    const closeHandler = getIpcHandler<(_listener: unknown, onDataId: number) => Promise<void>>(
+      'agent-workspace:terminalClose',
+    );
+
+    await terminalHandler({}, 'ws-1', 10);
+    await sendHandler({}, 10, 'hello');
+    await resizeHandler({}, 10, 120, 40);
+    await closeHandler({}, 10);
+
+    const nextPty = createTerminalMockPty().pty;
+    vi.mocked(spawn).mockReturnValue(nextPty);
+    await terminalHandler({}, 'ws-1', 11);
+
+    expect(pty.write).toHaveBeenCalledWith('hello');
+    expect(pty.resize).toHaveBeenCalledWith(120, 40);
+    expect(pty.kill).toHaveBeenCalled();
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('terminal agent command execution', () => {
   const SANDBOXES_WITH_AGENT: GatewaySandboxes[] = [
     {
@@ -1346,6 +1428,31 @@ describe('terminal agent command execution', () => {
     triggerData2('$ ');
 
     expect(pty2.write).not.toHaveBeenCalled();
+  });
+
+  test('retries agent command when replaced before first terminal data', async () => {
+    vi.mocked(openshellCli.listSandboxesPerGateway).mockResolvedValue(SANDBOXES_WITH_AGENT);
+    vi.mocked(agentRegistry.getAgent).mockResolvedValue({
+      id: 'test-agent',
+      name: 'Test Agent',
+      description: '',
+      command: '/usr/bin/agent start',
+      destinationSkillsFolder: '~/.agent',
+    });
+    const { pty: pty1, triggerData: triggerData1 } = createTerminalMockPty();
+    vi.mocked(spawn).mockReturnValue(pty1);
+
+    await getTerminalHandler()({}, 'ws-agent', 10);
+
+    const { pty: pty2, triggerData: triggerData2 } = createTerminalMockPty();
+    vi.mocked(spawn).mockReturnValue(pty2);
+    await getTerminalHandler()({}, 'ws-agent', 11);
+
+    triggerData1('$ ');
+    triggerData2('$ ');
+
+    expect(pty1.write).not.toHaveBeenCalledWith('/usr/bin/agent start\n');
+    expect(pty2.write).toHaveBeenCalledWith('/usr/bin/agent start\n');
   });
 
   test('does not execute command when workspace has no agent label', async () => {

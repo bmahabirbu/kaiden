@@ -62,6 +62,14 @@ const MOUNT_HOME_PREFIX = '$HOME';
 
 type OpenshellUpload = { local: string; remote: string };
 
+interface WorkspaceTerminalSession {
+  callbackId: number;
+  pty: IPty;
+  write: (param: string) => void;
+  resize: (w: number, h: number) => void;
+  commandExecuted: boolean;
+}
+
 export function encodeWorkspaceLabels(sourcePath: string): Record<string, string> {
   const encoded = Buffer.from(sourcePath).toString('base64url');
   if (encoded.length <= LABEL_MAX_LENGTH) {
@@ -80,12 +88,7 @@ export function encodeWorkspaceLabels(sourcePath: string): Record<string, string
 @injectable()
 export class AgentWorkspaceManager implements Disposable {
   private instancesWatcher: FileSystemWatcher | undefined;
-  private readonly terminalCallbacks = new Map<
-    number,
-    { write: (param: string) => void; resize: (w: number, h: number) => void }
-  >();
-  private readonly terminalProcesses = new Map<number, IPty>();
-  private readonly commandExecutedWorkspaces = new Set<string>();
+  private readonly workspaceTerminals = new Map<string, WorkspaceTerminalSession>();
 
   constructor(
     @inject(ApiSenderType)
@@ -410,7 +413,7 @@ export class AgentWorkspaceManager implements Disposable {
     task.status = 'in-progress';
     try {
       await this.openshellCli.deleteSandbox(workspaceName);
-      this.commandExecutedWorkspaces.delete(id);
+      this.closeWorkspaceTerminal(id);
       this.apiSender.send('agent-workspace-update');
       task.status = 'success';
       return { id };
@@ -538,6 +541,33 @@ export class AgentWorkspaceManager implements Disposable {
     };
   }
 
+  private getWorkspaceTerminalByCallbackId(callbackId: number): WorkspaceTerminalSession | undefined {
+    return Array.from(this.workspaceTerminals.values()).find(session => session.callbackId === callbackId);
+  }
+
+  private closeWorkspaceTerminal(workspaceId: string): void {
+    const session = this.workspaceTerminals.get(workspaceId);
+    if (!session) {
+      return;
+    }
+    try {
+      session.pty.kill();
+    } catch {
+      /* already exited */
+    }
+    this.workspaceTerminals.delete(workspaceId);
+  }
+
+  private closeWorkspaceTerminalByCallbackId(callbackId: number): void {
+    const entry = Array.from(this.workspaceTerminals.entries()).find(
+      ([, session]) => session.callbackId === callbackId,
+    );
+    if (!entry) {
+      return;
+    }
+    this.closeWorkspaceTerminal(entry[0]);
+  }
+
   init(): void {
     const runtimeConfiguration: IConfigurationNode = {
       id: `preferences.${AgentWorkspaceSettings.SectionName}`,
@@ -611,7 +641,13 @@ export class AgentWorkspaceManager implements Disposable {
           throw new Error(`workspace "${id}" not found. Use "workspace list" to see available workspaces.`);
         }
 
-        const shouldExecuteCommand = !this.commandExecutedWorkspaces.has(id);
+        const existingSession = this.workspaceTerminals.get(id);
+        const commandExecuted = existingSession?.commandExecuted ?? false;
+        if (existingSession) {
+          this.closeWorkspaceTerminal(id);
+        }
+
+        const shouldExecuteCommand = !commandExecuted;
         let agentCommand: string | undefined;
         if (shouldExecuteCommand && workspace.labels) {
           const agentId = workspace.labels[AGENT_LABEL];
@@ -625,37 +661,55 @@ export class AgentWorkspaceManager implements Disposable {
           }
         }
 
-        if (agentCommand) {
-          this.commandExecutedWorkspaces.add(id);
-        }
-
         let commandSent = false;
         const invocation = this.shellInAgentWorkspace(
           workspace.name,
           (content: string) => {
+            const session = this.workspaceTerminals.get(id);
+            if (session && session.pty !== invocation.ptyProcess) {
+              return;
+            }
             if (!this.webContents.isDestroyed()) {
-              this.webContents.send('agent-workspace:terminal-onData', onDataId, content);
+              this.webContents.send('agent-workspace:terminal-onData', session?.callbackId ?? onDataId, content);
             }
             if (!commandSent && agentCommand) {
               commandSent = true;
               invocation.write(`${agentCommand}\n`);
+              const activeSession = this.workspaceTerminals.get(id);
+              if (activeSession?.pty === invocation.ptyProcess) {
+                activeSession.commandExecuted = true;
+              }
             }
           },
           (error: string) => {
+            const session = this.workspaceTerminals.get(id);
+            if (session && session.pty !== invocation.ptyProcess) {
+              return;
+            }
             if (!this.webContents.isDestroyed()) {
-              this.webContents.send('agent-workspace:terminal-onError', onDataId, error);
+              this.webContents.send('agent-workspace:terminal-onError', session?.callbackId ?? onDataId, error);
             }
           },
           () => {
-            if (!this.webContents.isDestroyed()) {
-              this.webContents.send('agent-workspace:terminal-onEnd', onDataId);
+            const session = this.workspaceTerminals.get(id);
+            if (session && session.pty !== invocation.ptyProcess) {
+              return;
             }
-            this.terminalCallbacks.delete(onDataId);
-            this.terminalProcesses.delete(onDataId);
+            if (!this.webContents.isDestroyed()) {
+              this.webContents.send('agent-workspace:terminal-onEnd', session?.callbackId ?? onDataId);
+            }
+            if (session?.pty === invocation.ptyProcess) {
+              this.workspaceTerminals.delete(id);
+            }
           },
         );
-        this.terminalCallbacks.set(onDataId, { write: invocation.write, resize: invocation.resize });
-        this.terminalProcesses.set(onDataId, invocation.ptyProcess);
+        this.workspaceTerminals.set(id, {
+          callbackId: onDataId,
+          pty: invocation.ptyProcess,
+          write: invocation.write,
+          resize: invocation.resize,
+          commandExecuted,
+        });
         return onDataId;
       },
     );
@@ -663,9 +717,9 @@ export class AgentWorkspaceManager implements Disposable {
     this.ipcHandle(
       'agent-workspace:terminalSend',
       async (_listener: unknown, onDataId: number, content: string): Promise<void> => {
-        const callback = this.terminalCallbacks.get(onDataId);
-        if (callback) {
-          callback.write(content);
+        const session = this.getWorkspaceTerminalByCallbackId(onDataId);
+        if (session) {
+          session.write(content);
         }
       },
     );
@@ -673,24 +727,15 @@ export class AgentWorkspaceManager implements Disposable {
     this.ipcHandle(
       'agent-workspace:terminalResize',
       async (_listener: unknown, onDataId: number, width: number, height: number): Promise<void> => {
-        const callback = this.terminalCallbacks.get(onDataId);
-        if (callback) {
-          callback.resize(width, height);
+        const session = this.getWorkspaceTerminalByCallbackId(onDataId);
+        if (session) {
+          session.resize(width, height);
         }
       },
     );
 
     this.ipcHandle('agent-workspace:terminalClose', async (_listener: unknown, onDataId: number): Promise<void> => {
-      const proc = this.terminalProcesses.get(onDataId);
-      if (proc) {
-        try {
-          proc.kill();
-        } catch {
-          /* already exited */
-        }
-      }
-      this.terminalProcesses.delete(onDataId);
-      this.terminalCallbacks.delete(onDataId);
+      this.closeWorkspaceTerminalByCallbackId(onDataId);
     });
 
     this.openshellGateway.onDidGatewayStart(() => {
@@ -715,15 +760,13 @@ export class AgentWorkspaceManager implements Disposable {
   @preDestroy()
   dispose(): void {
     this.instancesWatcher?.dispose();
-    for (const proc of this.terminalProcesses.values()) {
+    for (const session of this.workspaceTerminals.values()) {
       try {
-        proc.kill();
+        session.pty.kill();
       } catch {
         /* already exited */
       }
     }
-    this.terminalProcesses.clear();
-    this.terminalCallbacks.clear();
-    this.commandExecutedWorkspaces.clear();
+    this.workspaceTerminals.clear();
   }
 }
