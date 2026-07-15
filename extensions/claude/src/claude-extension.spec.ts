@@ -76,13 +76,6 @@ describe('ClaudeExtension', () => {
     expect(agent.isSupportedModelType!({ name: 'openai' })).toBe(false);
   });
 
-  test('registered agent does not restrict runtimes', async () => {
-    await claudeExtension.activate();
-
-    const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
-    expect(agent.isSupportedRuntime).toBeUndefined();
-  });
-
   test('activate handles error during container creation', async () => {
     const faultyGetAsync = vi.fn().mockRejectedValue(new Error('Container creation failed'));
     vi.spyOn(claudeExtension, 'getContainer').mockReturnValue({

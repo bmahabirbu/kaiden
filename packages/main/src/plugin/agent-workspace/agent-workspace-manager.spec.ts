@@ -228,21 +228,6 @@ describe('init', () => {
     expect(ipcHandle).toHaveBeenCalledWith('agent-workspace:updateConfiguration', expect.any(Function));
   });
 
-  test('registers runtime configuration with enum', () => {
-    expect(configurationRegistry.registerConfigurations).toHaveBeenCalledWith([
-      expect.objectContaining({
-        id: 'preferences.agentWorkspace',
-        properties: expect.objectContaining({
-          'agentWorkspace.runtime': expect.objectContaining({
-            type: 'string',
-            enum: ['podman', 'openshell'],
-            default: 'podman',
-          }),
-        }),
-      }),
-    ]);
-  });
-
   test('registers defaultBaseImage configuration', () => {
     expect(configurationRegistry.registerConfigurations).toHaveBeenCalledWith([
       expect.objectContaining({
@@ -306,7 +291,6 @@ describe('create – OpenShell mode', () => {
   const defaultOptions: AgentWorkspaceCreateOptions = {
     sourcePath: '/tmp/my-project',
     agent: 'claude',
-    runtime: 'podman',
     name: 'my-sandbox',
     model: 'ramalama::granite-4.6::',
   };

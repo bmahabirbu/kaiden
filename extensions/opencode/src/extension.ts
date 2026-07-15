@@ -85,9 +85,6 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
       },
     ],
     destinationSkillsFolder: '${HOME}/.opencode/skills',
-    isSupportedRuntime(): boolean {
-      return true;
-    },
     isSupportedModelType(): boolean {
       return true;
     },

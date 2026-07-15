@@ -24,7 +24,6 @@ import { router } from 'tinro';
 import { beforeEach, expect, test, vi } from 'vitest';
 
 import { withConfirmation } from '/@/lib/dialogs/messagebox-utils';
-import * as agentWorkspaceRuntimeStore from '/@/stores/agentworkspace-runtime';
 import * as mcpStore from '/@/stores/mcp-remote-servers';
 import type { SandboxInfoWithGateway } from '/@/stores/openshell-sandboxes';
 import * as ragStore from '/@/stores/rag-environments';
@@ -41,7 +40,6 @@ vi.mock(import('/@/stores/skills'));
 vi.mock(import('/@/stores/rag-environments'));
 vi.mock(import('/@/navigation'));
 vi.mock(import('/@/stores/mcp-remote-servers'));
-vi.mock(import('/@/stores/agentworkspace-runtime'));
 vi.mock(import('/@/lib/dialogs/messagebox-utils'));
 
 const routerStore = writable({
@@ -75,7 +73,6 @@ beforeEach(() => {
   vi.mocked(skillsStore).skillInfos = writable<readonly SkillInfo[]>([]);
   vi.mocked(ragStore).ragEnvironments = writable<RagEnvironment[]>([]);
   vi.mocked(mcpStore).mcpRemoteServerInfos = writable<readonly MCPRemoteServerInfo[]>([]);
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('podman');
 });
 
 test('Expect General section is active by default with workspace info', () => {
@@ -976,30 +973,6 @@ test('Expect Agent mode radio is disabled', async () => {
   expect(screen.getByRole('radio', { name: 'Use Agent mode' })).toBeDisabled();
 });
 
-test('Expect Unrestricted disabled when runtime is openshell', async () => {
-  vi.mocked(agentWorkspaceRuntimeStore).agentWorkspaceRuntime = writable<string>('openshell');
-  render(AgentWorkspaceDetailsSettings, { workspaceId: 'ws-1', workspaceSummary, configuration: {} });
-
-  const networkNav = screen.getByRole('link', { name: 'Network' });
-  await fireEvent.click(networkNav);
-
-  expect(screen.getByRole('radio', { name: 'Use Unrestricted' })).toBeDisabled();
-});
-
-test('Expect saving Unrestricted mode calls updateAgentWorkspaceConfiguration', async () => {
-  render(AgentWorkspaceDetailsSettings, { workspaceId: 'ws-1', workspaceSummary, configuration: {} });
-
-  const networkNav = screen.getByRole('link', { name: 'Network' });
-  await fireEvent.click(networkNav);
-
-  await fireEvent.click(screen.getByRole('radio', { name: 'Use Unrestricted' }));
-  await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
-
-  expect(window.updateAgentWorkspaceConfiguration).toHaveBeenCalledWith('ws-1', {
-    network: { mode: 'allow' },
-  });
-});
-
 test('Expect saving Deny All mode calls updateAgentWorkspaceConfiguration', async () => {
   render(AgentWorkspaceDetailsSettings, { workspaceId: 'ws-1', workspaceSummary, configuration: {} });
 
@@ -1059,17 +1032,6 @@ test('Expect switching to Developer Preset auto-fills default registry hosts', a
   expect(screen.getByLabelText('Custom host 2')).toHaveValue('pypi.python.org');
 });
 
-test('Expect custom hosts hidden when Unrestricted is selected', async () => {
-  render(AgentWorkspaceDetailsSettings, { workspaceId: 'ws-1', workspaceSummary, configuration: {} });
-
-  const networkNav = screen.getByRole('link', { name: 'Network' });
-  await fireEvent.click(networkNav);
-
-  await fireEvent.click(screen.getByRole('radio', { name: 'Use Unrestricted' }));
-
-  expect(screen.queryByLabelText('Custom host 1')).not.toBeInTheDocument();
-});
-
 test('Expect error dialog shown when network save fails', async () => {
   vi.mocked(window.updateAgentWorkspaceConfiguration).mockRejectedValue(new Error('server error'));
   vi.mocked(window.showMessageBox).mockResolvedValue({ response: 0 });
@@ -1079,7 +1041,7 @@ test('Expect error dialog shown when network save fails', async () => {
   const networkNav = screen.getByRole('link', { name: 'Network' });
   await fireEvent.click(networkNav);
 
-  await fireEvent.click(screen.getByRole('radio', { name: 'Use Unrestricted' }));
+  await fireEvent.click(screen.getByRole('radio', { name: 'Use Deny All' }));
   await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
   expect(window.showMessageBox).toHaveBeenCalledWith(

@@ -544,12 +544,6 @@ export class AgentWorkspaceManager implements Disposable {
       title: 'Agent Workspace',
       type: 'object',
       properties: {
-        [`${AgentWorkspaceSettings.SectionName}.${AgentWorkspaceSettings.Runtime}`]: {
-          description: 'Override the container runtime used when creating agent workspaces.',
-          type: 'string',
-          enum: ['podman', 'openshell'],
-          default: 'podman',
-        },
         [`${AgentWorkspaceSettings.SectionName}.${AgentWorkspaceSettings.DefaultBaseImage}`]: {
           description: 'Default base image for agent workspaces when the agent does not specify one.',
           type: 'string',

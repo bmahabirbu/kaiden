@@ -51,7 +51,6 @@ describe('activate', () => {
         tags: ['Recommended'],
         destinationSkillsFolder: '${HOME}/.opencode/skills',
         isSupportedModelType: expect.any(Function),
-        isSupportedRuntime: expect.any(Function),
       }),
     );
   });
@@ -60,14 +59,6 @@ describe('activate', () => {
     await activate(extensionContextMock);
 
     expect(extensionContextMock.subscriptions).toContain(AGENT_DISPOSABLE_MOCK);
-  });
-
-  test('registered agent supports all runtimes', async () => {
-    await activate(extensionContextMock);
-
-    const agent = vi.mocked(agents.registerAgent).mock.calls[0]![0];
-    expect(agent.isSupportedRuntime!('podman')).toBe(true);
-    expect(agent.isSupportedRuntime!('openshell')).toBe(true);
   });
 
   test('registered agent supports all model types including vertexai', async () => {
