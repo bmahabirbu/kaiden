@@ -52,7 +52,7 @@ import type {
 import { ApiSenderType } from '/@api/api-sender/api-sender-type.js';
 import type { IConfigurationNode } from '/@api/configuration/models.js';
 import { IConfigurationRegistry } from '/@api/configuration/models.js';
-import type { GatewaySandboxes } from '/@api/openshell-gateway-info.js';
+import type { GatewayInfo, GatewaySandboxes } from '/@api/openshell-gateway-info.js';
 import { AGENT_LABEL, decodeWorkspaceLabels, WORKSPACE_LABEL } from '/@api/openshell-gateway-info.js';
 
 const HOME_VARIABLE = '${HOME}';
@@ -489,6 +489,10 @@ export class AgentWorkspaceManager implements Disposable {
     return results;
   }
 
+  async listOpenshellGateways(): Promise<GatewayInfo[]> {
+    return this.openshellCli.listGateways();
+  }
+
   async deleteOpenshellSandbox(name: string): Promise<void> {
     const task = this.taskManager.createTask({ title: `Deleting workspace ${name}` });
     task.state = 'running';
@@ -625,6 +629,10 @@ export class AgentWorkspaceManager implements Disposable {
       return this.listOpenshellSandboxes();
     });
 
+    this.ipcHandle('agent-workspace:listOpenshellGateways', async (): Promise<GatewayInfo[]> => {
+      return this.listOpenshellGateways();
+    });
+
     this.ipcHandle(
       'agent-workspace:deleteOpenshellSandbox',
       async (_listener: unknown, name: string): Promise<void> => {
@@ -739,6 +747,7 @@ export class AgentWorkspaceManager implements Disposable {
     });
 
     this.openshellGateway.onDidGatewayStart(() => {
+      this.apiSender.send('agent-gateway-update');
       this.apiSender.send('agent-workspace-update');
     });
 

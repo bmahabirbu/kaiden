@@ -28,7 +28,7 @@ import type {
   FileSystemWatcher,
   ProviderConnectionStatus,
 } from '@openkaiden/api';
-import type { WebContents } from 'electron';
+import type { IpcMainInvokeEvent, WebContents } from 'electron';
 import type { IPty } from 'node-pty';
 import { spawn } from 'node-pty';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -49,7 +49,7 @@ import type { Exec } from '/@/plugin/util/exec.js';
 import type { AgentWorkspaceCreateOptions } from '/@api/agent-workspace-info.js';
 import type { ApiSenderType } from '/@api/api-sender/api-sender-type.js';
 import type { IConfigurationPropertyRecordedSchema, IConfigurationRegistry } from '/@api/configuration/models.js';
-import type { GatewaySandboxes } from '/@api/openshell-gateway-info.js';
+import type { GatewayInfo, GatewaySandboxes } from '/@api/openshell-gateway-info.js';
 import { AGENT_LABEL, decodeWorkspaceLabels } from '/@api/openshell-gateway-info.js';
 import type { TaskState, TaskStatus } from '/@api/taskInfo.js';
 
@@ -228,6 +228,10 @@ describe('init', () => {
     expect(ipcHandle).toHaveBeenCalledWith('agent-workspace:updateConfiguration', expect.any(Function));
   });
 
+  test('registers IPC handler for listOpenshellGateways', () => {
+    expect(ipcHandle).toHaveBeenCalledWith('agent-workspace:listOpenshellGateways', expect.any(Function));
+  });
+
   test('registers defaultBaseImage configuration', () => {
     expect(configurationRegistry.registerConfigurations).toHaveBeenCalledWith([
       expect.objectContaining({
@@ -245,8 +249,9 @@ describe('init', () => {
     expect(openshellGateway.onDidGatewayStart).toHaveBeenCalled();
   });
 
-  test('sends agent-workspace-update when gateway starts', () => {
+  test('sends gateway and workspace update events when gateway starts', () => {
     gatewayStartCallback!();
+    expect(apiSender.send).toHaveBeenCalledWith('agent-gateway-update');
     expect(apiSender.send).toHaveBeenCalledWith('agent-workspace-update');
   });
 });
@@ -898,6 +903,55 @@ describe('list', () => {
     vi.mocked(openshellCli.listSandboxesPerGateway).mockRejectedValue(new Error('command not found'));
 
     await expect(manager.listOpenshellSandboxes()).rejects.toThrow('command not found');
+  });
+});
+
+describe('listOpenshellGateways', () => {
+  const TEST_GATEWAYS: GatewayInfo[] = [
+    {
+      name: 'kaiden-local',
+      endpoint: 'http://127.0.0.1:17670',
+      active: true,
+      auth: 'plaintext',
+      type: 'local',
+      source: 'user',
+    },
+    {
+      name: 'remote-vm',
+      endpoint: 'https://127.0.0.1:17670',
+      active: false,
+      auth: 'mtls',
+      type: 'remote',
+      source: 'user',
+      is_remote: true,
+      remote_host: 'user@gateway-alias',
+      resolved_host: '10.0.0.5',
+    },
+  ];
+
+  test('delegates to openshellCli.listGateways and returns registered gateways', async () => {
+    vi.mocked(openshellCli.listGateways).mockResolvedValue(TEST_GATEWAYS);
+
+    const result = await manager.listOpenshellGateways();
+
+    expect(openshellCli.listGateways).toHaveBeenCalled();
+    expect(result).toEqual(TEST_GATEWAYS);
+  });
+
+  test('rejects when openshellCli.listGateways fails', async () => {
+    vi.mocked(openshellCli.listGateways).mockRejectedValue(new Error('command not found'));
+
+    await expect(manager.listOpenshellGateways()).rejects.toThrow('command not found');
+  });
+
+  test('IPC handler returns OpenShell gateways', async () => {
+    vi.mocked(openshellCli.listGateways).mockResolvedValue(TEST_GATEWAYS);
+    const handler = vi
+      .mocked(ipcHandle)
+      .mock.calls.find(([channel]) => channel === 'agent-workspace:listOpenshellGateways')?.[1];
+
+    expect(handler).toBeDefined();
+    await expect(handler?.({} as IpcMainInvokeEvent)).resolves.toEqual(TEST_GATEWAYS);
   });
 });
 

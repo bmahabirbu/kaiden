@@ -24,6 +24,10 @@ export const GatewayInfoSchema = z.object({
   active: z.boolean().optional(),
   auth: z.string().optional(),
   type: z.string().optional(),
+  source: z.string().optional(),
+  is_remote: z.boolean().optional(),
+  remote_host: z.string().nullable().optional(),
+  resolved_host: z.string().nullable().optional(),
 });
 
 export type GatewayInfo = z.output<typeof GatewayInfoSchema>;
