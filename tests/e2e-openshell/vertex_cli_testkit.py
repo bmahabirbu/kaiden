@@ -137,6 +137,7 @@ def vertex_agent_sandbox(
 
             generated = generate_configs(
                 input_config,
+                source_path=temp_dir / 'workspace',
                 history=history,
             )
         except RuntimeError as exc:

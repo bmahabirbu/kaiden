@@ -46,7 +46,11 @@ if AGENT_SKILL_CASES:
         run_command(['openshell', 'sandbox', 'delete', sandbox_name], timeout=30)
 
         try:
-            generated = generate_configs(agent_skill_case, history=history)
+            generated = generate_configs(
+                agent_skill_case,
+                source_path=temp_dir / 'workspace',
+                history=history,
+            )
         except RuntimeError as exc:
             fail_with_history(f'failed to generate Kaiden skill config for {agent}: {exc}', history)
 

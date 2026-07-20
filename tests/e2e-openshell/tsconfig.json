@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "baseUrl": "../../packages/main",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "paths": {
+      "/@/*": ["./src/*"],
+      "/@api/*": ["../api/src/*"]
+    },
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "esnext",
+    "types": ["node"]
+  },
+  "include": ["*.mjs", "*.mts"]
+}

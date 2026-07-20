@@ -65,7 +65,8 @@ def _build_npm_mcp_case(agent_entry):
         'skills': [SVELTE_SKILL_PATH],
         'skillName': SVELTE_SKILL_NAME,
         'skillReadOutput': f'name: {SVELTE_SKILL_NAME}',
-        'network': {'mode': 'deny', 'hosts': ['registry.npmjs.org']},
+        # Kaiden's workspace writer must add the npm registry required by the npx command.
+        'network': {'mode': 'deny', 'hosts': []},
         'mcpName': PLAYWRIGHT_MCP_NAME,
         'mcpCommands': [
             {

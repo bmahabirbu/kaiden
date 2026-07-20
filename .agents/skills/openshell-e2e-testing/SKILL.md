@@ -37,9 +37,11 @@ tests/e2e-openshell/
 ├── agent_cases.py          # Expands registry entries into pytest cases
 ├── conftest.py             # Pytest fixtures: preflight, gateway, agent_case, sandbox_case
 ├── claude-extension-runtime.mjs # Test runtime stubs for Claude activation dependencies
-├── generate-config.mts     # Node shim importing Kaiden buildPolicyObject()
+├── generate-config.mts     # Thin JSON stdin/stdout wrapper
+├── kaiden-config-adapter.mts # Test adapter calling Kaiden production config helpers
 ├── openkaiden-api-runtime.mjs # Test runtime shim for loading real agent registrations
 ├── openshell_testkit.py    # Command helpers, transcripts, config generation, sandbox model
+├── tsconfig.json           # TypeScript and typed-lint coverage for test adapters
 ├── test_00_openshell_preflight.py # Generic OpenShell availability checks
 ├── test_01_openshell_github_credentials.py # Generic GitHub credential upload assertions
 ├── test_01_openshell_uploads.py # Generic OpenShell source upload assertions
@@ -121,7 +123,7 @@ Pytest or Python syntax checks may create `__pycache__/` directories while valid
 
 ## How config generation works
 
-`openshell_testkit.generate_configs()` runs:
+`openshell_testkit.generate_configs()` gives the adapter a pytest-owned temporary source path and runs:
 
 ```bash
 node --import tsx tests/e2e-openshell/generate-config.mts
@@ -129,12 +131,19 @@ node --import tsx tests/e2e-openshell/generate-config.mts
 
 Do not switch this back to `npx tsx`: the `tsx` CLI can open an IPC socket under `/tmp`, which is fragile in restricted test environments.
 
-The TypeScript shim imports or executes production behavior so the E2E test follows Kaiden's runtime behavior:
+`generate-config.mts` is only the JSON command wrapper. `kaiden-config-adapter.mts` imports or executes production
+behavior so the E2E test follows Kaiden's runtime behavior:
 
+- `writeWorkspaceConfig()` from `packages/main/src/plugin/agent-workspace/workspace-config-writer.ts`
 - `buildPolicyObject()` from `packages/main/src/plugin/openshell-cli/openshell-network-policy.ts`
 - the real extension registration from `extensions/<agent>/src/extension.ts`
 
-`generate-config.mts` redirects `@openkaiden/api` to `openkaiden-api-runtime.mjs`, captures the registered agent, checks model-type support when applicable, runs that agent's `preWorkspaceStart()` hook, and builds only the minimal upload descriptors needed by the OpenShell tests. This avoids duplicating agent config generation in the tests.
+The adapter redirects `@openkaiden/api` to `openkaiden-api-runtime.mjs`, captures the registered agent, checks
+model-type support when applicable, and runs that agent's `preWorkspaceStart()` hook. Before the hook runs, the
+adapter passes the test inputs through `writeWorkspaceConfig()`, including production MCP workspace requirements.
+For example, an `npx` MCP command must gain the npm registry host and Node feature from Kaiden rather than from
+Python test data. The adapter builds only the minimal upload descriptors needed by the OpenShell tests; Python
+continues to own temporary artifact materialization and real OpenShell command orchestration.
 
 Claude activation also needs light test stubs for provider/manager dependencies. Keep those in `claude-extension-runtime.mjs`; do not duplicate Claude's `.claude.json` writer in Python.
 

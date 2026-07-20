@@ -49,6 +49,7 @@ const TYPESCRIPT_PROJECTS = [
   'packages/*/tsconfig.json',
   './extensions/*/tsconfig.json',
   './extensions/*/packages/*/tsconfig.json',
+  './tests/e2e-openshell/tsconfig.json',
   './tests/playwright/tsconfig.json',
 ];
 
