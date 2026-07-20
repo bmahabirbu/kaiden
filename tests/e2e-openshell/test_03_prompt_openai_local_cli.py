@@ -257,7 +257,11 @@ def opencode_local_openai_sandbox(local_openai_cli_config, gateway_ready, tmp_pa
             'skills': [BRIAN_FOOD_SKILL_PATH],
         }
 
-        generated = generate_configs(input_config, history=history)
+        generated = generate_configs(
+            input_config,
+            source_path=temp_dir / 'workspace',
+            history=history,
+        )
     except RuntimeError as exc:
         fail_with_history(f'failed to generate OpenCode local OpenAI config: {exc}', history)
 

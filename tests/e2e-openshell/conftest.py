@@ -199,7 +199,7 @@ def sandbox_case(agent_case, gateway_ready, tmp_path_factory):
     )
 
     try:
-        generated = generate_configs(agent_case, history=history)
+        generated = generate_configs(agent_case, source_path=temp_dir / 'workspace', history=history)
     except RuntimeError as exc:
         fail_with_history(
             f'failed to generate Kaiden config files for {agent}: {exc}',

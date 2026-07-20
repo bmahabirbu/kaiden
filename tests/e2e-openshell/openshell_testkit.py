@@ -32,7 +32,8 @@ class CommandRecord:
 
 @dataclass
 class GeneratedConfig:
-    policy: str
+    policy: str | None
+    workspace_config: dict
     agent_config_contents: str
     agent_config_upload_path: str
     agent_config_files: list[dict[str, str]]
@@ -239,12 +240,13 @@ def require_gateway_ready(history=None):
     return result
 
 
-def generate_configs(input_config, *, history=None):
+def generate_configs(input_config, *, source_path, history=None):
+    adapter_input = {**input_config, 'sourcePath': str(source_path)}
     result = run_command(
         ['node', '--import', 'tsx', GENERATE_SCRIPT],
-        input_data=json.dumps(input_config),
+        input_data=json.dumps(adapter_input),
         timeout=30,
-        label='generating configs from buildPolicyObject()',
+        label='generating Kaiden workspace artifacts',
         history=history,
     )
     if result.timed_out or result.returncode != 0:
@@ -260,6 +262,7 @@ def generate_configs(input_config, *, history=None):
             output = json.loads(line)
             return GeneratedConfig(
                 policy=output['policy'],
+                workspace_config=output['workspaceConfig'],
                 agent_config_contents=output['agentConfig']['contents'],
                 agent_config_upload_path=output['agentConfig']['uploadPath'],
                 agent_config_files=output.get('agentConfigs', [output['agentConfig']]),

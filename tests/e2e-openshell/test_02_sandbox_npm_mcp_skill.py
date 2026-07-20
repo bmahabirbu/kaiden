@@ -66,10 +66,10 @@ def _skill_read_command(generated, case):
 
 
 class TestAgentConfigGeneration:
-    def test_config_generation_ready(self, agent_case):
+    def test_config_generation_ready(self, agent_case, tmp_path):
         history = []
         try:
-            generated = generate_configs(agent_case, history=history)
+            generated = generate_configs(agent_case, source_path=tmp_path / 'workspace', history=history)
         except RuntimeError as exc:
             fail_with_history(
                 f'failed to generate Kaiden config files for {agent_case["agent"]}: {exc}',
@@ -77,6 +77,8 @@ class TestAgentConfigGeneration:
             )
 
         assert generated.policy, f'Expected non-empty policy for {agent_case["agent"]}'
+        assert generated.workspace_config['network']['hosts'] == ['registry.npmjs.org']
+        assert generated.workspace_config['features']['ghcr.io/devcontainers/features/node:1'] == {'version': '22'}
         assert generated.agent_config_files
         assert _find_mcp_config_file(generated.agent_config_files, agent_case), (
             f'Expected MCP entries in generated config for {agent_case["agent"]}'
