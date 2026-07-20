@@ -87,6 +87,7 @@ export function encodeWorkspaceLabels(sourcePath: string): Record<string, string
 @injectable()
 export class AgentWorkspaceManager implements Disposable {
   private readonly workspaceTerminals = new Map<string, WorkspaceTerminalSession>();
+  private readonly disposables: Disposable[] = [];
 
   constructor(
     @inject(ApiSenderType)
@@ -742,10 +743,18 @@ export class AgentWorkspaceManager implements Disposable {
       this.closeWorkspaceTerminalByCallbackId(onDataId);
     });
 
-    this.openshellGateway.onDidGatewayStart(() => {
-      this.apiSender.send('agent-gateway-update');
-      this.apiSender.send('agent-workspace-update');
-    });
+    this.disposables.push(
+      this.openshellGateway.onDidGatewayStart(() => {
+        this.apiSender.send('agent-gateway-update');
+        this.apiSender.send('agent-workspace-update');
+      }),
+    );
+
+    this.disposables.push(
+      this.openshellCli.onDidSandboxListChange(() => {
+        this.apiSender.send('agent-workspace-update');
+      }),
+    );
   }
 
   @preDestroy()
@@ -758,5 +767,6 @@ export class AgentWorkspaceManager implements Disposable {
       }
     }
     this.workspaceTerminals.clear();
+    this.disposables.forEach(disposable => disposable.dispose());
   }
 }
