@@ -157,7 +157,7 @@ test('Expect workspace removed and navigated to list when user confirms', async 
   await fireEvent.click(removeButton);
 
   await waitFor(() => {
-    expect(window.removeAgentWorkspace).toHaveBeenCalledWith('ws-1');
+    expect(window.removeAgentWorkspace).toHaveBeenCalledWith('ws-1', 'kaiden');
   });
 
   expect(router.goto).toHaveBeenCalledWith('/agent-workspaces');
@@ -227,7 +227,7 @@ test('Expect no navigation when removal fails', async () => {
   await fireEvent.click(removeButton);
 
   await waitFor(() => {
-    expect(window.removeAgentWorkspace).toHaveBeenCalledWith('ws-1');
+    expect(window.removeAgentWorkspace).toHaveBeenCalledWith('ws-1', 'kaiden');
   });
 
   expect(router.goto).not.toHaveBeenCalled();

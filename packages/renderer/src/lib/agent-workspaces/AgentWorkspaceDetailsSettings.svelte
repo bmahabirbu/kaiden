@@ -445,7 +445,10 @@ function handleDeleteWorkspace(): void {
         return;
       }
       try {
-        await window.removeAgentWorkspace(workspaceId);
+        if (!workspaceSummary) {
+          throw new Error(`workspace "${workspaceId}" not found`);
+        }
+        await window.removeAgentWorkspace(workspaceId, workspaceSummary.gatewayName);
         router.goto('/agent-workspaces');
       } catch (error: unknown) {
         console.error('Failed to remove agent workspace', error);

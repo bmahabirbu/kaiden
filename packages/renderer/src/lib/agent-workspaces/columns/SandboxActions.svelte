@@ -13,7 +13,7 @@ let { object }: Props = $props();
 
 function handleRemove(): void {
   withConfirmation(
-    () => window.deleteOpenshellSandbox(object.name).catch(console.error),
+    () => window.deleteOpenshellSandbox(object.name, object.gatewayName).catch(console.error),
     `remove workspace ${object.name}`,
   );
 }

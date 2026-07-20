@@ -340,9 +340,12 @@ export function initExposure(): void {
     },
   );
 
-  contextBridge.exposeInMainWorld('removeAgentWorkspace', async (id: string): Promise<AgentWorkspaceId> => {
-    return ipcInvoke('agent-workspace:remove', id);
-  });
+  contextBridge.exposeInMainWorld(
+    'removeAgentWorkspace',
+    async (id: string, gateway: string): Promise<AgentWorkspaceId> => {
+      return ipcInvoke('agent-workspace:remove', id, gateway);
+    },
+  );
 
   contextBridge.exposeInMainWorld(
     'getAgentWorkspaceConfiguration',
@@ -381,8 +384,8 @@ export function initExposure(): void {
     return ipcInvoke('agent-workspace:listOpenshellGateways');
   });
 
-  contextBridge.exposeInMainWorld('deleteOpenshellSandbox', async (name: string): Promise<void> => {
-    return ipcInvoke('agent-workspace:deleteOpenshellSandbox', name);
+  contextBridge.exposeInMainWorld('deleteOpenshellSandbox', async (name: string, gateway: string): Promise<void> => {
+    return ipcInvoke('agent-workspace:deleteOpenshellSandbox', name, gateway);
   });
 
   // Agent Workspace Terminal
