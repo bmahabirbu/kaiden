@@ -1,15 +1,18 @@
 <script lang="ts">
 import { faChevronDown, faFolder, faFolderOpen, faInfoCircle, faRocket } from '@fortawesome/free-solid-svg-icons';
-import { Button, Input } from '@podman-desktop/ui-svelte';
+import { Button, Dropdown, Input } from '@podman-desktop/ui-svelte';
 import { Icon } from '@podman-desktop/ui-svelte/icons';
 
 import { Textarea } from '/@/lib/chat/components/ui/textarea';
 import { getSandboxNameValidationError } from '/@api/agent-workspace-info';
+import type { GatewayInfo } from '/@api/openshell-gateway-info';
 import type { WorkspaceProjectInfo } from '/@api/workspace-project-info';
 
 interface Props {
   sourcePath: string;
   sessionName: string;
+  gateways?: GatewayInfo[];
+  selectedGateway?: string;
   description: string;
   nameManuallyEdited: boolean;
   descriptionOpen: boolean;
@@ -28,6 +31,8 @@ interface Props {
 let {
   sourcePath = $bindable(),
   sessionName = $bindable(),
+  gateways = [],
+  selectedGateway = $bindable(''),
   description = $bindable(),
   nameManuallyEdited = $bindable(),
   descriptionOpen = $bindable(),
@@ -74,6 +79,22 @@ let nameInputError = $derived(sessionNameError ?? errors?.name ?? '');
 </p>
 
 <div class="space-y-4">
+  {#if gateways.length > 1}
+    <div>
+      <label for="workspace-gateway" class="block text-sm font-semibold text-[var(--pd-modal-text)] mb-2">
+        Gateway
+      </label>
+      <Dropdown id="workspace-gateway" name="workspace-gateway" class="w-full" bind:value={selectedGateway}>
+        {#each gateways as gateway (gateway.name)}
+          <option value={gateway.name}>{gateway.name} — {gateway.endpoint}</option>
+        {/each}
+      </Dropdown>
+      <p class="text-xs text-[var(--pd-content-card-text)] opacity-50 mt-1.5">
+        The workspace will be created on this OpenShell gateway.
+      </p>
+    </div>
+  {/if}
+
   <div>
     <label for="workspace-source" class="block text-sm font-semibold text-[var(--pd-modal-text)] mb-2">
       Project folder

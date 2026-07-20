@@ -30,6 +30,7 @@ const REGISTRY_HOSTS = ['registry.npmjs.org', 'pypi.python.org'];
 interface WorkspaceCreateDraft {
   currentStepIndex: number;
   selectedProjectId: string | undefined;
+  selectedGateway: string;
   sourcePath: string;
   sessionName: string;
   description: string;
@@ -55,6 +56,7 @@ function createInitialDraft(): WorkspaceCreateDraft {
   return {
     currentStepIndex: 0,
     selectedProjectId: undefined,
+    selectedGateway: '',
     sourcePath: '',
     sessionName: '',
     description: '',

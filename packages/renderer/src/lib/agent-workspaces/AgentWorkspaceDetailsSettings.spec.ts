@@ -1018,7 +1018,7 @@ test('Expect delete confirmation calls removeAgentWorkspace and navigates', asyn
   await fireEvent.click(screen.getByRole('link', { name: 'Advanced' }));
   await fireEvent.click(screen.getByRole('button', { name: 'Delete workspace' }));
 
-  expect(window.removeAgentWorkspace).toHaveBeenCalledWith('ws-1');
+  expect(window.removeAgentWorkspace).toHaveBeenCalledWith('ws-1', 'kaiden');
   await vi.waitFor(() => {
     expect(router.goto).toHaveBeenCalledWith('/agent-workspaces');
   });

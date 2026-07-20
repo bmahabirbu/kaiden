@@ -507,6 +507,19 @@ describe('deleteSandbox', () => {
     expect(exec.exec).toHaveBeenCalledWith(OPENSHELL_CLI_PATH, ['sandbox', 'delete', 'my-sandbox'], undefined);
   });
 
+  test('includes -g flag when gateway is provided', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult(''));
+
+    await openshellCli.deleteSandbox('my-sandbox', 'remote-gateway');
+
+    expect(exec.exec).toHaveBeenCalledWith(
+      OPENSHELL_CLI_PATH,
+      ['sandbox', 'delete', 'my-sandbox', '-g', 'remote-gateway'],
+      undefined,
+    );
+  });
+
   test('rejects when CLI fails', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);

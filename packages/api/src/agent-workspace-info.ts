@@ -75,6 +75,7 @@ export interface AgentWorkspaceCreateOptions {
   sourcePath: string;
   agent: string;
   model: string;
+  gateway: string;
   name?: string;
   project?: string;
   skills?: string[];

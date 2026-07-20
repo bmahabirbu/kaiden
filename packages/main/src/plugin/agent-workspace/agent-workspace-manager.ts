@@ -225,6 +225,7 @@ export class AgentWorkspaceManager implements Disposable {
 
     await this.openshellCli.createSandbox({
       name: sandboxName,
+      gateway: options.gateway,
       from: agent.baseImage,
       providers: options.secrets,
       env: env && Object.keys(env).length > 0 ? env : undefined,
@@ -244,7 +245,7 @@ export class AgentWorkspaceManager implements Disposable {
         try {
           await this.openshellCli.updatePolicy(sandboxName, endpointFlags, collectBinaryFlags(networkPolicy));
         } catch (err) {
-          await this.openshellCli.deleteSandbox(sandboxName).catch(() => {});
+          await this.openshellCli.deleteSandbox(sandboxName, options.gateway).catch(() => {});
           throw err;
         }
       }
@@ -406,15 +407,18 @@ export class AgentWorkspaceManager implements Disposable {
     return secret.name;
   }
 
-  async remove(id: string): Promise<AgentWorkspaceId> {
+  async remove(id: string, gateway: string): Promise<AgentWorkspaceId> {
     const workspaces = await this.listOpenshellSandboxes();
-    const workspace = workspaces.flatMap(gw => gw.sandboxes).find(ws => ws.id === id);
+    const workspace = workspaces
+      .filter(entry => entry.gateway.name === gateway)
+      .flatMap(entry => entry.sandboxes)
+      .find(ws => ws.id === id);
     const workspaceName = workspace?.name ?? id;
     const task = this.taskManager.createTask({ title: `Deleting workspace "${workspaceName}"` });
     task.state = 'running';
     task.status = 'in-progress';
     try {
-      await this.openshellCli.deleteSandbox(workspaceName);
+      await this.openshellCli.deleteSandbox(workspaceName, gateway);
       this.closeWorkspaceTerminal(id);
       this.apiSender.send('agent-workspace-update');
       task.status = 'success';
@@ -495,12 +499,12 @@ export class AgentWorkspaceManager implements Disposable {
     return this.openshellCli.listGateways();
   }
 
-  async deleteOpenshellSandbox(name: string): Promise<void> {
+  async deleteOpenshellSandbox(name: string, gateway: string): Promise<void> {
     const task = this.taskManager.createTask({ title: `Deleting workspace ${name}` });
     task.state = 'running';
     task.status = 'in-progress';
     try {
-      await this.openshellCli.deleteSandbox(name);
+      await this.openshellCli.deleteSandbox(name, gateway);
       this.apiSender.send('agent-workspace-update');
       task.status = 'success';
     } catch (err: unknown) {
@@ -602,9 +606,12 @@ export class AgentWorkspaceManager implements Disposable {
       },
     );
 
-    this.ipcHandle('agent-workspace:remove', async (_listener: unknown, id: string): Promise<AgentWorkspaceId> => {
-      return this.remove(id);
-    });
+    this.ipcHandle(
+      'agent-workspace:remove',
+      async (_listener: unknown, id: string, gateway: string): Promise<AgentWorkspaceId> => {
+        return this.remove(id, gateway);
+      },
+    );
 
     this.ipcHandle(
       'agent-workspace:getConfiguration',
@@ -637,8 +644,8 @@ export class AgentWorkspaceManager implements Disposable {
 
     this.ipcHandle(
       'agent-workspace:deleteOpenshellSandbox',
-      async (_listener: unknown, name: string): Promise<void> => {
-        return this.deleteOpenshellSandbox(name);
+      async (_listener: unknown, name: string, gateway: string): Promise<void> => {
+        return this.deleteOpenshellSandbox(name, gateway);
       },
     );
 

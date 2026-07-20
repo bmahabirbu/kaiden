@@ -287,6 +287,7 @@ describe('create – OpenShell mode', () => {
     agent: 'claude',
     name: 'my-sandbox',
     model: 'ramalama::granite-4.6::',
+    gateway: 'kaiden',
   };
 
   const mockAgent: Agent = {
@@ -306,13 +307,14 @@ describe('create – OpenShell mode', () => {
     vi.mocked(realpath).mockImplementation(async (p: unknown) => p as string);
   });
 
-  test('calls openshellCli.createSandbox with name, providers, workspace label, and agent label', async () => {
+  test('calls openshellCli.createSandbox with gateway, name, providers, workspace label, and agent label', async () => {
     const options = { ...defaultOptions, secrets: ['my-secret'] };
     await manager.create(options);
 
     expect(openshellCli.createSandbox).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'my-sandbox',
+        gateway: 'kaiden',
         providers: ['my-secret'],
         labels: { ...encodeWorkspaceLabels('/tmp/my-project'), [AGENT_LABEL]: 'claude' },
         noTty: true,
@@ -346,6 +348,7 @@ describe('create – OpenShell mode', () => {
       sourcePath: '/tmp/my-project',
       agent: 'claude',
       model: 'ramalama::granite-4::',
+      gateway: 'kaiden',
     };
     const result = await manager.create(options);
 
@@ -369,6 +372,7 @@ describe('create – OpenShell mode', () => {
       sourcePath: `/tmp/${longBasename}`,
       agent: 'claude',
       model: 'ramalama::granite-4::',
+      gateway: 'kaiden',
     };
 
     await expect(manager.create(options)).rejects.toThrow(/must not exceed 56 characters/);
@@ -641,7 +645,7 @@ describe('create – OpenShell mode', () => {
 
     await expect(manager.create(options)).rejects.toThrow('policy update failed');
 
-    expect(openshellCli.deleteSandbox).toHaveBeenCalledWith('my-sandbox');
+    expect(openshellCli.deleteSandbox).toHaveBeenCalledWith('my-sandbox', 'kaiden');
   });
 
   test('attaches secret to sandbox when ensureSecretForModel returns a secret', async () => {
@@ -858,6 +862,7 @@ describe('ensureModelSecret', () => {
     agent: 'claude',
     model: 'anthropic::claude-sonnet-4::',
     name: 'my-workspace',
+    gateway: 'kaiden',
   };
 
   test('skips when workspaceConfiguration already has secrets (e.g. onboarding)', async () => {
@@ -971,9 +976,9 @@ describe('remove', () => {
     vi.mocked(openshellCli.listSandboxesPerGateway).mockResolvedValue(TEST_SUMMARIES);
     vi.mocked(openshellCli.deleteSandbox).mockResolvedValue(undefined);
 
-    const result = await manager.remove('ws-1');
+    const result = await manager.remove('ws-1', 'kaiden');
 
-    expect(openshellCli.deleteSandbox).toHaveBeenCalledWith('test-workspace-1');
+    expect(openshellCli.deleteSandbox).toHaveBeenCalledWith('test-workspace-1', 'kaiden');
     expect(result).toEqual({ id: 'ws-1' });
   });
 
@@ -981,7 +986,7 @@ describe('remove', () => {
     vi.mocked(openshellCli.listSandboxesPerGateway).mockResolvedValue(TEST_SUMMARIES);
     vi.mocked(openshellCli.deleteSandbox).mockResolvedValue(undefined);
 
-    await manager.remove('ws-1');
+    await manager.remove('ws-1', 'kaiden');
 
     expect(taskManager.createTask).toHaveBeenCalledWith({ title: 'Deleting workspace "test-workspace-1"' });
     expect(mockTask.status).toBe('success');
@@ -992,7 +997,7 @@ describe('remove', () => {
     vi.mocked(openshellCli.listSandboxesPerGateway).mockResolvedValue([]);
     vi.mocked(openshellCli.deleteSandbox).mockResolvedValue(undefined);
 
-    await manager.remove('unknown-id');
+    await manager.remove('unknown-id', 'kaiden');
 
     expect(taskManager.createTask).toHaveBeenCalledWith({ title: 'Deleting workspace "unknown-id"' });
   });
@@ -1001,7 +1006,7 @@ describe('remove', () => {
     vi.mocked(openshellCli.listSandboxesPerGateway).mockResolvedValue(TEST_SUMMARIES);
     vi.mocked(openshellCli.deleteSandbox).mockRejectedValue(new Error('workspace not found: unknown-id'));
 
-    await expect(manager.remove('unknown-id')).rejects.toThrow('workspace not found: unknown-id');
+    await expect(manager.remove('unknown-id', 'kaiden')).rejects.toThrow('workspace not found: unknown-id');
 
     expect(mockTask.status).toBe('failure');
     expect(mockTask.error).toContain('workspace not found: unknown-id');
@@ -1012,7 +1017,7 @@ describe('remove', () => {
     vi.mocked(openshellCli.listSandboxesPerGateway).mockResolvedValue(TEST_SUMMARIES);
     vi.mocked(openshellCli.deleteSandbox).mockRejectedValue(new Error('failed to remove workspace: permission denied'));
 
-    await expect(manager.remove('ws-1')).rejects.toThrow('failed to remove workspace: permission denied');
+    await expect(manager.remove('ws-1', 'kaiden')).rejects.toThrow('failed to remove workspace: permission denied');
 
     expect(mockTask.error).toBe('Failed to delete workspace: failed to remove workspace: permission denied');
   });
@@ -1021,9 +1026,19 @@ describe('remove', () => {
     vi.mocked(openshellCli.listSandboxesPerGateway).mockResolvedValue(TEST_SUMMARIES);
     vi.mocked(openshellCli.deleteSandbox).mockResolvedValue(undefined);
 
-    await manager.remove('ws-1');
+    await manager.remove('ws-1', 'kaiden');
 
     expect(apiSender.send).toHaveBeenCalledWith('agent-workspace-update');
+  });
+});
+
+describe('deleteOpenshellSandbox', () => {
+  test('deletes the sandbox from the requested gateway', async () => {
+    vi.mocked(openshellCli.deleteSandbox).mockResolvedValue(undefined);
+
+    await manager.deleteOpenshellSandbox('shared-name', 'remote-gateway');
+
+    expect(openshellCli.deleteSandbox).toHaveBeenCalledWith('shared-name', 'remote-gateway');
   });
 });
 

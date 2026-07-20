@@ -237,8 +237,12 @@ export class OpenshellCli {
     await this.runCli(['sandbox', 'stop', name]);
   }
 
-  async deleteSandbox(name: string): Promise<void> {
-    await this.runCli(['sandbox', 'delete', name]);
+  async deleteSandbox(name: string, gatewayName?: string): Promise<void> {
+    const args = ['sandbox', 'delete', name];
+    if (gatewayName) {
+      args.push('-g', gatewayName);
+    }
+    await this.runCli(args);
   }
 
   async deleteAllSandboxes(gatewayName?: string): Promise<void> {
