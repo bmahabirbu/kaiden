@@ -48,6 +48,7 @@ import type {
   AgentWorkspaceId,
   AgentWorkspaceSummary,
 } from '/@api/agent-workspace-info.js';
+import { getSandboxNameValidationError } from '/@api/agent-workspace-info.js';
 import { ApiSenderType } from '/@api/api-sender/api-sender-type.js';
 import type { IConfigurationNode } from '/@api/configuration/models.js';
 import { IConfigurationRegistry } from '/@api/configuration/models.js';
@@ -200,6 +201,10 @@ export class AgentWorkspaceManager implements Disposable {
     uploads.push(...(await this.buildOpenshellFilesystemUploads(options.sourcePath, workspace)));
 
     const sandboxName = options.name ?? basename(options.sourcePath);
+    const sandboxNameError = getSandboxNameValidationError(sandboxName);
+    if (sandboxNameError) {
+      throw new Error(sandboxNameError);
+    }
     const env = workspace.environment
       ?.filter(entry => typeof entry.value === 'string' && entry.value !== '')
       .reduce<Record<string, string>>((acc, entry) => {

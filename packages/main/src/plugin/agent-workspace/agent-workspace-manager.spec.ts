@@ -338,6 +338,28 @@ describe('create – OpenShell mode', () => {
     expect(result).toEqual({ id: 'my-project' });
   });
 
+  test('rejects workspace names longer than the hostname limit', async () => {
+    const options: AgentWorkspaceCreateOptions = {
+      ...defaultOptions,
+      name: 'a'.repeat(57),
+    };
+
+    await expect(manager.create(options)).rejects.toThrow(/must not exceed 56 characters/);
+    expect(openshellCli.createSandbox).not.toHaveBeenCalled();
+  });
+
+  test('rejects basename-derived names longer than the hostname limit', async () => {
+    const longBasename = 'a'.repeat(57);
+    const options: AgentWorkspaceCreateOptions = {
+      sourcePath: `/tmp/${longBasename}`,
+      agent: 'claude',
+      model: 'ramalama::granite-4::',
+    };
+
+    await expect(manager.create(options)).rejects.toThrow(/must not exceed 56 characters/);
+    expect(openshellCli.createSandbox).not.toHaveBeenCalled();
+  });
+
   test('passes agent baseImage as from option to createSandbox', async () => {
     vi.mocked(agentRegistry.getAgentRegistration).mockReturnValue({
       ...mockAgent,
