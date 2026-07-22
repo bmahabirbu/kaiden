@@ -53,32 +53,22 @@ beforeEach(() => {
   vi.mocked(window.listSecretServices).mockResolvedValue(MOCK_SERVICES);
 });
 
-test('renders type options from fetched services plus Other', async () => {
+test('renders fetched service types without Other and requires a service selection', async () => {
   render(SecretVaultCreate);
 
   await waitFor(() => {
     expect(screen.getByLabelText('GitHub')).toBeInTheDocument();
   });
   expect(screen.getByLabelText('Gemini')).toBeInTheDocument();
-  expect(screen.getByLabelText('Other')).toBeInTheDocument();
-});
-
-test('defaults to Other type with full form fields', async () => {
-  render(SecretVaultCreate);
-
-  await waitFor(() => {
-    expect(screen.getByLabelText('Other')).toBeInTheDocument();
-  });
-
-  expect(screen.getByText('Other Secret')).toBeInTheDocument();
+  expect(screen.queryByLabelText('Other')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('GitHub')).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.getByText('Secret')).toBeInTheDocument();
   expect(screen.getByLabelText('Name')).toBeInTheDocument();
-  expect(screen.getByLabelText('Secret value')).toBeInTheDocument();
-  expect(screen.getByLabelText('Description')).toBeInTheDocument();
-  expect(screen.getByLabelText('Host pattern')).toBeInTheDocument();
-  expect(screen.getByText('Injection settings')).toBeInTheDocument();
-  expect(screen.getByLabelText('Path pattern')).toBeInTheDocument();
-  expect(screen.getByLabelText('Header name')).toBeInTheDocument();
-  expect(screen.getByLabelText('Value format')).toBeInTheDocument();
+  expect(screen.queryByLabelText('Token')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Secret value')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Description')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Host pattern')).not.toBeInTheDocument();
+  expect(screen.queryByText('Injection settings')).not.toBeInTheDocument();
 });
 
 test('hides injection fields and shows credential fields when a predefined service type is selected', async () => {
@@ -117,21 +107,8 @@ test('Add Secret button is disabled when required fields are empty', async () =>
   render(SecretVaultCreate);
 
   await waitFor(() => {
-    expect(screen.getByLabelText('Other')).toBeInTheDocument();
+    expect(screen.getByLabelText('GitHub')).toBeInTheDocument();
   });
-
-  expect(screen.getByRole('button', { name: 'Add Secret' })).toBeDisabled();
-});
-
-test('Add Secret button is disabled for Other type without host pattern', async () => {
-  render(SecretVaultCreate);
-
-  await waitFor(() => {
-    expect(screen.getByLabelText('Other')).toBeInTheDocument();
-  });
-
-  await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'my-secret' } });
-  await fireEvent.input(screen.getByLabelText('Secret value'), { target: { value: 'secret-value' } });
 
   expect(screen.getByRole('button', { name: 'Add Secret' })).toBeDisabled();
 });
@@ -143,81 +120,6 @@ test('cancel navigates back to secret vault', async () => {
 
   const cancelButton = screen.getByRole('button', { name: 'Cancel' });
   await fireEvent.click(cancelButton);
-
-  expect(handleNavigation).toHaveBeenCalledWith({ page: 'secret-vault' });
-});
-
-test('submits Other secret with injection settings', async () => {
-  const { handleNavigation } = await import('/@/navigation');
-
-  render(SecretVaultCreate);
-
-  await waitFor(() => {
-    expect(screen.getByLabelText('Other')).toBeInTheDocument();
-  });
-
-  await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'my-api-key' } });
-  await fireEvent.input(screen.getByLabelText('Secret value'), { target: { value: 'sk-123' } });
-  await fireEvent.input(screen.getByLabelText('Description'), { target: { value: 'Production API key' } });
-  await fireEvent.input(screen.getByLabelText('Host pattern'), { target: { value: 'api.example.com' } });
-  await fireEvent.input(screen.getByLabelText('Header name'), { target: { value: 'Authorization' } });
-  await fireEvent.input(screen.getByLabelText('Value format'), { target: { value: 'Bearer {value}' } });
-
-  await fireEvent.click(screen.getByRole('button', { name: 'Add Secret' }));
-
-  expect(window.createSecret).toHaveBeenCalledWith({
-    name: 'my-api-key',
-    type: 'other',
-    value: 'sk-123',
-    description: 'Production API key',
-    hosts: ['api.example.com'],
-    header: 'Authorization',
-    headerTemplate: 'Bearer ${value}',
-  });
-
-  expect(handleNavigation).toHaveBeenCalledWith({ page: 'secret-vault' });
-});
-
-test('does not double-prefix ${value} when user types it directly in value format', async () => {
-  render(SecretVaultCreate);
-
-  await waitFor(() => {
-    expect(screen.getByLabelText('Other')).toBeInTheDocument();
-  });
-
-  await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'my-api-key' } });
-  await fireEvent.input(screen.getByLabelText('Secret value'), { target: { value: 'sk-123' } });
-  await fireEvent.input(screen.getByLabelText('Host pattern'), { target: { value: 'api.example.com' } });
-  await fireEvent.input(screen.getByLabelText('Header name'), { target: { value: 'Authorization' } });
-  await fireEvent.input(screen.getByLabelText('Value format'), { target: { value: 'Bearer ${value}' } });
-
-  await fireEvent.click(screen.getByRole('button', { name: 'Add Secret' }));
-
-  expect(window.createSecret).toHaveBeenCalledWith(expect.objectContaining({ headerTemplate: 'Bearer ${value}' }));
-});
-
-test('submits Other secret using default Authorization header when header name is not changed', async () => {
-  const { handleNavigation } = await import('/@/navigation');
-
-  render(SecretVaultCreate);
-
-  await waitFor(() => {
-    expect(screen.getByLabelText('Other')).toBeInTheDocument();
-  });
-
-  await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'custom-key' } });
-  await fireEvent.input(screen.getByLabelText('Secret value'), { target: { value: 'sk-abc' } });
-  await fireEvent.input(screen.getByLabelText('Host pattern'), { target: { value: 'api.custom.io' } });
-
-  await fireEvent.click(screen.getByRole('button', { name: 'Add Secret' }));
-
-  expect(window.createSecret).toHaveBeenCalledWith({
-    name: 'custom-key',
-    type: 'other',
-    value: 'sk-abc',
-    hosts: ['api.custom.io'],
-    header: 'Authorization',
-  });
 
   expect(handleNavigation).toHaveBeenCalledWith({ page: 'secret-vault' });
 });
@@ -271,35 +173,19 @@ test('displays error when createSecret fails', async () => {
   });
 });
 
-test('injection settings section can be collapsed and expanded', async () => {
-  render(SecretVaultCreate);
-
-  await waitFor(() => {
-    expect(screen.getByLabelText('Other')).toBeInTheDocument();
-  });
-
-  expect(screen.getByLabelText('Path pattern')).toBeInTheDocument();
-
-  await fireEvent.click(screen.getByText('Injection settings'));
-
-  expect(screen.queryByLabelText('Path pattern')).not.toBeInTheDocument();
-
-  await fireEvent.click(screen.getByText('Injection settings'));
-
-  expect(screen.getByLabelText('Path pattern')).toBeInTheDocument();
-});
-
-test('still renders form when listSecretServices fails', async () => {
+test('does not offer an unsupported fallback type when listSecretServices fails', async () => {
   vi.mocked(window.listSecretServices).mockRejectedValueOnce(new Error('CLI not found'));
 
   render(SecretVaultCreate);
 
   await waitFor(() => {
-    expect(screen.getByLabelText('Other')).toBeInTheDocument();
+    expect(screen.queryByText('Loading secret types…')).not.toBeInTheDocument();
   });
 
-  expect(screen.getByText('Other Secret')).toBeInTheDocument();
+  expect(screen.queryByLabelText('Other')).not.toBeInTheDocument();
+  expect(screen.getByText('Secret')).toBeInTheDocument();
   expect(screen.getByLabelText('Name')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Add Secret' })).toBeDisabled();
 });
 
 test('Add Secret button is disabled when required credentials are empty for predefined type', async () => {
@@ -357,7 +243,7 @@ test('filters out profiles without credentials from type options', async () => {
 
   expect(screen.queryByLabelText('No Creds')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Empty Creds')).not.toBeInTheDocument();
-  expect(screen.getByLabelText('Other')).toBeInTheDocument();
+  expect(screen.queryByLabelText('Other')).not.toBeInTheDocument();
 });
 
 test('uses credential name as fallback key when env_vars is empty', async () => {
