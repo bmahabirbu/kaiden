@@ -16,6 +16,7 @@ import { agentInfos } from '/@/stores/agents';
 import { mcpRemoteServerInfos } from '/@/stores/mcp-remote-servers';
 import { disabledModels, isModelEnabled, modelKey } from '/@/stores/model-catalog';
 import { catalogModels } from '/@/stores/models';
+import { openshellGateways } from '/@/stores/openshell-gateways';
 import { allOpenshellSandboxes } from '/@/stores/openshell-sandboxes';
 import { providerInfos } from '/@/stores/providers';
 import { ragEnvironments } from '/@/stores/rag-environments';
@@ -208,6 +209,15 @@ onMount(async () => {
 });
 let customHosts = $derived(wizard.draft.hostsByMode[wizard.draft.selectedNetwork] ?? []);
 
+$effect.pre(() => {
+  const selectedGatewayExists = $openshellGateways.some(gateway => gateway.name === wizard.draft.selectedGateway);
+  if (!selectedGatewayExists) {
+    const activeGateway = $openshellGateways.find(gateway => gateway.active);
+    wizard.draft.selectedGateway =
+      activeGateway?.name ?? ($openshellGateways.length === 1 ? ($openshellGateways[0]?.name ?? '') : '');
+  }
+});
+
 function getDefaultSessionName(path: string): string {
   const normalized = path.trim().replace(/[\\/]+$/, '');
   return normalized.split(/[\\/]/).filter(Boolean).at(-1) ?? '';
@@ -264,7 +274,12 @@ let hasModel = $derived(wizard.draft.selectedModel !== undefined);
 let validationErrors = $derived.by(() => {
   const errors: { name?: string } = {};
   const name = wizard.draft.sessionName.trim().toLowerCase();
-  if (name && $allOpenshellSandboxes.some(s => s.name.toLowerCase() === name)) {
+  if (
+    name &&
+    $allOpenshellSandboxes.some(
+      sandbox => sandbox.gatewayName === wizard.draft.selectedGateway && sandbox.name.toLowerCase() === name,
+    )
+  ) {
     errors.name = 'A workspace with this name already exists. Please choose a different name.';
   }
   return errors;
@@ -272,6 +287,7 @@ let validationErrors = $derived.by(() => {
 let isCurrentStepComplete = $derived.by(() => {
   if (currentStepId === 'workspace') {
     return (
+      wizard.draft.selectedGateway !== '' &&
       getEffectiveWorkspaceName() !== '' &&
       wizard.draft.sourcePath.trim() !== '' &&
       isWorkspaceNameValid() &&
@@ -425,6 +441,7 @@ function buildMountsFrom(fileAccess: string, mounts: CustomMount[]): AgentWorksp
 
 async function startAsIs(): Promise<void> {
   if (
+    !wizard.draft.selectedGateway ||
     !wizard.draft.sourcePath.trim() ||
     !wizard.draft.selectedModel ||
     !isWorkspaceNameValid() ||
@@ -440,6 +457,7 @@ async function startAsIs(): Promise<void> {
       sourcePath: draftSnapshot.sourcePath,
       agent: draftSnapshot.selectedAgent,
       model: getModelId(draftSnapshot.selectedModel!),
+      gateway: draftSnapshot.selectedGateway,
       name: getEffectiveWorkspaceNameFromSnapshot(draftSnapshot),
       project: draftSnapshot.selectedProjectId,
     });
@@ -461,6 +479,7 @@ async function startAsIs(): Promise<void> {
 
 async function startWorkspace(): Promise<void> {
   if (
+    !wizard.draft.selectedGateway ||
     !getEffectiveWorkspaceName() ||
     !wizard.draft.sourcePath.trim() ||
     !wizard.draft.selectedModel ||
@@ -500,6 +519,7 @@ async function startWorkspace(): Promise<void> {
       sourcePath: draftSnapshot.sourcePath,
       agent: draftSnapshot.selectedAgent,
       model: getModelId(draftSnapshot.selectedModel!),
+      gateway: draftSnapshot.selectedGateway,
       name: getEffectiveWorkspaceNameFromSnapshot(draftSnapshot),
       skills: selectedSkillPaths.length > 0 ? selectedSkillPaths : undefined,
       network,
@@ -558,6 +578,8 @@ async function startWorkspace(): Promise<void> {
               <AgentWorkspaceCreateStepWorkspace
                 bind:sourcePath={wizard.draft.sourcePath}
                 bind:sessionName={wizard.draft.sessionName}
+                gateways={[...$openshellGateways]}
+                bind:selectedGateway={wizard.draft.selectedGateway}
                 bind:description={wizard.draft.description}
                 bind:nameManuallyEdited={wizard.draft.nameManuallyEdited}
                 bind:descriptionOpen={wizard.draft.descriptionOpen}
@@ -566,7 +588,7 @@ async function startWorkspace(): Promise<void> {
                 configExists={wizard.draft.configExists}
                 bind:configAction={wizard.draft.configAction}
                 onStartAsIs={startAsIs}
-                startAsIsDisabled={!hasModel}
+                startAsIsDisabled={!hasModel || wizard.draft.selectedGateway === ''}
                 projects={[...$workspaceProjectInfos]}
                 selectedProjectId={wizard.draft.selectedProjectId}
                 onProjectSelect={handleProjectSelect}

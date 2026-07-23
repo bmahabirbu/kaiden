@@ -28,6 +28,7 @@ import * as agentsStore from '/@/stores/agents';
 import * as mcpStore from '/@/stores/mcp-remote-servers';
 import * as modelCatalogStore from '/@/stores/model-catalog';
 import * as modelsStore from '/@/stores/models';
+import * as openshellGatewaysStore from '/@/stores/openshell-gateways';
 import * as openshellSandboxesStore from '/@/stores/openshell-sandboxes';
 import * as providerStore from '/@/stores/providers';
 import * as ragStore from '/@/stores/rag-environments';
@@ -55,6 +56,7 @@ vi.mock(import('/@/stores/providers'));
 vi.mock(import('/@/stores/rag-environments'));
 vi.mock(import('/@/stores/model-catalog'));
 vi.mock(import('/@/stores/models'));
+vi.mock(import('/@/stores/openshell-gateways'));
 vi.mock(import('/@/stores/openshell-sandboxes'));
 vi.mock(import('/@/stores/workspace-projects'));
 
@@ -173,6 +175,9 @@ beforeEach(() => {
     (providerId: string, connectionId: string, label: string): string => `${providerId}::${connectionId}::${label}`,
   );
   vi.mocked(workspaceProjectsStore).workspaceProjectInfos = writable<readonly WorkspaceProjectInfo[]>([]);
+  vi.mocked(openshellGatewaysStore).openshellGateways = writable([
+    { name: 'kaiden', endpoint: 'http://localhost:17670', active: true },
+  ]);
   vi.mocked(openshellSandboxesStore).allOpenshellSandboxes = writable<(SandboxInfo & { gatewayName: string })[]>([]);
   vi.mocked(window.checkAgentWorkspaceConfigExists).mockResolvedValue(false);
   vi.mocked(window.showMessageBox).mockResolvedValue({ response: 0 });
@@ -237,6 +242,50 @@ test('Expect workspace name auto-suggested from source path', async () => {
   });
 
   expect((screen.getByPlaceholderText('e.g., Frontend Refactoring') as HTMLInputElement).value).toBe('my-project');
+});
+
+test('Expect gateway selector hidden when only one gateway is available', () => {
+  render(AgentWorkspaceCreate);
+
+  expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+});
+
+test('Expect gateway selector defaults to the active OpenShell gateway when multiple gateways are available', async () => {
+  vi.mocked(openshellGatewaysStore).openshellGateways.set([
+    { name: 'local', endpoint: 'http://localhost:17670', active: false },
+    { name: 'remote', endpoint: 'https://remote.example.com', active: true },
+  ]);
+  render(AgentWorkspaceCreate);
+
+  await fireEvent.input(screen.getByPlaceholderText('/path/to/project'), {
+    target: { value: '/home/user/my-repo' },
+  });
+
+  const gatewaySelector = screen.getByRole('combobox');
+  expect(gatewaySelector).toHaveValue('remote');
+  expect(screen.queryByRole('option', { name: 'Select a gateway' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Continue' })).not.toBeDisabled();
+
+  await fireEvent.change(gatewaySelector, { target: { value: 'local' } });
+
+  expect(gatewaySelector).toHaveValue('local');
+  expect(screen.getByRole('button', { name: 'Continue' })).not.toBeDisabled();
+});
+
+test('Expect selected gateway included when creating a workspace', async () => {
+  vi.mocked(openshellGatewaysStore).openshellGateways.set([
+    { name: 'local', endpoint: 'http://localhost:17670', active: true },
+    { name: 'remote', endpoint: 'https://remote.example.com', active: false },
+  ]);
+  render(AgentWorkspaceCreate);
+
+  await fireEvent.change(screen.getByRole('combobox'), { target: { value: 'remote' } });
+  await fireEvent.input(screen.getByPlaceholderText('/path/to/project'), {
+    target: { value: '/home/user/my-repo' },
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Use all defaults and create workspace' }));
+
+  expect(window.createAgentWorkspace).toHaveBeenCalledWith(expect.objectContaining({ gateway: 'remote' }));
 });
 
 test('Expect Continue button rendered on step 1', () => {
