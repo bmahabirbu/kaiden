@@ -16,53 +16,21 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
+import { faKey, faPlug } from '@fortawesome/free-solid-svg-icons';
 import { describe, expect, test } from 'vitest';
 
-import {
-  getSecretGroupLabel,
-  isKnownService,
-  KNOWN_GROUP_LABEL,
-  KNOWN_SERVICES,
-  OTHER_GROUP_LABEL,
-} from './secret-vault-utils';
+import { getSecretIcon } from './secret-vault-utils';
 
-describe('KNOWN_SERVICES', () => {
-  test('contains expected service names', () => {
-    expect(KNOWN_SERVICES.has('github')).toBeTruthy();
-    expect(KNOWN_SERVICES.has('gemini')).toBeTruthy();
-    expect(KNOWN_SERVICES.has('anthropic')).toBeTruthy();
+describe('getSecretIcon', () => {
+  test('returns the generic key icon when no type is available', () => {
+    expect(getSecretIcon()).toBe(faKey);
   });
 
-  test('does not contain other or unknown types', () => {
-    expect(KNOWN_SERVICES.has('other')).toBeFalsy();
-    expect(KNOWN_SERVICES.has('unknown')).toBeFalsy();
-  });
-});
-
-describe('isKnownService', () => {
-  test.each(['github', 'gemini', 'anthropic'])('returns true for known service %s', type => {
-    expect(isKnownService(type)).toBeTruthy();
+  test('treats unrecognized types like any other service', () => {
+    expect(getSecretIcon('other')).toBe(faPlug);
   });
 
-  test.each(['other', 'custom', 'unknown'])('returns false for non-known type %s', type => {
-    expect(isKnownService(type)).toBeFalsy();
-  });
-
-  test('returns false when called without argument', () => {
-    expect(isKnownService()).toBeFalsy();
-  });
-});
-
-describe('getSecretGroupLabel', () => {
-  test.each(['github', 'gemini', 'anthropic'])('returns known group label for %s', type => {
-    expect(getSecretGroupLabel(type)).toBe(KNOWN_GROUP_LABEL);
-  });
-
-  test.each(['other', 'custom'])('returns other group label for %s', type => {
-    expect(getSecretGroupLabel(type)).toBe(OTHER_GROUP_LABEL);
-  });
-
-  test('returns other group label when called without argument', () => {
-    expect(getSecretGroupLabel()).toBe(OTHER_GROUP_LABEL);
+  test('treats an empty type like any other service', () => {
+    expect(getSecretIcon('')).toBe(faPlug);
   });
 });

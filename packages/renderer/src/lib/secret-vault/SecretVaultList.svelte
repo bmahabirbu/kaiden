@@ -12,7 +12,6 @@ import SecretVaultAccount from './columns/SecretVaultAccount.svelte';
 import SecretVaultActions from './columns/SecretVaultActions.svelte';
 import SecretVaultIntegration from './columns/SecretVaultIntegration.svelte';
 import SecretVaultMaskedSecret from './columns/SecretVaultMaskedSecret.svelte';
-import { isKnownService, KNOWN_GROUP_LABEL, OTHER_GROUP_LABEL } from './secret-vault-utils';
 import SecretVaultEmptyScreen from './SecretVaultEmptyScreen.svelte';
 
 type SecretVaultSelectable = SecretVaultInfo & { selected: boolean };
@@ -55,12 +54,6 @@ const secrets: SecretVaultSelectable[] = $derived(
   $filteredSecretVaultInfos.map(secret => ({ ...secret, selected: false })),
 );
 
-const knownSecrets: SecretVaultSelectable[] = $derived(secrets.filter(s => isKnownService(s.type)));
-
-const otherSecrets: SecretVaultSelectable[] = $derived(secrets.filter(s => !isKnownService(s.type)));
-
-const hasBothGroups: boolean = $derived(knownSecrets.length > 0 && otherSecrets.length > 0);
-
 function addSecret(): void {
   handleNavigation({ page: NavigationPage.SECRET_VAULT_CREATE });
 }
@@ -81,7 +74,7 @@ function addSecret(): void {
         {:else}
           <SecretVaultEmptyScreen onclick={addSecret} />
         {/if}
-      {:else if !hasBothGroups}
+      {:else}
         <Table
           kind="secret-vault"
           data={secrets}
@@ -89,29 +82,6 @@ function addSecret(): void {
           row={row}
           defaultSortColumn="Integration"
         />
-      {:else}
-        <div class="flex flex-col w-full">
-          <div class="mx-5 pt-2 text-sm font-semibold uppercase tracking-wider text-[var(--pd-table-header-text)]">{KNOWN_GROUP_LABEL}</div>
-          <div class="flex min-w-full">
-            <Table
-              kind="secret-vault"
-              data={knownSecrets}
-              columns={columns}
-              row={row}
-              defaultSortColumn="Integration"
-            />
-          </div>
-          <div class="mx-5 pt-2 text-sm font-semibold uppercase tracking-wider text-[var(--pd-table-header-text)]">{OTHER_GROUP_LABEL}</div>
-          <div class="flex min-w-full">
-            <Table
-              kind="secret-vault"
-              data={otherSecrets}
-              columns={columns}
-              row={row}
-              defaultSortColumn="Integration"
-            />
-          </div>
-        </div>
       {/if}
     </div>
   {/snippet}
