@@ -6,7 +6,6 @@ import { router } from 'tinro';
 import type { ChecklistItem } from '/@/lib/ui/ChecklistPanel.svelte';
 import ChecklistPanel from '/@/lib/ui/ChecklistPanel.svelte';
 import { handleNavigation } from '/@/navigation';
-import { secretVaultInfos } from '/@/stores/secret-vault';
 import { NavigationPage } from '/@api/navigation-page';
 
 interface Props {
@@ -14,6 +13,7 @@ interface Props {
   selectedSkillIds: string[];
   mcpItems: ChecklistItem[];
   selectedMcpIds: string[];
+  secretItems: ChecklistItem[];
   selectedSecretIds: string[];
   knowledgeItems: ChecklistItem[];
   selectedKnowledgeIds: string[];
@@ -24,18 +24,11 @@ let {
   selectedSkillIds = $bindable(),
   mcpItems,
   selectedMcpIds = $bindable(),
+  secretItems,
   selectedSecretIds = $bindable(),
   knowledgeItems,
   selectedKnowledgeIds = $bindable(),
 }: Props = $props();
-
-let secretItems: ChecklistItem[] = $derived(
-  $secretVaultInfos.map(s => ({
-    id: s.id,
-    name: s.name,
-    description: [s.type, s.description].filter(Boolean).join(' · '),
-  })),
-);
 
 let allIncluded: boolean = $derived(
   selectedSkillIds.length === skillItems.length &&
@@ -117,7 +110,7 @@ function navigateToKnowledges(): void {
         icon={faKey}
         items={secretItems}
         bind:selected={selectedSecretIds}
-        emptyMessage="No secrets in your vault yet.">
+        emptyMessage="No secrets available on this gateway.">
         {#snippet headerAction()}
           <Button type="secondary" onclick={navigateToSecretVault}>Open Vault</Button>
         {/snippet}

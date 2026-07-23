@@ -199,6 +199,14 @@ describe('openshellAdapter', () => {
     expect(result.map(s => s.name)).toEqual(['my-openai', 'my-anthropic']);
   });
 
+  test('lists secrets from the requested gateway', async () => {
+    vi.mocked(openshellCli.listProviders).mockResolvedValue([]);
+
+    await manager.list('remote');
+
+    expect(openshellCli.listProviders).toHaveBeenCalledWith('remote');
+  });
+
   test('delegates remove to openshellAdapter', async () => {
     vi.mocked(openshellCli.deleteProvider).mockResolvedValue(undefined);
 
@@ -521,8 +529,6 @@ describe('ensureSecretForModel', () => {
       connection: mockConnection,
       providerId: 'kaiden.cursor',
     });
-    // First call from getSecretForModel: secret not found
-    // Second call from createSecretForConnection: still not found (dedup check)
     vi.mocked(openshellCli.listProviders).mockResolvedValue([]);
     vi.mocked(openshellCli.createProvider).mockResolvedValue(undefined);
     vi.mocked(providerRegistry.getProvider).mockReturnValue({
@@ -558,9 +564,10 @@ describe('ensureSecretForModel', () => {
     } as unknown as ReturnType<typeof configurationRegistry.getConfiguration>);
     vi.mocked(extensionStorageMock.get).mockResolvedValue('actual-api-key');
 
-    const result = await manager.ensureSecretForModel('cursor::model-1::');
+    const result = await manager.ensureSecretForModel('cursor::model-1::', 'remote');
 
-    expect(openshellCli.createProvider).toHaveBeenCalled();
+    expect(openshellCli.listProviders).toHaveBeenCalledWith('remote');
+    expect(openshellCli.createProvider).toHaveBeenCalledWith(expect.any(Object), 'remote');
     expect(result).toEqual({ name: 'kaiden.cursor-conn-789', type: 'cursor' });
   });
 

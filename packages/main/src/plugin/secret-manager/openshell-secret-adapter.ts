@@ -40,23 +40,28 @@ export class OpenshellSecretAdapter implements SecretCliBackend {
     private readonly openshellCli: OpenshellCli,
   ) {}
 
-  async createSecret(options: SecretCreateOptions): Promise<SecretName> {
+  async createSecret(options: SecretCreateOptions, gateway?: string): Promise<SecretName> {
     if (typeof options.value === 'string') {
       throw new Error('options.value must be a record for Openshell');
     }
-    await this.openshellCli.createProvider({
+    const providerOptions = {
       name: options.name,
       type: options.type,
       credentials: options.value.credentials,
       config: options.value.config,
       flags: options.value.flags,
       env: options.value.env,
-    });
+    };
+    if (gateway) {
+      await this.openshellCli.createProvider(providerOptions, gateway);
+    } else {
+      await this.openshellCli.createProvider(providerOptions);
+    }
     return { name: options.name };
   }
 
-  async listSecrets(): Promise<SecretInfo[]> {
-    return await this.openshellCli.listProviders();
+  async listSecrets(gateway?: string): Promise<SecretInfo[]> {
+    return await this.openshellCli.listProviders(gateway);
   }
 
   async removeSecret(name: string): Promise<SecretName> {

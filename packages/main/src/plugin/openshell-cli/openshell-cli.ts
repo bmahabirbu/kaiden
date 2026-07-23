@@ -380,8 +380,12 @@ export class OpenshellCli {
 
   // ── provider commands ──────────────────────────────────────────────
 
-  async listProviders(): Promise<OpenshellProviderInfo[]> {
-    const data = await this.execCLI<unknown>(['provider', 'list']);
+  async listProviders(gatewayName?: string): Promise<OpenshellProviderInfo[]> {
+    const args = ['provider', 'list'];
+    if (gatewayName) {
+      args.push('-g', gatewayName);
+    }
+    const data = await this.execCLI<unknown>(args);
     return z.array(OpenshellProviderInfoSchema).parse(data);
   }
 
@@ -394,7 +398,7 @@ export class OpenshellCli {
     await this.runCli(['provider', 'delete', name]);
   }
 
-  async createProvider(options: CreateProviderOptions): Promise<void> {
+  async createProvider(options: CreateProviderOptions, gatewayName?: string): Promise<void> {
     if (Object.keys(options.credentials).length === 0 && !options.flags?.length) {
       throw new Error('credentials must not be empty');
     }
@@ -413,6 +417,9 @@ export class OpenshellCli {
       for (const [key, value] of Object.entries(options.config)) {
         args.push('--config', `${key}=${value}`);
       }
+    }
+    if (gatewayName) {
+      args.push('-g', gatewayName);
     }
     await this.runCli(args, { env });
   }

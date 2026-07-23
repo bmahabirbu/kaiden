@@ -22,7 +22,6 @@ import type { CustomMount } from '/@/lib/agent-workspaces/AgentWorkspaceCreateSt
 import type { ModelInfo } from '/@/lib/chat/components/model-info';
 import { mcpRemoteServerInfos } from '/@/stores/mcp-remote-servers';
 import { ragEnvironments } from '/@/stores/rag-environments';
-import { secretVaultInfos } from '/@/stores/secret-vault';
 import { skillInfos } from '/@/stores/skills';
 
 const REGISTRY_HOSTS = ['registry.npmjs.org', 'pypi.python.org'];
@@ -109,11 +108,6 @@ mcpRemoteServerInfos.subscribe(servers => {
   const added = prevMcp ? [...available].filter(id => !prevMcp!.has(id)) : [...available];
   wizard.draft.selectedMcpIds = [...wizard.draft.selectedMcpIds.filter(id => available.has(id)), ...added];
   prevMcp = available;
-});
-
-secretVaultInfos.subscribe(secrets => {
-  const available = new Set(secrets.map(s => s.id));
-  wizard.draft.selectedSecretIds = wizard.draft.selectedSecretIds.filter(id => available.has(id));
 });
 
 let prevKnowledge: Set<string> | undefined;

@@ -876,6 +876,7 @@ describe('ensureModelSecret', () => {
     const options = { ...baseOptions, model: 'cursor::gpt-4o::https://api.cursor.com' };
     await manager.ensureModelSecret(options);
 
+    expect(secretManager.ensureSecretForModel).toHaveBeenCalledWith(options.model, 'kaiden');
     expect(options.secrets).toContain('cursor-conn-123');
   });
 

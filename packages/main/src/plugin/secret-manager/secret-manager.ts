@@ -63,14 +63,14 @@ export class SecretManager {
     return this.openshellAdapter;
   }
 
-  async create(options: SecretCreateOptions): Promise<SecretName> {
-    const result = await this.cli.createSecret(options);
+  async create(options: SecretCreateOptions, gateway?: string): Promise<SecretName> {
+    const result = await this.cli.createSecret(options, gateway);
     this.apiSender.send('secret-manager-update');
     return result;
   }
 
-  async list(): Promise<SecretInfo[]> {
-    return this.cli.listSecrets();
+  async list(gateway?: string): Promise<SecretInfo[]> {
+    return this.cli.listSecrets(gateway);
   }
 
   async remove(name: string): Promise<SecretName> {
@@ -83,29 +83,30 @@ export class SecretManager {
     return this.cli.listServices();
   }
 
-  async getSecretForModel(modelId: string): Promise<SecretInfo | undefined> {
+  async getSecretForModel(modelId: string, gateway?: string): Promise<SecretInfo | undefined> {
     const info = this.providerRegistry.getInferenceConnection(modelId);
     if (!info) return undefined;
 
     const expectedName = `${info.providerId}-${info.connection.id}`;
-    const secrets = await this.list();
+    const secrets = await this.list(gateway);
     return secrets.find(s => s.name === expectedName);
   }
 
-  async ensureSecretForModel(modelId: string): Promise<SecretInfo | undefined> {
-    const existing = await this.getSecretForModel(modelId);
+  async ensureSecretForModel(modelId: string, gateway?: string): Promise<SecretInfo | undefined> {
+    const existing = await this.getSecretForModel(modelId, gateway);
     if (existing) return existing;
 
     const info = this.providerRegistry.getInferenceConnection(modelId);
     if (!info) return undefined;
 
-    return this.createSecretForConnection(info.providerId, info.connection, false);
+    return this.createSecretForConnection(info.providerId, info.connection, false, gateway);
   }
 
   async createSecretForConnection(
     providerId: string,
     connection: InferenceProviderConnection,
     checkDuplicates: boolean,
+    gateway?: string,
   ): Promise<SecretInfo | undefined> {
     const provider = this.providerRegistry.getProvider(providerId);
     const { config, connectionProperties } = this.getConnectionProperties(connection, provider);
@@ -159,15 +160,18 @@ export class SecretManager {
     const secretName = `${providerId}-${connection.id}`;
 
     if (checkDuplicates) {
-      const existingSecrets = await this.list();
+      const existingSecrets = await this.list(gateway);
       if (existingSecrets.some(s => s.name === secretName)) return undefined;
     }
 
-    await this.create({
-      name: secretName,
-      type: secretType,
-      value: value,
-    });
+    await this.create(
+      {
+        name: secretName,
+        type: secretType,
+        value: value,
+      },
+      gateway,
+    );
 
     return { name: secretName, type: secretType };
   }
@@ -231,8 +235,8 @@ export class SecretManager {
       },
     );
 
-    this.ipcHandle('secret-manager:list', async (): Promise<SecretInfo[]> => {
-      return this.list();
+    this.ipcHandle('secret-manager:list', async (_listener: unknown, gateway?: string): Promise<SecretInfo[]> => {
+      return this.list(gateway);
     });
 
     this.ipcHandle('secret-manager:remove', async (_listener: unknown, name: string): Promise<SecretName> => {

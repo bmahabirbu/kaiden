@@ -67,6 +67,20 @@ describe('createSecret', () => {
     await expect(adapter.createSecret(defaultOptions)).rejects.toThrow('provider type not supported');
   });
 
+  test('creates the provider on the requested gateway', async () => {
+    vi.mocked(openshellCli.createProvider).mockResolvedValue(undefined);
+
+    await adapter.createSecret(defaultOptions, 'remote');
+
+    expect(openshellCli.createProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'my-secret',
+        type: 'github',
+      }),
+      'remote',
+    );
+  });
+
   test('passes config and flags through to createProvider', async () => {
     vi.mocked(openshellCli.createProvider).mockResolvedValue(undefined);
 
@@ -115,6 +129,14 @@ describe('listSecrets', () => {
     const result = await adapter.listSecrets();
 
     expect(result).toEqual([]);
+  });
+
+  test('lists providers from the requested gateway', async () => {
+    vi.mocked(openshellCli.listProviders).mockResolvedValue([]);
+
+    await adapter.listSecrets('remote');
+
+    expect(openshellCli.listProviders).toHaveBeenCalledWith('remote');
   });
 
   test('rejects when openshellCli.listProviders fails', async () => {

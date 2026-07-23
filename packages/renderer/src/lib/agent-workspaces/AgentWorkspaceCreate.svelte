@@ -20,7 +20,7 @@ import { openshellGateways } from '/@/stores/openshell-gateways';
 import { allOpenshellSandboxes } from '/@/stores/openshell-sandboxes';
 import { providerInfos } from '/@/stores/providers';
 import { ragEnvironments } from '/@/stores/rag-environments';
-import { secretVaultInfos } from '/@/stores/secret-vault';
+import { listSecretVaultInfos } from '/@/stores/secret-vault';
 import { skillInfos } from '/@/stores/skills';
 import { workspaceProjectInfos } from '/@/stores/workspace-projects';
 import type {
@@ -105,6 +105,18 @@ function applyNetworkFromProject(net: NetworkConfiguration | undefined): void {
   }
 }
 
+let secretItems = $state.raw<ChecklistItem[]>([]);
+let loadedSecretsGateway = '';
+let secretRequestToken = 0;
+
+function filterAvailableSecretIds(ids: string[]): string[] {
+  if (loadedSecretsGateway !== wizard.draft.selectedGateway) {
+    return ids;
+  }
+  const available = new Set(secretItems.map(secret => secret.id));
+  return ids.filter(id => available.has(id));
+}
+
 function applyProject(project: WorkspaceProjectInfo): void {
   wizard.draft.selectedProjectId = project.id;
   wizard.draft.sourcePath = project.folder;
@@ -112,7 +124,7 @@ function applyProject(project: WorkspaceProjectInfo): void {
   wizard.draft.nameManuallyEdited = true;
   wizard.draft.selectedSkillIds = [...project.skills];
   wizard.draft.selectedMcpIds = [...project.mcpServers];
-  wizard.draft.selectedSecretIds = [...project.secrets];
+  wizard.draft.selectedSecretIds = filterAvailableSecretIds([...project.secrets]);
   wizard.draft.selectedKnowledgeIds = [...project.knowledges];
   applyFilesystemFromProject(project.filesystem);
   applyNetworkFromProject(project.network);
@@ -125,7 +137,8 @@ function clearProject(): void {
   wizard.draft.nameManuallyEdited = false;
   wizard.draft.selectedSkillIds = $skillInfos.filter(s => s.enabled).map(s => s.name);
   wizard.draft.selectedMcpIds = $mcpRemoteServerInfos.map(m => m.id);
-  wizard.draft.selectedSecretIds = $secretVaultInfos.map(s => s.id);
+  wizard.draft.selectedSecretIds =
+    loadedSecretsGateway === wizard.draft.selectedGateway ? secretItems.map(secret => secret.id) : [];
   wizard.draft.selectedKnowledgeIds = $ragEnvironments.filter(r => r.mcpServer).map(r => r.name);
   wizard.draft.selectedFileAccess = 'workspace';
   wizard.draft.selectedNetwork = 'registries';
@@ -216,6 +229,36 @@ $effect.pre(() => {
     wizard.draft.selectedGateway =
       activeGateway?.name ?? ($openshellGateways.length === 1 ? ($openshellGateways[0]?.name ?? '') : '');
   }
+});
+
+$effect(() => {
+  const gateway = wizard.draft.selectedGateway;
+  const requestToken = ++secretRequestToken;
+  if (!gateway) {
+    secretItems = [];
+    loadedSecretsGateway = '';
+    wizard.draft.selectedSecretIds = [];
+    return;
+  }
+
+  listSecretVaultInfos(gateway)
+    .then(secrets => {
+      if (requestToken !== secretRequestToken) return;
+      secretItems = secrets.map(secret => ({
+        id: secret.id,
+        name: secret.name,
+        description: [secret.type, secret.description].filter(Boolean).join(' · '),
+      }));
+      loadedSecretsGateway = gateway;
+      wizard.draft.selectedSecretIds = filterAvailableSecretIds(wizard.draft.selectedSecretIds);
+    })
+    .catch((err: unknown) => {
+      if (requestToken !== secretRequestToken) return;
+      console.error(`Failed to load secrets for OpenShell gateway "${gateway}"`, err);
+      secretItems = [];
+      loadedSecretsGateway = gateway;
+      wizard.draft.selectedSecretIds = [];
+    });
 });
 
 function getDefaultSessionName(path: string): string {
@@ -601,6 +644,7 @@ async function startWorkspace(): Promise<void> {
                 bind:selectedSkillIds={wizard.draft.selectedSkillIds}
                 {mcpItems}
                 bind:selectedMcpIds={wizard.draft.selectedMcpIds}
+                {secretItems}
                 bind:selectedSecretIds={wizard.draft.selectedSecretIds}
                 {knowledgeItems}
                 bind:selectedKnowledgeIds={wizard.draft.selectedKnowledgeIds} />

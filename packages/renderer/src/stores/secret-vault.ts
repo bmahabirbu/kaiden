@@ -64,8 +64,8 @@ async function checkForUpdate(eventName: string): Promise<boolean> {
   return readyToUpdate;
 }
 
-const listSecrets = async (): Promise<readonly SecretVaultInfo[]> => {
-  const items = await window.listSecrets();
+export const listSecretVaultInfos = async (gateway?: string): Promise<readonly SecretVaultInfo[]> => {
+  const items = await window.listSecrets(gateway);
   return items.map(secretInfoToVaultInfo);
 };
 
@@ -75,6 +75,6 @@ export const secretVaultEventStore = new EventStore<readonly SecretVaultInfo[]>(
   checkForUpdate,
   ['secret-manager-update'],
   ['extensions-already-started'],
-  listSecrets,
+  () => listSecretVaultInfos(),
 );
 secretVaultEventStore.setup();

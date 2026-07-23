@@ -18,7 +18,7 @@
 
 import '@testing-library/jest-dom/vitest';
 
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { writable } from 'svelte/store';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -162,6 +162,7 @@ beforeEach(() => {
   vi.mocked(skillsStore).skillInfos = writable<SkillInfo[]>([]);
   vi.mocked(mcpStore).mcpRemoteServerInfos = writable<MCPRemoteServerInfo[]>([]);
   vi.mocked(secretVaultStore).secretVaultInfos = writable<readonly SecretVaultInfo[]>([]);
+  vi.mocked(secretVaultStore.listSecretVaultInfos).mockResolvedValue([]);
   setProviders([mockAnthropicProvider]);
   vi.mocked(ragStore).ragEnvironments = writable<RagEnvironment[]>([]);
   vi.mocked(modelCatalogStore).disabledModels = writable<Set<string>>(new Set());
@@ -457,12 +458,12 @@ test('Expect secrets empty state shown when vault is empty', async () => {
   await navigateToToolsSecretsStep();
   await expandCustomize();
 
-  expect(screen.getByText('No secrets in your vault yet.')).toBeInTheDocument();
+  expect(screen.getByText('No secrets available on this gateway.')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Open Vault' })).toBeInTheDocument();
 });
 
 test('Expect secrets listed when vault has entries', async () => {
-  vi.mocked(secretVaultStore).secretVaultInfos = writable<readonly SecretVaultInfo[]>([
+  vi.mocked(secretVaultStore.listSecretVaultInfos).mockResolvedValue([
     {
       id: 'github-token',
       name: 'GitHub Token',
@@ -482,10 +483,43 @@ test('Expect secrets listed when vault has entries', async () => {
   await navigateToToolsSecretsStep();
   await expandCustomize();
 
-  expect(screen.getByText('GitHub Token')).toBeInTheDocument();
+  expect(await screen.findByText('GitHub Token')).toBeInTheDocument();
   expect(screen.getByText('Anthropic Key')).toBeInTheDocument();
   expect(screen.getByText('Secret Vault')).toBeInTheDocument();
-  expect(screen.queryByText('No secrets in your vault yet.')).not.toBeInTheDocument();
+  expect(screen.queryByText('No secrets available on this gateway.')).not.toBeInTheDocument();
+});
+
+test('Expect secrets filtered by the selected gateway', async () => {
+  vi.mocked(openshellGatewaysStore).openshellGateways.set([
+    { name: 'local', endpoint: 'http://localhost:17670', active: true },
+    { name: 'remote', endpoint: 'https://remote.example.com', active: false },
+  ]);
+  vi.mocked(secretVaultStore.listSecretVaultInfos).mockImplementation(async gateway => {
+    if (gateway === 'remote') {
+      return [{ id: 'remote-secret', name: 'Remote Secret', type: 'remote' }];
+    }
+    return [{ id: 'local-secret', name: 'Local Secret', type: 'local' }];
+  });
+
+  render(AgentWorkspaceCreate);
+
+  await waitFor(() => {
+    expect(secretVaultStore.listSecretVaultInfos).toHaveBeenCalledWith('local');
+  });
+  wizard.draft.selectedSecretIds = ['local-secret'];
+
+  await fireEvent.change(screen.getByRole('combobox'), { target: { value: 'remote' } });
+
+  await waitFor(() => {
+    expect(wizard.draft.selectedSecretIds).toEqual([]);
+  });
+
+  await navigateToToolsSecretsStep();
+  await expandCustomize();
+
+  expect(await screen.findByText('Remote Secret')).toBeInTheDocument();
+  expect(screen.queryByText('Local Secret')).not.toBeInTheDocument();
+  expect(secretVaultStore.listSecretVaultInfos).toHaveBeenLastCalledWith('remote');
 });
 
 test('Expect Open Vault button navigates to secret vault', async () => {
@@ -692,7 +726,7 @@ test('Expect createAgentWorkspace called without skills when none available', as
 });
 
 test('Expect createAgentWorkspace called with secret ids when vault has entries', async () => {
-  vi.mocked(secretVaultStore).secretVaultInfos = writable<readonly SecretVaultInfo[]>([
+  vi.mocked(secretVaultStore.listSecretVaultInfos).mockResolvedValue([
     {
       id: 'github-token',
       name: 'GitHub Token',
@@ -706,9 +740,12 @@ test('Expect createAgentWorkspace called with secret ids when vault has entries'
       description: 'API key',
     },
   ]);
-  wizard.draft.selectedSecretIds = ['github-token', 'anthropic-key'];
-
   render(AgentWorkspaceCreate);
+
+  await waitFor(() => {
+    expect(secretVaultStore.listSecretVaultInfos).toHaveBeenCalledWith('kaiden');
+  });
+  wizard.draft.selectedSecretIds = ['github-token', 'anthropic-key'];
 
   await fireEvent.input(screen.getByPlaceholderText('/path/to/project'), {
     target: { value: '/home/user/my-repo' },
@@ -1874,13 +1911,29 @@ describe('when projects exist', () => {
     expect(wizard.draft.selectedMcpIds).toEqual(['mcp-github']);
   });
 
-  test('Expect selecting a project populates draft secret ids', async () => {
+  test('Expect selecting a project populates secret ids available on the selected gateway', async () => {
+    vi.mocked(secretVaultStore.listSecretVaultInfos).mockResolvedValue([
+      { id: 'github-token', name: 'GitHub Token', type: 'github' },
+    ]);
     render(AgentWorkspaceCreate);
 
     await fireEvent.click(screen.getByRole('button', { name: /Saved project/ }));
     await fireEvent.click(screen.getByRole('option', { name: /My App/ }));
 
-    expect(wizard.draft.selectedSecretIds).toEqual(['github-token']);
+    await waitFor(() => {
+      expect(wizard.draft.selectedSecretIds).toEqual(['github-token']);
+    });
+  });
+
+  test('Expect selecting a project excludes secret ids unavailable on the selected gateway', async () => {
+    render(AgentWorkspaceCreate);
+
+    await fireEvent.click(screen.getByRole('button', { name: /Saved project/ }));
+    await fireEvent.click(screen.getByRole('option', { name: /My App/ }));
+
+    await waitFor(() => {
+      expect(wizard.draft.selectedSecretIds).toEqual([]);
+    });
   });
 
   test('Expect selecting a project maps deny network with custom hosts to blocked mode', async () => {
