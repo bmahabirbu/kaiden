@@ -127,13 +127,14 @@ interface WorkerFixtures {
 
 ## Playwright Config Projects
 
-| Project             | testMatch                                     | Condition              | resource   |
-| ------------------- | --------------------------------------------- | ---------------------- | ---------- |
-| `Kaiden-App-Core`   | `**/*.spec.ts` (ignores provider-specs)       | Always                 | —          |
-| `Gemini-Provider`   | `**/provider-specs/*.spec.ts`                 | `GEMINI_API_KEY` set   | `gemini`   |
-| `OpenAI-Provider`   | `**/provider-specs/*.spec.ts`                 | `OPENAI_API_KEY` set   | `openai`   |
-| `Ollama-Provider`   | `**/provider-specs/*.spec.ts` (ignores flows) | `OLLAMA_ENABLED` set   | `ollama`   |
-| `RamaLama-Provider` | `**/provider-specs/*.spec.ts` (ignores flows) | `RAMALAMA_ENABLED` set | `ramalama` |
+| Project              | testMatch                                     | Condition                   | resource   |
+| -------------------- | --------------------------------------------- | --------------------------- | ---------- |
+| `Kaiden-App-Core`    | `**/*.spec.ts` (ignores provider-specs)       | Always                      | —          |
+| `Gemini-Provider`    | `**/provider-specs/*.spec.ts`                 | `GEMINI_API_KEY` set        | `gemini`   |
+| `OpenAI-Provider`    | `**/provider-specs/*.spec.ts`                 | `OPENAI_API_KEY` set        | `openai`   |
+| `Workspace-Provider` | `**/provider-specs/workspaces/*.spec.ts`      | `PODMAN_ENABLED` + API keys | —          |
+| `Ollama-Provider`    | `**/provider-specs/*.spec.ts` (ignores flows) | `OLLAMA_ENABLED` set        | `ollama`   |
+| `RamaLama-Provider`  | `**/provider-specs/*.spec.ts` (ignores flows) | `RAMALAMA_ENABLED` set      | `ramalama` |
 
 ## Locator Cheatsheet
 
@@ -235,14 +236,22 @@ npx playwright show-trace path/to/trace.zip
 
 ## Environment Variables
 
-| Variable             | Purpose                                              |
-| -------------------- | ---------------------------------------------------- |
-| `GEMINI_API_KEY`     | Gemini provider API key                              |
-| `OPENAI_API_KEY`     | OpenAI provider API key                              |
-| `OLLAMA_ENABLED`     | Enable Ollama provider tests                         |
-| `RAMALAMA_ENABLED`   | Enable RamaLama provider tests                       |
-| `OPENSHIFT_AI_TOKEN` | OpenShift AI authentication                          |
-| `GITHUB_TOKEN`       | MCP GitHub server token                              |
-| `KAIDEN_BINARY`      | Path to production binary (vs dev mode)              |
-| `CI`                 | CI environment flag (enables retries, mock keychain) |
-| `KAIDEN_HOME_DIR`    | Test config directory (auto-set by fixtures)         |
+| Variable                  | Purpose                                                             |
+| ------------------------- | ------------------------------------------------------------------- |
+| `GEMINI_API_KEY`          | Gemini provider API key                                             |
+| `OPENAI_API_KEY`          | OpenAI provider API key                                             |
+| `ANTHROPIC_API_KEY`       | Claude workspace provider tests                                     |
+| `PODMAN_ENABLED`          | Enable workspace provider + container-dependent tests               |
+| `WORKSPACE_TESTS_CI`      | Allow workspace tests when `CI=true`                                |
+| `OLLAMA_ENABLED`          | Enable Ollama provider tests                                        |
+| `RAMALAMA_ENABLED`        | Enable RamaLama provider tests                                      |
+| `OPENSHIFT_AI_TOKEN`      | OpenShift AI authentication                                         |
+| `GITHUB_TOKEN`            | MCP GitHub server token                                             |
+| `KAIDEN_BINARY`           | Path to production binary (vs dev mode)                             |
+| `KAIDEN_E2E_VERBOSE_LOGS` | Set `true` to print Electron main/renderer logs between test titles |
+| `CI`                      | CI environment flag (enables retries, mock keychain)                |
+| `KAIDEN_HOME_DIR`         | Test config directory (auto-set by fixtures)                        |
+
+## Workspace Provider E2E
+
+Coding Agent Workspace lifecycle and sandbox matrix tests: [workspace-provider-e2e.md](./workspace-provider-e2e.md).
