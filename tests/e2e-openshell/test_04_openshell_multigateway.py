@@ -112,7 +112,52 @@ def _allocate_gateway_endpoint():
     return f'https://127.0.0.1:{port}'
 
 
-def _gateway_process_args(endpoint):
+def _generate_gateway_pki(output_dir):
+    isolated_config = os.path.join(str(output_dir), 'xdg-config')
+    os.makedirs(isolated_config, exist_ok=True)
+    env = {**os.environ, 'XDG_CONFIG_HOME': isolated_config}
+    result = subprocess.run(
+        [
+            'openshell-gateway',
+            'generate-certs',
+            '--output-dir',
+            str(output_dir),
+            '--server-san',
+            '127.0.0.1',
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+        env=env,
+    )
+    if result.returncode != 0:
+        pytest.skip(f'openshell-gateway generate-certs failed: {result.stderr.strip()}')
+
+    pki = {
+        'ca_cert': output_dir / 'ca.crt',
+        'server_cert': output_dir / 'server' / 'tls.crt',
+        'server_key': output_dir / 'server' / 'tls.key',
+        'client_cert': output_dir / 'client' / 'tls.crt',
+        'client_key': output_dir / 'client' / 'tls.key',
+    }
+    missing = [name for name, path in pki.items() if not path.is_file()]
+    if missing:
+        pytest.skip(f'openshell-gateway generate-certs missing: {", ".join(missing)}')
+    return pki
+
+
+def _install_client_certs(gateway_name, pki):
+    from pathlib import Path
+
+    mtls_dir = Path.home() / '.config' / 'openshell' / 'gateways' / gateway_name / 'mtls'
+    mtls_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(pki['ca_cert'], mtls_dir / 'ca.crt')
+    shutil.copy2(pki['client_cert'], mtls_dir / 'tls.crt')
+    shutil.copy2(pki['client_key'], mtls_dir / 'tls.key')
+
+
+def _gateway_process_args(endpoint, pki):
     url = urlparse(endpoint)
     if url.scheme != 'https' or url.hostname not in {'127.0.0.1', 'localhost'}:
         pytest.skip(
@@ -130,15 +175,22 @@ def _gateway_process_args(endpoint):
         '--bind-address',
         # Podman sandbox containers need to reach the gateway through the host network bridge.
         '0.0.0.0',
+        '--tls-cert',
+        str(pki['server_cert']),
+        '--tls-key',
+        str(pki['server_key']),
+        '--tls-client-ca',
+        str(pki['ca_cert']),
     ]
 
 
-def _start_gateway_process(endpoint):
+def _start_gateway_process(endpoint, pki, tls_dir):
     if not shutil.which('openshell-gateway'):
         pytest.skip('openshell-gateway not found in PATH')
 
-    args = _gateway_process_args(endpoint)
-    return subprocess.Popen(args, cwd=os.getcwd(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    args = _gateway_process_args(endpoint, pki)
+    env = {**os.environ, 'OPENSHELL_LOCAL_TLS_DIR': str(tls_dir)}
+    return subprocess.Popen(args, cwd=os.getcwd(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
 
 
 def _wait_for_gateway(name, endpoint, process, history):
@@ -208,8 +260,8 @@ def _select_gateway(name, history=None):
 
 def _sandbox_names_for_gateways(base_gateway, secondary_gateway):
     return {
-        base_gateway: 'kdn-e2e-multigateway-base',
-        secondary_gateway: 'kdn-e2e-multigateway-secondary',
+        base_gateway: 'ke-mgw-base',
+        secondary_gateway: 'ke-mgw-sec',
     }
 
 
@@ -327,7 +379,7 @@ def _assert_sandbox_exec(gateway_name, sandbox_name, expected, history):
 
 
 @pytest.fixture(scope='module')
-def multigateway_ready(openshell_preflight):
+def multigateway_ready(openshell_preflight, tmp_path_factory):
     history = []
     gateway_name = os.environ.get(MULTIGATEWAY_NAME_ENV, DEFAULT_MULTIGATEWAY_NAME)
     configured_endpoint = os.environ.get(MULTIGATEWAY_ENDPOINT_ENV)
@@ -357,10 +409,13 @@ def multigateway_ready(openshell_preflight):
 
         if not gateway:
             endpoint = endpoint or _allocate_gateway_endpoint()
-            gateway_process = _start_gateway_process(endpoint)
+            certs_dir = tmp_path_factory.mktemp('ke-mgw-certs')
+            pki = _generate_gateway_pki(certs_dir)
+            gateway_process = _start_gateway_process(endpoint, pki, certs_dir)
             add_result = _add_local_gateway(gateway_name, endpoint, history)
             assert_success(add_result, f'OpenShell gateway add failed for {gateway_name}', history)
             gateway_added = True
+            _install_client_certs(gateway_name, pki)
             _wait_for_gateway(gateway_name, endpoint, gateway_process, history)
 
             gateways = _list_gateways(history)
