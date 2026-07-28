@@ -108,6 +108,25 @@ def _ramalama_header_lines():
     ]
 
 
+DEFAULT_OLLAMA_PORT = 11434
+
+
+def _ollama_header_lines():
+    if not _env_flag('OLLAMA_ENABLED'):
+        return []
+
+    model = os.environ.get('INFERENCE_MODEL') or 'not set'
+    base_url = os.environ.get(
+        'KAIDEN_E2E_OLLAMA_BASE_URL',
+        f'http://localhost:{DEFAULT_OLLAMA_PORT}/v1',
+    )
+
+    return [
+        f'openshell e2e Ollama: enabled; model: {model}',
+        f'openshell e2e Ollama: target: {base_url}',
+    ]
+
+
 def _keep_sandbox_header_lines():
     if not _env_flag(KEEP_SANDBOXES_ENV):
         return []
@@ -132,6 +151,7 @@ def pytest_report_header(config):
             "openshell e2e gateway: unavailable",
             *_keep_sandbox_header_lines(),
             *_github_credentials_header_lines(),
+            *_ollama_header_lines(),
             *_ramalama_header_lines(),
         ]
 
@@ -157,6 +177,7 @@ def pytest_report_header(config):
         gateway_line,
         *_keep_sandbox_header_lines(),
         *_github_credentials_header_lines(),
+        *_ollama_header_lines(),
         *_ramalama_header_lines(),
     ]
 
@@ -188,7 +209,7 @@ def agent_case(request):
 @pytest.fixture(scope='module')
 def sandbox_case(agent_case, gateway_ready, tmp_path_factory):
     agent = agent_case['agent']
-    sandbox_name = f'kdn-e2e-test_sandbox_mcp-{agent}'
+    sandbox_name = f'ke-mcp-{agent}'
     temp_dir = tmp_path_factory.mktemp(f'kdn-e2e-{agent}')
     history = []
     sandbox_created = False
