@@ -63,35 +63,31 @@ test('opens the local gateway creation dialog', async () => {
 
   expect(screen.getByRole('heading', { name: 'Create local gateway' })).toBeInTheDocument();
   expect(screen.getByLabelText('Gateway name')).toHaveValue('local-gateway');
+  expect(screen.getByLabelText('Gateway bind address')).toHaveValue('127.0.0.1');
   expect(screen.getByLabelText('Gateway port')).toHaveValue('17675');
 });
 
-test('generated config exposes a bind mounts toggle', async () => {
+test('does not expose gateway configuration controls', async () => {
   setOpenshellStarted();
   render(PreferencesOpenshellGatewaysRendering);
   await fireEvent.click(screen.getByRole('button', { name: 'Create local gateway' }));
 
-  await fireEvent.click(screen.getByRole('button', { name: 'Config' }));
-
-  expect(((await screen.findByLabelText('Gateway config TOML')) as HTMLTextAreaElement).value).toContain(
-    'enable_bind_mounts = true',
-  );
-  expect(screen.getByRole('checkbox', { name: 'Enable bind mounts' })).toBeChecked();
+  expect(screen.queryByRole('button', { name: 'Config' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Gateway config TOML')).not.toBeInTheDocument();
 });
 
-test('creates a gateway with the edited generated config', async () => {
+test('creates a gateway with the generated bind-mount config', async () => {
   setOpenshellStarted();
   render(PreferencesOpenshellGatewaysRendering);
   await fireEvent.click(screen.getByRole('button', { name: 'Create local gateway' }));
-  await vi.waitFor(() => expect(window.getLocalGatewayConfig).toHaveBeenCalledWith('local-gateway'));
-  await fireEvent.click(screen.getByRole('button', { name: 'Config' }));
-  await fireEvent.click(screen.getByRole('checkbox', { name: 'Enable bind mounts' }));
   await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
+  expect(window.getLocalGatewayConfig).toHaveBeenCalledWith('local-gateway');
   expect(window.createLocalGateway).toHaveBeenCalledWith({
     name: 'local-gateway',
+    bindAddress: '127.0.0.1',
     port: 17675,
-    config: expect.stringContaining('enable_bind_mounts = false'),
+    config: expect.stringContaining('enable_bind_mounts = true'),
   });
 });
 

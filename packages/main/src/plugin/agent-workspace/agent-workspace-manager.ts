@@ -732,6 +732,7 @@ export class AgentWorkspaceManager implements Disposable {
       'agent-workspace:createLocalGateway',
       async (_listener, options: CreateLocalGatewayOptions): Promise<GatewayInfo[]> => {
         await this.openshellGateway.createLocalGateway(options);
+        await this.openshellGatewayStateManager.refresh();
         return this.listOpenshellGateways();
       },
     );

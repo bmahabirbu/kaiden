@@ -21,6 +21,7 @@ import { spawn } from 'node:child_process';
 import type { WriteStream } from 'node:fs';
 import { closeSync, createWriteStream, openSync } from 'node:fs';
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { isIP } from 'node:net';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -36,7 +37,11 @@ import { NotificationRegistry } from '/@/plugin/tasks/notification-registry.js';
 import { Exec } from '/@/plugin/util/exec.js';
 import { isFreePort } from '/@/plugin/util/port.js';
 import type { Event } from '/@api/event.js';
-import type { CreateLocalGatewayOptions, OpenshellGatewayStartOptions } from '/@api/openshell-gateway-info.js';
+import {
+  type CreateLocalGatewayOptions,
+  GATEWAY_NAME_PATTERN,
+  type OpenshellGatewayStartOptions,
+} from '/@api/openshell-gateway-info.js';
 
 import gatewayConfigTemplate from './openshell-gateway.toml.template?raw';
 
@@ -48,7 +53,6 @@ const STOP_TIMEOUT_MS = 5000;
 const SUPERVISOR_IMAGE_BASE = 'ghcr.io/nvidia/openshell/supervisor';
 const GATEWAY_LOG_FILENAME = 'gateway.log';
 const DEFAULT_GATEWAY_NAME = 'kaiden-local';
-const GATEWAY_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 
 type LocalComputeDriver = 'docker' | 'podman';
 
@@ -116,7 +120,10 @@ export class OpenshellGateway implements Disposable {
 
     if (await this.isEndpointHealthy()) {
       console.log('[openshell-gateway] found healthy gateway on default port, registering');
-      await this.registerWithCli();
+      await this.registerWithCli().catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[openshell-gateway] failed to register with CLI: ${message}`);
+      });
       this._onDidGatewayStart.fire();
       return;
     }
@@ -170,9 +177,13 @@ export class OpenshellGateway implements Disposable {
 
   async createLocalGateway(options: CreateLocalGatewayOptions): Promise<void> {
     const name = options.name.trim();
-    this.validateGatewayName(name);
+    this.validateGatewayName(name, false);
     if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65_535) {
       throw new Error('Port must be an integer between 1 and 65535');
+    }
+    const bindAddress = options.bindAddress.trim();
+    if (isIP(bindAddress) === 0) {
+      throw new Error('Bind address must be a valid IPv4 or IPv6 address');
     }
     if (!options.config.trim()) {
       throw new Error('Gateway configuration cannot be empty');
@@ -181,13 +192,15 @@ export class OpenshellGateway implements Disposable {
     if (gateways.some(gateway => gateway.name === name)) {
       throw new Error(`A gateway named "${name}" is already registered`);
     }
-    if (
-      gateways.some(gateway =>
-        [`http://${DEFAULT_BIND_ADDRESS}:${options.port}`, `https://${DEFAULT_BIND_ADDRESS}:${options.port}`].includes(
-          gateway.endpoint,
-        ),
-      )
-    ) {
+    const endpointHost = isIP(bindAddress) === 6 ? `[${bindAddress}]` : bindAddress;
+    const registeredPortInUse = gateways.some(gateway => {
+      try {
+        return new URL(gateway.endpoint).port === String(options.port);
+      } catch {
+        return false;
+      }
+    });
+    if (registeredPortInUse) {
       throw new Error(`A gateway is already registered on port ${options.port}`);
     }
     await isFreePort(options.port);
@@ -197,15 +210,14 @@ export class OpenshellGateway implements Disposable {
       throw new Error('openshell-gateway binary not registered in CLI tool registry');
     }
     const storageDirectory = this.getGatewayStorageDirectory(name);
-    const configPath = await this.writeGatewayConfig(binaryPath, storageDirectory, options.config, true);
-    await mkdir(storageDirectory, { recursive: true });
+    const configPath = await this.writeGatewayConfig(binaryPath, storageDirectory, options.config, true, bindAddress);
     const logFd = openSync(join(storageDirectory, GATEWAY_LOG_FILENAME), 'w');
     let gatewayProcess: ChildProcess;
     try {
       gatewayProcess = spawn(
         binaryPath,
         [
-          ...this.buildArgs(false, configPath, storageDirectory, options.port, DEFAULT_BIND_ADDRESS),
+          ...this.buildArgs(false, configPath, storageDirectory, options.port, bindAddress),
           '--tls-cert',
           join(storageDirectory, 'server', 'tls.crt'),
           '--tls-key',
@@ -226,7 +238,7 @@ export class OpenshellGateway implements Disposable {
     let registered = false;
     try {
       await this.openshellCli.addGateway({
-        endpoint: `https://${DEFAULT_BIND_ADDRESS}:${options.port}`,
+        endpoint: `https://${endpointHost}:${options.port}`,
         local: true,
         name,
       });
@@ -368,7 +380,12 @@ export class OpenshellGateway implements Disposable {
     this._onDidGatewayInitFailed.dispose();
   }
 
-  private async generateCerts(binaryPath: string, gatewayDir: string, isolate = false): Promise<void> {
+  private async generateCerts(
+    binaryPath: string,
+    gatewayDir: string,
+    isolate = false,
+    serverSan?: string,
+  ): Promise<void> {
     const args = [
       'generate-certs',
       '--server-san',
@@ -380,6 +397,9 @@ export class OpenshellGateway implements Disposable {
       '--output-dir',
       gatewayDir,
     ];
+    if (serverSan && !['127.0.0.1', 'localhost', 'host.openshell.internal'].includes(serverSan)) {
+      args.push('--server-san', serverSan);
+    }
     if (!isolate) {
       await this.exec.exec(binaryPath, args);
       return;
@@ -490,22 +510,17 @@ export class OpenshellGateway implements Disposable {
 
   private async registerWithCli(): Promise<void> {
     const endpoint = `http://${this.#bindAddress}:${this.#port}`;
-    try {
-      const gateways = await this.openshellCli.listGateways();
-      const existing = gateways.find(gw => gw.name === DEFAULT_GATEWAY_NAME);
-      if (existing) {
-        if (existing.endpoint === endpoint) {
-          console.log(`[openshell-gateway] ${DEFAULT_GATEWAY_NAME} already registered at ${endpoint}`);
-          return;
-        }
-        await this.openshellCli.removeGateway(DEFAULT_GATEWAY_NAME).catch(() => {});
+    const gateways = await this.openshellCli.listGateways();
+    const existing = gateways.find(gw => gw.name === DEFAULT_GATEWAY_NAME);
+    if (existing) {
+      if (existing.endpoint === endpoint) {
+        console.log(`[openshell-gateway] ${DEFAULT_GATEWAY_NAME} already registered at ${endpoint}`);
+        return;
       }
-      await this.openshellCli.addGateway({ endpoint, local: true, name: DEFAULT_GATEWAY_NAME });
-      console.log(`[openshell-gateway] registered with CLI as ${DEFAULT_GATEWAY_NAME} at ${endpoint}`);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(`[openshell-gateway] failed to register with CLI: ${message}`);
+      await this.openshellCli.removeGateway(DEFAULT_GATEWAY_NAME).catch(() => {});
     }
+    await this.openshellCli.addGateway({ endpoint, local: true, name: DEFAULT_GATEWAY_NAME });
+    console.log(`[openshell-gateway] registered with CLI as ${DEFAULT_GATEWAY_NAME} at ${endpoint}`);
   }
 
   private async initializeGatewayLog(storageDirectory: string): Promise<void> {
@@ -535,11 +550,14 @@ export class OpenshellGateway implements Disposable {
     this.#gatewayLogStream = undefined;
   }
 
-  private validateGatewayName(name: string): void {
+  private validateGatewayName(name: string, allowDefault = true): void {
     if (!GATEWAY_NAME_PATTERN.test(name)) {
       throw new Error(
         'Gateway name must start with a lowercase letter or number and contain only lowercase letters, numbers, dots, dashes, or underscores',
       );
+    }
+    if (!allowDefault && name === DEFAULT_GATEWAY_NAME) {
+      throw new Error(`"${DEFAULT_GATEWAY_NAME}" is reserved for the gateway managed by Kaiden`);
     }
   }
 
@@ -555,10 +573,11 @@ export class OpenshellGateway implements Disposable {
     storageDirectory: string,
     config: string,
     isolatePki = false,
+    serverSan?: string,
   ): Promise<string> {
     const configPath = join(storageDirectory, 'gateway.toml');
-    await this.generateCerts(binaryPath, storageDirectory, isolatePki);
     await mkdir(storageDirectory, { recursive: true });
+    await this.generateCerts(binaryPath, storageDirectory, isolatePki, serverSan);
     await writeFile(configPath, config, 'utf-8');
     return configPath;
   }
@@ -574,14 +593,14 @@ export class OpenshellGateway implements Disposable {
     ]);
   }
 
-  private async waitForIndependentGateway(process: ChildProcess, name: string): Promise<void> {
+  private async waitForIndependentGateway(gatewayProcess: ChildProcess, name: string): Promise<void> {
     let spawnError: Error | undefined;
-    process.once('error', err => (spawnError = err));
+    gatewayProcess.once('error', err => (spawnError = err));
     for (let attempt = 0; attempt < MAX_HEALTH_CHECK_ATTEMPTS; attempt++) {
       if (spawnError) {
         throw spawnError;
       }
-      if (typeof process.exitCode === 'number') {
+      if (typeof gatewayProcess.exitCode === 'number') {
         throw new Error('Gateway process exited before becoming ready');
       }
       try {

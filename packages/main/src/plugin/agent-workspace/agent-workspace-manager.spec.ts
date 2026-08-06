@@ -136,6 +136,7 @@ let gatewayStateUpdateCallback: (() => void) | undefined;
 let sandboxListChangeCallback: (() => void) | undefined;
 
 const openshellGateway = {
+  createLocalGateway: vi.fn(),
   onDidGatewayStart: vi.fn((cb: () => void) => {
     gatewayStartCallback = cb;
     return { dispose: vi.fn() };
@@ -267,6 +268,31 @@ describe('init', () => {
 
   test('registers IPC handler for listOpenshellGateways', () => {
     expect(ipcHandle).toHaveBeenCalledWith('agent-workspace:listOpenshellGateways', expect.any(Function));
+  });
+
+  test('refreshes gateway state before returning a newly created gateway', async () => {
+    const createdGateway = { name: 'local-dev', endpoint: 'https://127.0.0.1:17675' } as GatewayInfo;
+    vi.mocked(openshellGatewayStateManager.listGateways).mockReturnValue([createdGateway]);
+    const handler = vi
+      .mocked(ipcHandle)
+      .mock.calls.find(call => call[0] === 'agent-workspace:createLocalGateway')![1] as (
+      listener: unknown,
+      options: unknown,
+    ) => Promise<GatewayInfo[]>;
+    const options = {
+      name: 'local-dev',
+      bindAddress: '127.0.0.1',
+      port: 17675,
+      config: '[openshell]\nversion = 1\n',
+    };
+
+    await expect(handler({}, options)).resolves.toEqual([createdGateway]);
+
+    expect(openshellGateway.createLocalGateway).toHaveBeenCalledWith(options);
+    expect(openshellGatewayStateManager.refresh).toHaveBeenCalledOnce();
+    expect(vi.mocked(openshellGatewayStateManager.refresh).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(openshellGatewayStateManager.listGateways).mock.invocationCallOrder[0]!,
+    );
   });
 
   test('registers defaultBaseImage configuration', () => {
