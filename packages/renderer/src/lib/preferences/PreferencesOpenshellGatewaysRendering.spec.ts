@@ -18,7 +18,7 @@
 
 import '@testing-library/jest-dom/vitest';
 
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { beforeEach, expect, test, vi } from 'vitest';
 
 import { extensionInfos } from '/@/stores/extensions';
@@ -49,6 +49,50 @@ beforeEach(() => {
   vi.resetAllMocks();
   extensionInfos.set([]);
   openshellGateways.set([]);
+  vi.mocked(window.getLocalGatewayConfig).mockResolvedValue(
+    '[openshell]\nversion = 1\n\n[openshell.drivers.podman]\nenable_bind_mounts = true\n',
+  );
+  vi.mocked(window.createLocalGateway).mockResolvedValue([]);
+});
+
+test('opens the local gateway creation dialog', async () => {
+  setOpenshellStarted();
+  render(PreferencesOpenshellGatewaysRendering);
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Create local gateway' }));
+
+  expect(screen.getByRole('heading', { name: 'Create local gateway' })).toBeInTheDocument();
+  expect(screen.getByLabelText('Gateway name')).toHaveValue('local-gateway');
+  expect(screen.getByLabelText('Gateway port')).toHaveValue('17675');
+});
+
+test('generated config exposes a bind mounts toggle', async () => {
+  setOpenshellStarted();
+  render(PreferencesOpenshellGatewaysRendering);
+  await fireEvent.click(screen.getByRole('button', { name: 'Create local gateway' }));
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Config' }));
+
+  expect(((await screen.findByLabelText('Gateway config TOML')) as HTMLTextAreaElement).value).toContain(
+    'enable_bind_mounts = true',
+  );
+  expect(screen.getByRole('checkbox', { name: 'Enable bind mounts' })).toBeChecked();
+});
+
+test('creates a gateway with the edited generated config', async () => {
+  setOpenshellStarted();
+  render(PreferencesOpenshellGatewaysRendering);
+  await fireEvent.click(screen.getByRole('button', { name: 'Create local gateway' }));
+  await vi.waitFor(() => expect(window.getLocalGatewayConfig).toHaveBeenCalledWith('local-gateway'));
+  await fireEvent.click(screen.getByRole('button', { name: 'Config' }));
+  await fireEvent.click(screen.getByRole('checkbox', { name: 'Enable bind mounts' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+  expect(window.createLocalGateway).toHaveBeenCalledWith({
+    name: 'local-gateway',
+    port: 17675,
+    config: expect.stringContaining('enable_bind_mounts = false'),
+  });
 });
 
 test('shows not-running message when OpenShell extension is not started', () => {
@@ -85,6 +129,18 @@ test('displays active gateway in the Active Gateway section', () => {
   expect(statusDot).toHaveClass('bg-(--pd-status-running)');
 
   expect(screen.queryByText('Other Gateways')).not.toBeInTheDocument();
+});
+
+test('places the secondary create button below the gateway cards', () => {
+  setOpenshellStarted();
+  openshellGateways.set([{ name: 'kaiden-local', endpoint: 'http://127.0.0.1:17670', active: true }]);
+  render(PreferencesOpenshellGatewaysRendering);
+
+  const gatewayCard = screen.getByRole('region', { name: 'Active gateway kaiden-local' });
+  const createButton = screen.getByRole('button', { name: 'Create local gateway' });
+
+  expect(gatewayCard.compareDocumentPosition(createButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(createButton).toHaveClass('rounded-lg');
 });
 
 test('displays non-active gateways in Other Gateways section', () => {

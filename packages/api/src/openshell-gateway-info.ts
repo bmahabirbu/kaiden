@@ -137,6 +137,12 @@ export interface OpenshellGatewayStartOptions {
   supervisorImage?: string;
 }
 
+export interface CreateLocalGatewayOptions {
+  name: string;
+  port: number;
+  config: string;
+}
+
 export const GatewayRuntimeInfoSchema = z.looseObject({
   status: GatewayHealthSchema,
   compute_drivers: z.array(

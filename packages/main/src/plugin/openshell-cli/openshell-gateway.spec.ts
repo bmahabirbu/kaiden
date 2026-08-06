@@ -18,8 +18,9 @@
 
 import { type ChildProcess, spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { createWriteStream, type WriteStream } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { closeSync, createWriteStream, openSync, type WriteStream } from 'node:fs';
+import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import type { RunResult } from '@openkaiden/api';
@@ -30,6 +31,7 @@ import type { Directories } from '/@/plugin/directories.js';
 import type { OpenshellCli } from '/@/plugin/openshell-cli/openshell-cli.js';
 import type { NotificationRegistry } from '/@/plugin/tasks/notification-registry.js';
 import type { Exec } from '/@/plugin/util/exec.js';
+import { isFreePort } from '/@/plugin/util/port.js';
 import type { CliToolInfo } from '/@api/cli-tool-info.js';
 import type { GatewayInfo } from '/@api/openshell-gateway-info.js';
 
@@ -39,6 +41,7 @@ vi.mock(import('node:child_process'));
 vi.mock(import('node:fs'));
 vi.mock(import('node:fs/promises'));
 vi.mock(import('/@/plugin/util/exec.js'));
+vi.mock(import('/@/plugin/util/port.js'));
 
 const GATEWAY_BINARY = '/usr/local/bin/openshell-gateway';
 const KAIDEN_DATA_DIRECTORY = '/home/user/.local/share/kaiden';
@@ -64,6 +67,7 @@ function createMockChildProcess(): ChildProcess & { _stdout: EventEmitter; _stde
   Object.defineProperty(proc, 'stdout', { get: (): EventEmitter => proc._stdout });
   Object.defineProperty(proc, 'stderr', { get: (): EventEmitter => proc._stderr });
   proc.kill = vi.fn().mockReturnValue(true);
+  proc.unref = vi.fn();
   return proc;
 }
 
@@ -106,9 +110,12 @@ beforeEach(() => {
     { name: 'openshell-gateway', path: GATEWAY_BINARY },
   ] as unknown as CliToolInfo[]);
   vi.mocked(createWriteStream).mockReturnValue(gatewayLogStream);
+  vi.mocked(openSync).mockReturnValue(42);
   vi.mocked(exec.exec).mockResolvedValue({ command: '', stdout: '', stderr: '' });
+  vi.mocked(isFreePort).mockResolvedValue(true);
   vi.mocked(openshellCli.removeGateway).mockResolvedValue();
   vi.mocked(openshellCli.listGateways).mockResolvedValue([]);
+  vi.mocked(openshellCli.getGatewayInfo).mockResolvedValue({ status: 'healthy', compute_drivers: [] });
   gateway = new OpenshellGateway(cliToolRegistry, openshellCli, directories, exec, notificationRegistry);
 });
 
@@ -267,6 +274,113 @@ describe('init', () => {
 
     expect(openshellCli.checkEndpointStatus).not.toHaveBeenCalledWith('https://gw.example.com');
     expect(spawn).toHaveBeenCalled();
+  });
+});
+
+describe('createLocalGateway', () => {
+  test('starts and registers a named gateway with the supplied config and port', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const proc = createMockChildProcess();
+    vi.mocked(spawn).mockReturnValue(proc);
+    vi.mocked(openshellCli.checkEndpointStatus).mockResolvedValue(true);
+
+    await gateway.createLocalGateway({
+      name: 'local-dev',
+      port: 17675,
+      config: '[openshell]\nversion = 1\n',
+    });
+
+    const storageDirectory = join(KAIDEN_DATA_DIRECTORY, 'openshell-gateways', 'local-dev');
+    expect(writeFile).toHaveBeenCalledWith(
+      join(storageDirectory, 'gateway.toml'),
+      '[openshell]\nversion = 1\n',
+      'utf-8',
+    );
+    expect(spawn).toHaveBeenCalledWith(
+      GATEWAY_BINARY,
+      expect.arrayContaining([
+        '--port',
+        '17675',
+        '--config',
+        join(storageDirectory, 'gateway.toml'),
+        '--db-url',
+        `sqlite:${join(storageDirectory, 'gateway.db')}?mode=rwc`,
+        '--tls-cert',
+        join(storageDirectory, 'server', 'tls.crt'),
+        '--tls-key',
+        join(storageDirectory, 'server', 'tls.key'),
+        '--tls-client-ca',
+        join(storageDirectory, 'ca.crt'),
+      ]),
+      expect.objectContaining({
+        detached: true,
+        stdio: ['ignore', 42, 42],
+        env: expect.objectContaining({ OPENSHELL_LOCAL_TLS_DIR: storageDirectory }),
+      }),
+    );
+    expect(openshellCli.addGateway).toHaveBeenCalledWith({
+      endpoint: 'https://127.0.0.1:17675',
+      local: true,
+      name: 'local-dev',
+    });
+    const mtlsDirectory = join(homedir(), '.config', 'openshell', 'gateways', 'local-dev', 'mtls');
+    expect(copyFile).toHaveBeenCalledWith(join(storageDirectory, 'ca.crt'), join(mtlsDirectory, 'ca.crt'));
+    expect(copyFile).toHaveBeenCalledWith(join(storageDirectory, 'client', 'tls.crt'), join(mtlsDirectory, 'tls.crt'));
+    expect(copyFile).toHaveBeenCalledWith(join(storageDirectory, 'client', 'tls.key'), join(mtlsDirectory, 'tls.key'));
+    expect(vi.mocked(copyFile).mock.invocationCallOrder[0]).toBeGreaterThan(
+      vi.mocked(openshellCli.addGateway).mock.invocationCallOrder[0]!,
+    );
+    expect(exec.exec).toHaveBeenCalledWith(
+      GATEWAY_BINARY,
+      expect.arrayContaining(['generate-certs', '--output-dir', storageDirectory]),
+      { env: { XDG_CONFIG_HOME: join(storageDirectory, 'xdg-config') } },
+    );
+    expect(closeSync).toHaveBeenCalledWith(42);
+    expect(proc.unref).toHaveBeenCalled();
+  });
+
+  test('rejects duplicate gateway names before starting', async () => {
+    vi.mocked(openshellCli.listGateways).mockResolvedValue([
+      { name: 'local-dev', endpoint: 'http://127.0.0.1:17675' } as GatewayInfo,
+    ]);
+
+    await expect(
+      gateway.createLocalGateway({ name: 'local-dev', port: 17676, config: '[openshell]\nversion = 1\n' }),
+    ).rejects.toThrow('already registered');
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  test('rejects invalid names and ports', async () => {
+    await expect(
+      gateway.createLocalGateway({ name: '../gateway', port: 17675, config: '[openshell]\nversion = 1\n' }),
+    ).rejects.toThrow('Gateway name');
+    await expect(
+      gateway.createLocalGateway({ name: 'local-dev', port: 70_000, config: '[openshell]\nversion = 1\n' }),
+    ).rejects.toThrow('Port');
+  });
+
+  test('rejects a port occupied by an unregistered process before creating files', async () => {
+    vi.mocked(isFreePort).mockRejectedValue(new Error('Port 17675 is already in use.'));
+
+    await expect(
+      gateway.createLocalGateway({ name: 'local-dev', port: 17675, config: '[openshell]\nversion = 1\n' }),
+    ).rejects.toThrow('Port 17675 is already in use');
+
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+    expect(openshellCli.addGateway).not.toHaveBeenCalled();
+  });
+
+  test('removes the newly created registration when startup fails', async () => {
+    const proc = createMockChildProcess();
+    Object.defineProperty(proc, 'exitCode', { get: () => 1 });
+    vi.mocked(spawn).mockReturnValue(proc);
+
+    await expect(
+      gateway.createLocalGateway({ name: 'local-dev', port: 17675, config: '[openshell]\nversion = 1\n' }),
+    ).rejects.toThrow('Gateway process exited before becoming ready');
+
+    expect(openshellCli.removeGateway).toHaveBeenCalledWith('local-dev');
   });
 });
 
@@ -983,7 +1097,7 @@ describe('gateway config generation', () => {
     expect(writtenContent).toContain('enable_bind_mounts = true');
   });
 
-  test('generates config without bind mounts when no driver is available', async () => {
+  test('enables bind mounts for the fallback podman driver', async () => {
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.69'));
     vi.mocked(openshellCli.getGatewayInfo).mockResolvedValue({ status: 'healthy', compute_drivers: [] });
 
@@ -991,7 +1105,7 @@ describe('gateway config generation', () => {
 
     const writtenContent = vi.mocked(writeFile).mock.calls[0]?.[1] as string;
     expect(writtenContent).toContain('[openshell.drivers.podman]');
-    expect(writtenContent).not.toContain('enable_bind_mounts');
+    expect(writtenContent).toContain('enable_bind_mounts = true');
     expect(writtenContent).not.toContain('compute_drivers');
   });
 });

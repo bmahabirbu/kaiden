@@ -55,7 +55,7 @@ import { getSandboxNameValidationError } from '/@api/agent-workspace-info.js';
 import { ApiSenderType } from '/@api/api-sender/api-sender-type.js';
 import type { IConfigurationNode } from '/@api/configuration/models.js';
 import { IConfigurationRegistry } from '/@api/configuration/models.js';
-import type { GatewayInfo, GatewaySandboxes } from '/@api/openshell-gateway-info.js';
+import type { CreateLocalGatewayOptions, GatewayInfo, GatewaySandboxes } from '/@api/openshell-gateway-info.js';
 import { AGENT_LABEL, decodeWorkspaceLabels, WORKSPACE_LABEL } from '/@api/openshell-gateway-info.js';
 
 const HOME_VARIABLE = '${HOME}';
@@ -723,6 +723,18 @@ export class AgentWorkspaceManager implements Disposable {
     this.ipcHandle('agent-workspace:listOpenshellGateways', async (): Promise<GatewayInfo[]> => {
       return this.listOpenshellGateways();
     });
+
+    this.ipcHandle('agent-workspace:getLocalGatewayConfig', async (_listener, name: string): Promise<string> => {
+      return this.openshellGateway.getLocalGatewayConfig(name);
+    });
+
+    this.ipcHandle(
+      'agent-workspace:createLocalGateway',
+      async (_listener, options: CreateLocalGatewayOptions): Promise<GatewayInfo[]> => {
+        await this.openshellGateway.createLocalGateway(options);
+        return this.listOpenshellGateways();
+      },
+    );
 
     this.ipcHandle(
       'agent-workspace:deleteOpenshellSandbox',
