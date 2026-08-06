@@ -283,7 +283,6 @@ describe('init', () => {
       name: 'local-dev',
       bindAddress: '127.0.0.1',
       port: 17675,
-      config: '[openshell]\nversion = 1\n',
     };
 
     await expect(handler({}, options)).resolves.toEqual([createdGateway]);

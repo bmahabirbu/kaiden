@@ -724,10 +724,6 @@ export class AgentWorkspaceManager implements Disposable {
       return this.listOpenshellGateways();
     });
 
-    this.ipcHandle('agent-workspace:getLocalGatewayConfig', async (_listener, name: string): Promise<string> => {
-      return this.openshellGateway.getLocalGatewayConfig(name);
-    });
-
     this.ipcHandle(
       'agent-workspace:createLocalGateway',
       async (_listener, options: CreateLocalGatewayOptions): Promise<GatewayInfo[]> => {

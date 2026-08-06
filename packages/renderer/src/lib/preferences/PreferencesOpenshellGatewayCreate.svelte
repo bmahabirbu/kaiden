@@ -17,6 +17,8 @@ let bindAddress = $state('127.0.0.1');
 let port = $state(17675);
 let creating = $state(false);
 let error = $state('');
+let checkingPort = $state(true);
+let portAvailabilityError = $state('');
 
 let nameError = $derived.by((): string => {
   if (!name.trim()) return 'Enter a gateway name';
@@ -30,16 +32,40 @@ let portError = $derived(
   !Number.isInteger(port) || port < 1 || port > 65_535 ? 'Enter a port between 1 and 65535' : '',
 );
 let bindAddressError = $derived(bindAddress.trim() ? '' : 'Enter a bind address');
-let canCreate = $derived(!nameError && !bindAddressError && !portError && !creating);
+let canCreate = $derived(
+  !nameError && !bindAddressError && !portError && !portAvailabilityError && !checkingPort && !creating,
+);
+
+$effect(() => {
+  const selectedPort = port;
+  if (!Number.isInteger(selectedPort) || selectedPort < 1 || selectedPort > 65_535) {
+    checkingPort = false;
+    portAvailabilityError = '';
+    return;
+  }
+
+  checkingPort = true;
+  portAvailabilityError = '';
+  window.isFreePort(selectedPort).then(
+    () => {
+      if (port === selectedPort) checkingPort = false;
+    },
+    () => {
+      if (port === selectedPort) {
+        checkingPort = false;
+        portAvailabilityError = `Port ${selectedPort} is already in use`;
+      }
+    },
+  );
+});
 
 async function createGateway(): Promise<void> {
   if (!canCreate) return;
   creating = true;
   error = '';
   try {
-    const config = await window.getLocalGatewayConfig(name.trim());
     openshellGateways.set(
-      await window.createLocalGateway({ name: name.trim(), bindAddress: bindAddress.trim(), port, config }),
+      await window.createLocalGateway({ name: name.trim(), bindAddress: bindAddress.trim(), port }),
     );
     closeCallback();
   } catch (cause: unknown) {
@@ -76,8 +102,9 @@ async function createGateway(): Promise<void> {
           type="integer"
           showError={false} />
       </label>
-      <p class="mt-1 text-xs opacity-70">Suggested port: 17675. Availability is checked when the gateway starts.</p>
+      <p class="mt-1 text-xs opacity-70">Suggested port: 17675.</p>
       {#if portError}<ErrorMessage error={portError} />{/if}
+      {#if portAvailabilityError}<ErrorMessage error={portAvailabilityError} />{/if}
     </div>
   {/snippet}
 

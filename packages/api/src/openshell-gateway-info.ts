@@ -141,7 +141,6 @@ export interface CreateLocalGatewayOptions {
   name: string;
   bindAddress: string;
   port: number;
-  config: string;
 }
 
 export const GATEWAY_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;

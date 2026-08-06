@@ -282,7 +282,7 @@ describe('init', () => {
 });
 
 describe('createLocalGateway', () => {
-  test('starts and registers a named gateway with the supplied config and port', async () => {
+  test('starts and registers a named gateway with generated config and the supplied port', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
@@ -292,13 +292,12 @@ describe('createLocalGateway', () => {
       name: 'local-dev',
       bindAddress: '127.0.0.1',
       port: 17675,
-      config: '[openshell]\nversion = 1\n',
     });
 
     const storageDirectory = join(KAIDEN_DATA_DIRECTORY, 'openshell-gateways', 'local-dev');
     expect(writeFile).toHaveBeenCalledWith(
       join(storageDirectory, 'gateway.toml'),
-      '[openshell]\nversion = 1\n',
+      expect.stringContaining('enable_bind_mounts = true'),
       'utf-8',
     );
     expect(spawn).toHaveBeenCalledWith(
@@ -356,7 +355,6 @@ describe('createLocalGateway', () => {
         name: 'local-dev',
         bindAddress: '127.0.0.1',
         port: 17676,
-        config: '[openshell]\nversion = 1\n',
       }),
     ).rejects.toThrow('already registered');
     expect(spawn).not.toHaveBeenCalled();
@@ -368,15 +366,13 @@ describe('createLocalGateway', () => {
         name: '../gateway',
         bindAddress: '127.0.0.1',
         port: 17675,
-        config: '[openshell]\nversion = 1\n',
       }),
     ).rejects.toThrow('Gateway name');
     await expect(
       gateway.createLocalGateway({
         name: 'local-dev',
-        bindAddress: 'localhost',
+        bindAddress: 'not-a-host',
         port: 17675,
-        config: '[openshell]\nversion = 1\n',
       }),
     ).rejects.toThrow('Bind address');
     await expect(
@@ -384,7 +380,6 @@ describe('createLocalGateway', () => {
         name: 'local-dev',
         bindAddress: '127.0.0.1',
         port: 70_000,
-        config: '[openshell]\nversion = 1\n',
       }),
     ).rejects.toThrow('Port');
     await expect(
@@ -392,9 +387,30 @@ describe('createLocalGateway', () => {
         name: 'kaiden-local',
         bindAddress: '127.0.0.1',
         port: 17675,
-        config: '[openshell]\nversion = 1\n',
       }),
     ).rejects.toThrow('reserved');
+  });
+
+  test('accepts localhost as the bind address', async () => {
+    const proc = createMockChildProcess();
+    vi.mocked(spawn).mockReturnValue(proc);
+
+    await gateway.createLocalGateway({
+      name: 'loopback-dev',
+      bindAddress: 'localhost',
+      port: 17675,
+    });
+
+    expect(spawn).toHaveBeenCalledWith(
+      GATEWAY_BINARY,
+      expect.arrayContaining(['--bind-address', 'localhost']),
+      expect.anything(),
+    );
+    expect(openshellCli.addGateway).toHaveBeenCalledWith({
+      endpoint: 'https://localhost:17675',
+      local: true,
+      name: 'loopback-dev',
+    });
   });
 
   test('uses a custom bind address for startup, registration, and certificate generation', async () => {
@@ -405,7 +421,6 @@ describe('createLocalGateway', () => {
       name: 'shared-dev',
       bindAddress: '0.0.0.0',
       port: 17675,
-      config: '[openshell]\nversion = 1\n',
     });
 
     expect(spawn).toHaveBeenCalledWith(
@@ -433,7 +448,6 @@ describe('createLocalGateway', () => {
         name: 'local-dev',
         bindAddress: '127.0.0.1',
         port: 17675,
-        config: '[openshell]\nversion = 1\n',
       }),
     ).rejects.toThrow('Port 17675 is already in use');
 
@@ -452,7 +466,6 @@ describe('createLocalGateway', () => {
         name: 'local-dev',
         bindAddress: '127.0.0.1',
         port: 17675,
-        config: '[openshell]\nversion = 1\n',
       }),
     ).rejects.toThrow('Gateway process exited before becoming ready');
 

@@ -49,9 +49,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   extensionInfos.set([]);
   openshellGateways.set([]);
-  vi.mocked(window.getLocalGatewayConfig).mockResolvedValue(
-    '[openshell]\nversion = 1\n\n[openshell.drivers.podman]\nenable_bind_mounts = true\n',
-  );
+  vi.mocked(window.isFreePort).mockResolvedValue(true);
   vi.mocked(window.createLocalGateway).mockResolvedValue([]);
 });
 
@@ -76,19 +74,35 @@ test('does not expose gateway configuration controls', async () => {
   expect(screen.queryByLabelText('Gateway config TOML')).not.toBeInTheDocument();
 });
 
-test('creates a gateway with the generated bind-mount config', async () => {
+test('creates a gateway after confirming the selected port is available', async () => {
   setOpenshellStarted();
   render(PreferencesOpenshellGatewaysRendering);
   await fireEvent.click(screen.getByRole('button', { name: 'Create local gateway' }));
-  await fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+  const createButton = await screen.findByRole('button', { name: 'Create' });
+  await vi.waitFor(() => expect(createButton).toBeEnabled());
+  await fireEvent.click(createButton);
 
-  expect(window.getLocalGatewayConfig).toHaveBeenCalledWith('local-gateway');
+  expect(window.isFreePort).toHaveBeenCalledWith(17675);
   expect(window.createLocalGateway).toHaveBeenCalledWith({
     name: 'local-gateway',
     bindAddress: '127.0.0.1',
     port: 17675,
-    config: expect.stringContaining('enable_bind_mounts = true'),
   });
+});
+
+test('disables creation while the selected port is in use', async () => {
+  vi.mocked(window.isFreePort)
+    .mockResolvedValueOnce(true)
+    .mockRejectedValueOnce(new Error('Port 17676 is already in use.'));
+  setOpenshellStarted();
+  render(PreferencesOpenshellGatewaysRendering);
+  await fireEvent.click(screen.getByRole('button', { name: 'Create local gateway' }));
+  await fireEvent.input(screen.getByLabelText('Gateway port'), { target: { value: '17676' } });
+
+  await screen.findByText('Port 17676 is already in use');
+  expect(window.isFreePort).toHaveBeenLastCalledWith(17676);
+  expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+  expect(window.createLocalGateway).not.toHaveBeenCalled();
 });
 
 test('shows not-running message when OpenShell extension is not started', () => {

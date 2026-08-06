@@ -166,15 +166,6 @@ export class OpenshellGateway implements Disposable {
     return tool?.path;
   }
 
-  async getLocalGatewayConfig(name: string): Promise<string> {
-    this.validateGatewayName(name);
-    const binaryPath = this.getGatewayBinaryPath();
-    if (!binaryPath) {
-      throw new Error('openshell-gateway binary not registered in CLI tool registry');
-    }
-    return this.renderGatewayConfig(binaryPath, this.getGatewayStorageDirectory(name));
-  }
-
   async createLocalGateway(options: CreateLocalGatewayOptions): Promise<void> {
     const name = options.name.trim();
     this.validateGatewayName(name, false);
@@ -182,11 +173,8 @@ export class OpenshellGateway implements Disposable {
       throw new Error('Port must be an integer between 1 and 65535');
     }
     const bindAddress = options.bindAddress.trim();
-    if (isIP(bindAddress) === 0) {
-      throw new Error('Bind address must be a valid IPv4 or IPv6 address');
-    }
-    if (!options.config.trim()) {
-      throw new Error('Gateway configuration cannot be empty');
+    if (bindAddress !== 'localhost' && isIP(bindAddress) === 0) {
+      throw new Error('Bind address must be localhost or a valid IPv4 or IPv6 address');
     }
     const gateways = await this.openshellCli.listGateways();
     if (gateways.some(gateway => gateway.name === name)) {
@@ -210,7 +198,8 @@ export class OpenshellGateway implements Disposable {
       throw new Error('openshell-gateway binary not registered in CLI tool registry');
     }
     const storageDirectory = this.getGatewayStorageDirectory(name);
-    const configPath = await this.writeGatewayConfig(binaryPath, storageDirectory, options.config, true, bindAddress);
+    const config = await this.renderGatewayConfig(binaryPath, storageDirectory);
+    const configPath = await this.writeGatewayConfig(binaryPath, storageDirectory, config, true, bindAddress);
     const logFd = openSync(join(storageDirectory, GATEWAY_LOG_FILENAME), 'w');
     let gatewayProcess: ChildProcess;
     try {
