@@ -186,6 +186,26 @@ describe('activate', () => {
       });
     });
 
+    test('maps Ollama to an OpenAI-compatible model', async () => {
+      const configFile = createConfigFile();
+      await agent.preWorkspaceStart(
+        createContext([configFile], {
+          modelLabel: 'qwen2.5:latest',
+          provider: 'ollama',
+          endpoint: 'http://host.openshell.internal:11434/v1',
+        }),
+      );
+
+      const written = writtenConfig(configFile);
+      expect(written.agents.defaults.model).toBe('openai/qwen2.5:latest');
+      expect(written.models.providers.openai).toEqual({
+        baseUrl: 'http://host.openshell.internal:11434/v1',
+        api: 'openai-completions',
+        apiKey: 'local',
+        models: [{ id: 'qwen2.5:latest', name: 'qwen2.5:latest' }],
+      });
+    });
+
     test('throws on invalid JSON', async () => {
       const configFile = createConfigFile('not valid json');
       await expect(agent.preWorkspaceStart(createContext([configFile]))).rejects.toThrow();
