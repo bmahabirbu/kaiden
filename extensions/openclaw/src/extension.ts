@@ -47,6 +47,10 @@ const OpenClawModelsSchema = z.looseObject({
   providers: z.record(z.string(), OpenClawModelProviderSchema).optional(),
 });
 
+const OpenClawToolsSchema = z.looseObject({
+  profile: z.string().optional(),
+});
+
 const McpServerEntrySchema = z.looseObject({
   command: z.string().optional(),
   args: z.array(z.string()).optional(),
@@ -65,6 +69,7 @@ const McpConfigSchema = z.looseObject({
 const OpenClawConfigSchema = z.looseObject({
   agents: OpenClawAgentsSchema.optional(),
   models: OpenClawModelsSchema.optional(),
+  tools: OpenClawToolsSchema.optional(),
   mcp: McpConfigSchema.optional(),
 });
 
@@ -87,6 +92,10 @@ const OpenClawConfigCodec = z.codec(z.string(), OpenClawConfigSchema, {
 
 function nonEmpty(obj: Record<string, string> | undefined): Record<string, string> | undefined {
   return obj && Object.keys(obj).length > 0 ? obj : undefined;
+}
+
+function isLocalEndpoint(endpoint: string): boolean {
+  return new URL(endpoint).hostname === 'host.openshell.internal';
 }
 
 export const OPENCLAW_CONFIG_PATH = '.openclaw/openclaw.json';
@@ -131,15 +140,22 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
       config.agents.defaults = { ...config.agents.defaults, model: provider ? `${provider}/${model}` : model };
 
       if (provider && context.model.endpoint) {
+        const localEndpoint = isLocalEndpoint(context.model.endpoint);
         config.models ??= {};
         config.models.providers ??= {};
         config.models.providers[provider] = {
           ...config.models.providers[provider],
           baseUrl: context.model.endpoint,
           api: 'openai-completions',
-          apiKey: providerName === 'ollama' ? 'local' : config.models.providers[provider]?.apiKey,
+          apiKey: localEndpoint ? 'local' : config.models.providers[provider]?.apiKey,
           models: [{ id: model, name: model }],
         };
+
+        if (localEndpoint) {
+          // Work around https://github.com/openclaw/openclaw/issues/113093 while preserving coding tools.
+          config.tools ??= {};
+          config.tools.profile = 'coding';
+        }
       }
 
       const mcpServers = context.workspace.mcp?.servers;

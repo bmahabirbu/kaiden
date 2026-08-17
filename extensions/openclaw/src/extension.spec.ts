@@ -165,6 +165,7 @@ describe('activate', () => {
         api: 'openai-completions',
         models: [{ id: 'gpt-5.5', name: 'gpt-5.5' }],
       });
+      expect(written.tools).toBeUndefined();
     });
 
     test('maps Gemini to an OpenAI-compatible model', async () => {
@@ -204,6 +205,21 @@ describe('activate', () => {
         apiKey: 'local',
         models: [{ id: 'qwen2.5:latest', name: 'qwen2.5:latest' }],
       });
+    });
+
+    test('configures local OpenAI-compatible models for coding tools', async () => {
+      const configFile = createConfigFile();
+      await agent.preWorkspaceStart(
+        createContext([configFile], {
+          modelLabel: 'hf://bartowski/Qwen2.5-7B-Instruct-GGUF',
+          provider: 'openai',
+          endpoint: 'http://host.openshell.internal:8080/',
+        }),
+      );
+
+      const written = writtenConfig(configFile);
+      expect(written.models.providers.openai.apiKey).toBe('local');
+      expect(written.tools.profile).toBe('coding');
     });
 
     test('throws on invalid JSON', async () => {
