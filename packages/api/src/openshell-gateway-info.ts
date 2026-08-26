@@ -118,26 +118,6 @@ export interface OpenshellBindMount {
   read_only: boolean;
 }
 
-export interface CreateSandboxOptions {
-  name?: string;
-  gateway?: string;
-  from?: string;
-  gpu?: boolean;
-  gpuDevice?: string;
-  cpu?: string;
-  memory?: string;
-  providers?: string[];
-  env?: Record<string, string>;
-  labels?: Record<string, string>;
-  uploads?: OpenshellUpload[];
-  driverConfig?: Partial<Record<LocalGatewayDriver, { mounts: OpenshellBindMount[] }>>;
-  command?: string[];
-  noTty?: boolean;
-  tty?: boolean;
-  detach?: boolean;
-  policy?: string;
-}
-
 export interface GatewayAddOptions {
   endpoint: string;
   name?: string;
