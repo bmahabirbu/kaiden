@@ -200,35 +200,33 @@ export class AgentWorkspaceManager implements Disposable {
     const agent = this.agentRegistry.getAgentRegistration(options.agent);
     const configurationUploads: OpenshellUpload[] = [];
     const supportsMounts = await this.openshellGateway.supportsMounts(gateway);
-    let skillUploads: OpenshellUpload[] = [];
-
-    if (agent) {
-      const writable = await Promise.all(
-        agent.configurationFiles.map(
-          async (base, i) =>
-            new WritableConfigurationFile(base, await base.read(), join(tmpdir(), `kaiden-config-${Date.now()}-${i}`)),
-        ),
-      );
-
-      await agent.preWorkspaceStart({
-        model: {
-          llmMetadata: connectionInfo?.llmMetadataName ? { name: connectionInfo.llmMetadataName } : undefined,
-          model: { label: modelName ?? '' },
-          endpoint,
-        },
-        configurationFiles: writable,
-        workspace,
-      });
-
-      for (const file of writable) {
-        await writeFile(file.localPath, await file.read(), 'utf-8');
-        configurationUploads.push({ local: file.localPath, remote: file.path });
-      }
-
-      skillUploads = await this.buildOpenshellSkillUploads(options.skills, agent.destinationSkillsFolder);
-    } else {
+    if (!agent) {
       throw new Error(`Unable to create workspace: agent ${options.agent} not registered`);
     }
+
+    const writable = await Promise.all(
+      agent.configurationFiles.map(
+        async (base, i) =>
+          new WritableConfigurationFile(base, await base.read(), join(tmpdir(), `kaiden-config-${Date.now()}-${i}`)),
+      ),
+    );
+
+    await agent.preWorkspaceStart({
+      model: {
+        llmMetadata: connectionInfo?.llmMetadataName ? { name: connectionInfo.llmMetadataName } : undefined,
+        model: { label: modelName ?? '' },
+        endpoint,
+      },
+      configurationFiles: writable,
+      workspace,
+    });
+
+    for (const file of writable) {
+      await writeFile(file.localPath, await file.read(), 'utf-8');
+      configurationUploads.push({ local: file.localPath, remote: file.path });
+    }
+
+    const skillUploads = await this.buildOpenshellSkillUploads(options.skills, agent.destinationSkillsFolder);
 
     if (secretName !== undefined) {
       const connection = this.providerRegistry.getInferenceConnection(options.model);
@@ -351,7 +349,7 @@ export class AgentWorkspaceManager implements Disposable {
 
     for (const mount of workspace.mounts ?? []) {
       const raw = this.resolveHostPath(mount.host, sourcePath);
-      const remote = this.resolveOpenshellSandboxPath(mount.target, sourcePath);
+      const remote = this.resolveOpenshellSandboxPath(mount.target);
       if (!raw || !remote) {
         console.warn(
           `[AgentWorkspaceManager] skipping mount "${mount.host}" → "${mount.target}": cannot resolve without a project folder`,
@@ -411,7 +409,7 @@ export class AgentWorkspaceManager implements Disposable {
     return undefined;
   }
 
-  private resolveOpenshellSandboxPath(path: string, _sourcePath: string | undefined): string | undefined {
+  private resolveOpenshellSandboxPath(path: string): string | undefined {
     if (path === SOURCES_VARIABLE) {
       return '.';
     }

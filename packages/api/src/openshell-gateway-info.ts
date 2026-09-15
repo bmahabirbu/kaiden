@@ -130,7 +130,7 @@ export interface CreateSandboxOptions {
   env?: Record<string, string>;
   labels?: Record<string, string>;
   uploads?: OpenshellUpload[];
-  driverConfig?: Partial<Record<'podman' | 'docker', { mounts: OpenshellBindMount[] }>>;
+  driverConfig?: Partial<Record<LocalGatewayDriver, { mounts: OpenshellBindMount[] }>>;
   command?: string[];
   noTty?: boolean;
   tty?: boolean;
