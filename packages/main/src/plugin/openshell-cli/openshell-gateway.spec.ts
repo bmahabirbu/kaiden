@@ -484,11 +484,12 @@ describe('createLocalGateway', () => {
       driver: 'vm',
     });
 
-    expect(writeFile).toHaveBeenCalledWith(
-      join(KAIDEN_DATA_DIRECTORY, 'openshell-gateways', 'vm-dev', 'gateway.toml'),
-      expect.stringContaining('compute_drivers = ["vm"]'),
-      'utf-8',
-    );
+    const configPath = join(KAIDEN_DATA_DIRECTORY, 'openshell-gateways', 'vm-dev', 'gateway.toml');
+    expect(writeFile).toHaveBeenCalledWith(configPath, expect.stringContaining('compute_drivers = ["vm"]'), 'utf-8');
+    const config = vi.mocked(writeFile).mock.calls.find(([path]) => path === configPath)?.[1] as string;
+    expect(config).toContain('[openshell.drivers.vm]');
+    expect(config).not.toContain('enable_bind_mounts');
+    expect(config).not.toContain('supervisor_image');
   });
 
   test.each([
@@ -1468,6 +1469,22 @@ describe('gateway config generation', () => {
 
     const writtenContent = vi.mocked(writeFile).mock.calls[0]?.[1] as string;
     expect(writtenContent).toContain('enable_bind_mounts = true');
+  });
+
+  test('omits unsupported container settings when the VM driver is detected', async () => {
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.116'));
+    vi.mocked(openshellCli.getGatewayInfo).mockResolvedValue({
+      status: 'healthy',
+      compute_drivers: [{ capabilities: { driver_name: 'vm' }, name: 'vm' }],
+    });
+
+    await gateway.start();
+
+    const writtenContent = vi.mocked(writeFile).mock.calls[0]?.[1] as string;
+    expect(writtenContent).toContain('compute_drivers = ["vm"]');
+    expect(writtenContent).toContain('[openshell.drivers.vm]');
+    expect(writtenContent).not.toContain('enable_bind_mounts');
+    expect(writtenContent).not.toContain('supervisor_image');
   });
 
   test('generates config without bind mounts when no driver is available', async () => {

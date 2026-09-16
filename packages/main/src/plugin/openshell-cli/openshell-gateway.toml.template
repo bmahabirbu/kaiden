@@ -6,10 +6,12 @@ version = 1
 compute_drivers = ["{{{driver}}}"]
 
 [openshell.drivers.{{{driver}}}]
+{{#supportsContainerSettings}}
 enable_bind_mounts = true
 {{#supervisorImage}}
 supervisor_image = "{{{supervisorImage}}}"
 {{/supervisorImage}}
+{{/supportsContainerSettings}}
 {{/driver}}
 {{^driver}}
 [openshell.drivers.podman]

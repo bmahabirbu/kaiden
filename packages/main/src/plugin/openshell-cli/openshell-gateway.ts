@@ -572,6 +572,7 @@ export class OpenshellGateway implements Disposable {
       await this.generateCerts(binaryPath, storageDirectory);
       const config = Mustache.render(gatewayConfigTemplate, {
         supervisorImage: image,
+        supportsContainerSettings: driver !== 'vm',
         gatewayDir: storageDirectory,
         q: '"',
         driver,
@@ -693,6 +694,7 @@ export class OpenshellGateway implements Disposable {
       configPath,
       Mustache.render(gatewayConfigTemplate, {
         supervisorImage,
+        supportsContainerSettings: driver !== 'vm',
         gatewayDir: storageDirectory,
         q: '"',
         driver,
