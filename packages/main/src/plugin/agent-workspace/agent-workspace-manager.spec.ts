@@ -522,7 +522,7 @@ describe('create – OpenShell mode', () => {
     expect(sdkSandbox.create).not.toHaveBeenCalled();
   });
 
-  test('passes agent baseImage as from option to createSandbox', async () => {
+  test('passes agent baseImage as image option to SDK create', async () => {
     vi.mocked(agentRegistry.getAgentRegistration).mockReturnValue({
       ...mockAgent,
       baseImage: 'registry.example.com/agent-base:v1',
@@ -1511,6 +1511,37 @@ describe('listOpenshellGateways', () => {
 });
 
 describe('remove', () => {
+  test('refreshes sandboxes while SDK deletion is still pending and keeps the task running', async () => {
+    vi.useFakeTimers();
+    let finishDelete!: () => void;
+    vi.mocked(openshellCli.listSandboxesPerGateway).mockResolvedValue(TEST_SUMMARIES);
+    vi.mocked(sdkSandbox.delete).mockReturnValue(
+      new Promise<void>(resolve => {
+        finishDelete = resolve;
+      }),
+    );
+
+    try {
+      const deletion = manager.remove('ws-1', 'kaiden');
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(sdkSandbox.delete).toHaveBeenCalledWith('test-workspace-1');
+      expect(apiSender.send).toHaveBeenCalledExactlyOnceWith('agent-workspace-update');
+      expect(mockTask.state).toBe('running');
+      expect(mockTask.status).toBe('in-progress');
+      expect(rm).not.toHaveBeenCalled();
+
+      finishDelete();
+      await deletion;
+
+      expect(mockTask.state).toBe('completed');
+      expect(mockTask.status).toBe('success');
+      expect(sdkSandbox.waitDeleted).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test('deletes through the SDK and returns the workspace id', async () => {
     vi.mocked(openshellCli.listSandboxesPerGateway).mockResolvedValue(TEST_SUMMARIES);
     vi.mocked(sdkSandbox.delete).mockResolvedValue(undefined);
@@ -1606,6 +1637,7 @@ describe('deleteOpenshellSandbox', () => {
 
     await manager.deleteOpenshellSandbox('shared-name', 'remote-gateway');
 
+    expect(openshellSdkClientManager.getClient).toHaveBeenCalledWith('remote-gateway');
     expect(sdkSandbox.delete).toHaveBeenCalledWith('shared-name');
     expect(sdkSandbox.waitDeleted).not.toHaveBeenCalled();
   });

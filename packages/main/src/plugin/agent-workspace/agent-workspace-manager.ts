@@ -67,8 +67,7 @@ const HOME_VARIABLE = '${HOME}';
 const LABEL_MAX_LENGTH = 63;
 const SOURCES_VARIABLE = '$SOURCES';
 const MOUNT_HOME_PREFIX = '$HOME';
-// Allow cold image pulls time to finish. A failed wait must not delete a
-// sandbox that may still be provisioning on the gateway.
+// Timeouts for sandbox startup and deletion cleanup for sdk.
 const SANDBOX_READY_TIMEOUT_SECONDS = 300;
 const SANDBOX_DELETE_TIMEOUT_SECONDS = 120;
 
@@ -297,8 +296,7 @@ export class AgentWorkspaceManager implements Disposable {
             }
           : undefined,
     });
-    // Surface the Provisioning sandbox immediately. The final update from
-    // create()'s finally block will publish its Ready/Error state later.
+    // Show phase for provisioning now then create will refreshes the ready or error phase later
     this.apiSender.send('agent-workspace-update');
     await sdkClient.sandbox.waitReady(sandboxName, SANDBOX_READY_TIMEOUT_SECONDS);
     const tSandbox = performance.now();
@@ -524,8 +522,13 @@ export class AgentWorkspaceManager implements Disposable {
     const task = this.taskManager.createTask({ title: `Deleting workspace "${name}"` });
     task.state = 'running';
     task.status = 'in-progress';
+    let earlyRefresh: ReturnType<typeof setTimeout> | undefined;
     try {
       const sdkClient = await this.openshellSdkClientManager.getClient(gateway);
+      // Preserve the cli's early refresh while delete waits for the sandbox to stop.
+      earlyRefresh = setTimeout(() => this.apiSender.send('agent-workspace-update'), 500);
+      // delete doesnt log like create does so matched the convention here
+      console.log(`[workspace-timing] deleteSandbox: deleting "${name}" on gateway "${gateway}"`);
       await sdkClient.sandbox.delete(name);
       this.apiSender.send('agent-workspace-update');
       if (terminalId) this.closeWorkspaceTerminal(terminalId);
@@ -537,6 +540,7 @@ export class AgentWorkspaceManager implements Disposable {
       task.error = `Failed to delete workspace: ${detail}`;
       throw new Error(detail);
     } finally {
+      clearTimeout(earlyRefresh);
       this.apiSender.send('agent-workspace-update');
       task.state = 'completed';
     }
