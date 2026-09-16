@@ -20,10 +20,10 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { createWriteStream, existsSync, type WriteStream } from 'node:fs';
 import { type FileHandle, mkdir, open, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import type { RunResult } from '@openkaiden/api';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
 import type { Directories } from '/@/plugin/directories.js';
@@ -31,6 +31,7 @@ import type { OpenshellCli } from '/@/plugin/openshell-cli/openshell-cli.js';
 import type { NotificationRegistry } from '/@/plugin/tasks/notification-registry.js';
 import type { Exec } from '/@/plugin/util/exec.js';
 import { isFreePort } from '/@/plugin/util/port.js';
+import { isLinux, isMac } from '/@/util.js';
 import type { CliToolInfo } from '/@api/cli-tool-info.js';
 import type { GatewayInfo } from '/@api/openshell-gateway-info.js';
 
@@ -41,6 +42,7 @@ vi.mock(import('node:fs'));
 vi.mock(import('node:fs/promises'));
 vi.mock(import('/@/plugin/util/exec.js'));
 vi.mock(import('/@/plugin/util/port.js'));
+vi.mock(import('/@/util.js'));
 
 const GATEWAY_BINARY = '/usr/local/bin/openshell-gateway';
 const KAIDEN_DATA_DIRECTORY = '/home/user/.local/share/kaiden';
@@ -118,6 +120,55 @@ beforeEach(() => {
   vi.mocked(openshellCli.listGateways).mockResolvedValue([]);
   vi.mocked(openshellCli.getGatewayInfo).mockResolvedValue({ status: 'healthy', compute_drivers: [] });
   gateway = new OpenshellGateway(cliToolRegistry, openshellCli, directories, exec, notificationRegistry);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+describe.each(['default', 'created'])('%s gateway process environment', launch => {
+  test.each([
+    { platformKind: 'darwin', path: '/usr/bin:/bin' },
+    { platformKind: 'linux', path: '/usr/bin:/bin' },
+    { platformKind: 'darwin', path: undefined },
+    { platformKind: 'linux', path: undefined },
+    { platformKind: 'darwin', path: '' },
+    { platformKind: 'linux', path: '' },
+    { platformKind: 'win32', path: 'C:\\Windows\\System32' },
+  ])('prepares the child environment on $platformKind with PATH=$path', async ({ platformKind, path }) => {
+    vi.mocked(isMac).mockReturnValue(platformKind === 'darwin');
+    vi.mocked(isLinux).mockReturnValue(platformKind === 'linux');
+    vi.stubEnv('PATH', path);
+    vi.stubEnv('NO_COLOR', '0');
+    vi.stubEnv('OPENSHELL_LOG_LEVEL', 'debug');
+    const bundleDirectory = join('/bundled tools', 'openshell');
+    vi.mocked(cliToolRegistry.getCliToolInfos).mockReturnValue([
+      { name: 'openshell-gateway', path: join(bundleDirectory, 'openshell-gateway') },
+    ] as unknown as CliToolInfo[]);
+    vi.mocked(spawn).mockReturnValue(createMockChildProcess());
+    vi.mocked(openshellCli.checkEndpointStatus).mockResolvedValue(true);
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.116'));
+
+    if (launch === 'default') {
+      await gateway.start();
+    } else {
+      await gateway.createLocalGateway({
+        name: 'local-dev',
+        bindAddress: '127.0.0.1',
+        port: 17675,
+        driver: 'vm',
+      });
+    }
+
+    const env = vi.mocked(spawn).mock.calls[0]?.[2]?.env;
+    const expectedPath =
+      platformKind === 'win32' ? path : path ? `${bundleDirectory}${delimiter}${path}` : bundleDirectory;
+    expect(env?.['PATH']).toBe(expectedPath);
+    expect(env?.['NO_COLOR']).toBe('1');
+    expect(env?.['OPENSHELL_LOG_LEVEL']).toBe('debug');
+    expect(process.env['PATH']).toBe(path);
+    expect(process.env['NO_COLOR']).toBe('0');
+  });
 });
 
 describe('init', () => {
@@ -431,25 +482,6 @@ describe('createLocalGateway', () => {
     expect(closeLogFile).toHaveBeenCalled();
   });
 
-  test('sets NO_COLOR in created gateway spawn environment to suppress ANSI codes in logs', async () => {
-    const proc = createMockChildProcess();
-    vi.mocked(spawn).mockReturnValue(proc);
-    vi.mocked(openshellCli.checkEndpointStatus).mockResolvedValue(true);
-    vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.69'));
-
-    await gateway.createLocalGateway({
-      name: 'local-dev',
-      bindAddress: '127.0.0.1',
-      port: 17675,
-      driver: 'podman',
-    });
-
-    const spawnOptions = vi.mocked(spawn).mock.calls[0]?.[2];
-    expect(spawnOptions?.env).toBeDefined();
-    expect(spawnOptions?.env?.['NO_COLOR']).toBe('1');
-    expect(spawnOptions?.env?.['PATH']).toBe(process.env['PATH']);
-  });
-
   test('infers the Docker driver from the active gateway when no override is supplied', async () => {
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
@@ -703,21 +735,6 @@ describe('start', () => {
       expect.arrayContaining(['--db-url', GATEWAY_DB_URL]),
       expect.objectContaining({ detached: false }),
     );
-  });
-
-  test('sets NO_COLOR in gateway spawn environment to suppress ANSI codes in logs', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    const proc = createMockChildProcess();
-    vi.mocked(spawn).mockReturnValue(proc);
-    vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.69'));
-    vi.mocked(openshellCli.checkEndpointStatus).mockResolvedValue(true);
-
-    await gateway.start();
-
-    const spawnOptions = vi.mocked(spawn).mock.calls[0]?.[2];
-    expect(spawnOptions?.env).toBeDefined();
-    expect(spawnOptions?.env?.['NO_COLOR']).toBe('1');
-    expect(spawnOptions?.env?.['PATH']).toBe(process.env['PATH']);
   });
 
   test('skips if already running', async () => {

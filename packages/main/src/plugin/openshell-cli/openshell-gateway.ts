@@ -21,7 +21,7 @@ import { spawn } from 'node:child_process';
 import type { WriteStream } from 'node:fs';
 import { createWriteStream, existsSync } from 'node:fs';
 import { mkdir, open, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 
 import type { Disposable } from '@openkaiden/api';
 import { inject, injectable, preDestroy } from 'inversify';
@@ -36,6 +36,7 @@ import { OpenshellCli } from '/@/plugin/openshell-cli/openshell-cli.js';
 import { NotificationRegistry } from '/@/plugin/tasks/notification-registry.js';
 import { Exec } from '/@/plugin/util/exec.js';
 import { isFreePort } from '/@/plugin/util/port.js';
+import { isLinux, isMac } from '/@/util.js';
 import type { Event } from '/@api/event.js';
 import {
   type CreateLocalGatewayOptions,
@@ -351,7 +352,7 @@ export class OpenshellGateway implements Disposable {
       gatewayProcess = spawn(binaryPath, this.buildArgs(true, configPath, storageDirectory, port, bindAddress), {
         stdio: ['ignore', logFile.fd, logFile.fd],
         detached: false,
-        env: { ...process.env, NO_COLOR: '1' },
+        env: this.getGatewayEnvironment(binaryPath),
       });
       gatewayProcess.once('error', err => (processState.spawnError = err));
       this.trackGatewayProcess(name, gatewayProcess);
@@ -359,6 +360,15 @@ export class OpenshellGateway implements Disposable {
       await logFile.close();
     }
     return { gatewayProcess, processState };
+  }
+
+  private getGatewayEnvironment(binaryPath: string): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: '1' };
+    if (isMac() || isLinux()) {
+      // The VM driver finds the bundled e2fsprogs wrappers through PATH.
+      env['PATH'] = [dirname(binaryPath), env['PATH']].filter(Boolean).join(delimiter);
+    }
+    return env;
   }
 
   async start(options?: OpenshellGatewayStartOptions): Promise<void> {
@@ -390,7 +400,7 @@ export class OpenshellGateway implements Disposable {
     const gatewayProcess = spawn(binaryPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
-      env: { ...process.env, NO_COLOR: '1' },
+      env: this.getGatewayEnvironment(binaryPath),
     });
     this.trackGatewayProcess(DEFAULT_GATEWAY_NAME, gatewayProcess);
 
