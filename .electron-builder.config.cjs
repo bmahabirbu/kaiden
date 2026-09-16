@@ -20,8 +20,51 @@ const { exec, execFile } = require('child_process');
 const Arch = require('builder-util').Arch;
 const path = require('path');
 const { flipFuses, FuseVersion, FuseV1Options } = require('@electron/fuses');
+const { signAsync } = require('@electron/osx-sign');
 const product = require('./product.json');
 const fs = require('node:fs');
+const { promisify } = require('node:util');
+
+const OPENSHELL_VM_DRIVER_ENTITLEMENTS = path.resolve(
+  __dirname,
+  'buildResources',
+  'entitlements.openshell-driver-vm.plist',
+);
+
+async function signMacApplication(configuration, packager) {
+  const defaultOptionsForFile = configuration.optionsForFile;
+  const openshellVmDriverSuffix = path.join('Contents', 'Resources', 'openshell', 'openshell-driver-vm');
+
+  if (!configuration.identity) {
+    if (packager.forceCodeSigning) {
+      throw new Error('No identity found for signing, but forceCodeSigning is set to true.');
+    }
+    // If no apple singing cert we still can ad hoc sign the vm driver with the entitlement
+    await promisify(execFile)('/usr/bin/codesign', [
+      '--force',
+      '--sign',
+      '-',
+      '--entitlements',
+      OPENSHELL_VM_DRIVER_ENTITLEMENTS,
+      path.join(configuration.app, openshellVmDriverSuffix),
+    ]);
+    return;
+  }
+
+  await signAsync({
+    ...configuration,
+    optionsForFile: filePath => {
+      const options = defaultOptionsForFile?.(filePath) ?? {};
+      if (filePath.endsWith(openshellVmDriverSuffix)) {
+        return {
+          ...options,
+          entitlements: OPENSHELL_VM_DRIVER_ENTITLEMENTS,
+        };
+      }
+      return options;
+    },
+  });
+}
 
 if (process.env.VITE_APP_VERSION === undefined) {
   const now = new Date();
@@ -296,6 +339,7 @@ const config = {
   mac: {
     artifactName: `${product.artifactName}${artifactNameSuffix}-\${version}-\${arch}.\${ext}`,
     hardenedRuntime: true,
+    sign: signMacApplication,
     entitlements: './node_modules/electron-builder-notarize/entitlements.mac.inherit.plist',
     target: {
       target: 'default',
