@@ -128,6 +128,8 @@ export interface GatewayAddOptions {
 }
 
 export interface OpenshellGatewayStartOptions {
+  /** Defaults to the VM driver. */
+  driver?: LocalGatewayDriver;
   port?: number;
   bindAddress?: string;
   disableTls?: boolean;
@@ -141,7 +143,7 @@ export interface CreateLocalGatewayOptions {
   name: string;
   bindAddress: string;
   port: number;
-  /** Overrides the driver inferred from the active gateway. */
+  /** Defaults to the VM driver. */
   driver?: LocalGatewayDriver;
 }
 

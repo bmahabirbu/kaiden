@@ -225,7 +225,7 @@ export class OpenshellGateway implements Disposable {
   }
 
   async createLocalGateway(options: CreateLocalGatewayOptions): Promise<void> {
-    const driver = options.driver ?? (await this.detectLocalComputeDriver()) ?? 'podman';
+    const driver = options.driver ?? 'vm';
     await this.createContainerGateway(options, driver);
   }
 
@@ -392,7 +392,7 @@ export class OpenshellGateway implements Disposable {
       this.#bindAddress = options.bindAddress;
     }
 
-    const configPath = await this.createGatewayConfig(binaryPath, options?.supervisorImage);
+    const configPath = await this.createGatewayConfig(binaryPath, options?.driver ?? 'vm', options?.supervisorImage);
     const args = this.buildArgs(options?.disableTls ?? true, configPath);
     console.log(`[openshell-gateway] starting: ${binaryPath} ${args.join(' ')}`);
     await this.initializeGatewayLog();
@@ -562,7 +562,11 @@ export class OpenshellGateway implements Disposable {
     return token;
   }
 
-  private async createGatewayConfig(binaryPath: string, supervisorImage?: string): Promise<string | undefined> {
+  private async createGatewayConfig(
+    binaryPath: string,
+    driver: LocalGatewayDriver,
+    supervisorImage?: string,
+  ): Promise<string | undefined> {
     try {
       let image = supervisorImage;
       if (!image) {
@@ -575,7 +579,6 @@ export class OpenshellGateway implements Disposable {
         }
       }
 
-      const driver = await this.detectLocalComputeDriver();
       const storageDirectory = this.getGatewayStorageDirectory(DEFAULT_GATEWAY_NAME);
       const configPath = join(storageDirectory, 'gateway.toml');
       await mkdir(storageDirectory, { recursive: true });
@@ -594,16 +597,6 @@ export class OpenshellGateway implements Disposable {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn(`[openshell-gateway] failed to generate gateway config: ${message}`);
-      return undefined;
-    }
-  }
-
-  private async detectLocalComputeDriver(): Promise<LocalGatewayDriver | undefined> {
-    try {
-      const info = await this.openshellCli.getGatewayInfo();
-      const driver = info.compute_drivers[0]?.capabilities.driver_name;
-      return driver === 'podman' || driver === 'docker' || driver === 'vm' ? driver : undefined;
-    } catch {
       return undefined;
     }
   }

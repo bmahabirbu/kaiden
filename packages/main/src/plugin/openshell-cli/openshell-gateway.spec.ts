@@ -307,6 +307,11 @@ describe('init', () => {
 
     await gateway.init();
 
+    expect(writeFile).toHaveBeenCalledWith(
+      GATEWAY_CONFIG_PATH,
+      expect.stringContaining('compute_drivers = ["vm"]'),
+      'utf-8',
+    );
     expect(spawn).toHaveBeenCalledWith(
       GATEWAY_BINARY,
       expect.arrayContaining(['--port', '17670']),
@@ -482,7 +487,7 @@ describe('createLocalGateway', () => {
     expect(closeLogFile).toHaveBeenCalled();
   });
 
-  test('infers the Docker driver from the active gateway when no override is supplied', async () => {
+  test('defaults to VM even when the active gateway uses Docker', async () => {
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.69'));
@@ -492,14 +497,14 @@ describe('createLocalGateway', () => {
     });
 
     await gateway.createLocalGateway({
-      name: 'docker-dev',
+      name: 'vm-default',
       bindAddress: '127.0.0.1',
       port: 17675,
     });
 
     expect(writeFile).toHaveBeenCalledWith(
-      join(KAIDEN_DATA_DIRECTORY, 'openshell-gateways', 'docker-dev', 'gateway.toml'),
-      expect.stringContaining('compute_drivers = ["docker"]'),
+      join(KAIDEN_DATA_DIRECTORY, 'openshell-gateways', 'vm-default', 'gateway.toml'),
+      expect.stringContaining('compute_drivers = ["vm"]'),
       'utf-8',
     );
   });
@@ -1379,25 +1384,27 @@ describe('gateway config generation', () => {
     expect(mkdir).toHaveBeenCalledWith(GATEWAY_STORAGE_DIRECTORY, { recursive: true });
     expect(writeFile).toHaveBeenCalledWith(
       GATEWAY_CONFIG_PATH,
-      expect.stringContaining('[openshell.drivers.podman]'),
+      expect.stringContaining('[openshell.drivers.vm]'),
       'utf-8',
     );
   });
 
-  test('config only includes podman driver section', async () => {
+  test('config defaults to the VM driver', async () => {
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.69'));
 
     await gateway.start();
 
     const writtenContent = vi.mocked(writeFile).mock.calls[0]?.[1] as string;
-    expect(writtenContent).toContain('[openshell.drivers.podman]');
+    expect(writtenContent).toContain('[openshell.drivers.vm]');
+    expect(writtenContent).toContain('compute_drivers = ["vm"]');
+    expect(writtenContent).not.toContain('[openshell.drivers.podman]');
     expect(writtenContent).not.toContain('[openshell.drivers.docker]');
   });
 
   test('pins supervisor image to detected gateway version', async () => {
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.69'));
 
-    await gateway.start();
+    await gateway.start({ driver: 'podman' });
 
     expect(exec.exec).toHaveBeenCalledWith(GATEWAY_BINARY, ['--version']);
     expect(writeFile).toHaveBeenCalledWith(
@@ -1420,7 +1427,7 @@ describe('gateway config generation', () => {
   });
 
   test('uses custom supervisorImage without version detection', async () => {
-    await gateway.start({ supervisorImage: 'my-registry.io/supervisor:custom' });
+    await gateway.start({ driver: 'podman', supervisorImage: 'my-registry.io/supervisor:custom' });
 
     expect(exec.exec).not.toHaveBeenCalledWith(GATEWAY_BINARY, ['--version']);
     expect(writeFile).toHaveBeenCalledWith(
@@ -1434,7 +1441,7 @@ describe('gateway config generation', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     vi.mocked(exec.exec).mockRejectedValueOnce(new Error('command not found'));
 
-    await gateway.start();
+    await gateway.start({ driver: 'podman' });
 
     expect(writeFile).toHaveBeenCalledWith(
       GATEWAY_CONFIG_PATH,
@@ -1452,7 +1459,7 @@ describe('gateway config generation', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult('unknown-format'));
 
-    await gateway.start();
+    await gateway.start({ driver: 'podman' });
 
     expect(writeFile).toHaveBeenCalledWith(
       GATEWAY_CONFIG_PATH,
@@ -1475,24 +1482,20 @@ describe('gateway config generation', () => {
     );
   });
 
-  test('enables bind mounts when a local compute driver is detected', async () => {
+  test.each(['podman', 'docker'] as const)('honors an explicit %s driver and enables bind mounts', async driver => {
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.69'));
-    vi.mocked(openshellCli.getGatewayInfo).mockResolvedValue({
-      status: 'healthy',
-      compute_drivers: [{ capabilities: { driver_name: 'podman' }, name: 'podman' }],
-    });
-
-    await gateway.start();
+    await gateway.start({ driver });
 
     const writtenContent = vi.mocked(writeFile).mock.calls[0]?.[1] as string;
     expect(writtenContent).toContain('enable_bind_mounts = true');
+    expect(writtenContent).toContain(`compute_drivers = ["${driver}"]`);
   });
 
-  test('omits unsupported container settings when the VM driver is detected', async () => {
+  test('defaults to VM and omits container settings even when the active driver is Podman', async () => {
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.116'));
     vi.mocked(openshellCli.getGatewayInfo).mockResolvedValue({
       status: 'healthy',
-      compute_drivers: [{ capabilities: { driver_name: 'vm' }, name: 'vm' }],
+      compute_drivers: [{ capabilities: { driver_name: 'podman' }, name: 'podman' }],
     });
 
     await gateway.start();
@@ -1504,15 +1507,16 @@ describe('gateway config generation', () => {
     expect(writtenContent).not.toContain('supervisor_image');
   });
 
-  test('generates config without bind mounts when no driver is available', async () => {
+  test('defaults to VM when no gateway is available', async () => {
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.69'));
-    vi.mocked(openshellCli.getGatewayInfo).mockResolvedValue({ status: 'healthy', compute_drivers: [] });
+    vi.mocked(openshellCli.getGatewayInfo).mockRejectedValue(new Error('No gateway configured'));
 
     await gateway.start();
 
     const writtenContent = vi.mocked(writeFile).mock.calls[0]?.[1] as string;
-    expect(writtenContent).toContain('[openshell.drivers.podman]');
-    expect(writtenContent).toContain('enable_bind_mounts');
-    expect(writtenContent).not.toContain('compute_drivers');
+    expect(writtenContent).toContain('[openshell.drivers.vm]');
+    expect(writtenContent).not.toContain('enable_bind_mounts');
+    expect(writtenContent).toContain('compute_drivers = ["vm"]');
+    expect(openshellCli.getGatewayInfo).not.toHaveBeenCalled();
   });
 });
