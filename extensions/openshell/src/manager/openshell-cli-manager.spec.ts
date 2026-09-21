@@ -21,12 +21,20 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { cli, configuration, env, process as extensionProcess } from '@openkaiden/api';
-import { assert, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, assert, beforeEach, describe, expect, test, vi } from 'vitest';
+
+import { ensureHypervisorEntitlement } from '/@/openshell-entitlements';
 
 import { OpenshellCliManager } from './openshell-cli-manager';
 
 vi.mock(import('node:fs'));
 vi.mock(import('@openkaiden/api'));
+vi.mock(import('/@/openshell-entitlements'));
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 
 const STORAGE_PATH = '/fake/storage';
 const EXTENSION_URI = '/fake/extension';
@@ -89,6 +97,42 @@ describe('OpenshellCliManager', () => {
   });
 
   describe('binary discovery priority', () => {
+    test.each([
+      { platform: 'darwin', production: false, driverExists: true, expected: true },
+      { platform: 'darwin', production: false, driverExists: false, expected: false },
+      { platform: 'darwin', production: true, driverExists: true, expected: false },
+      { platform: 'linux', production: false, driverExists: true, expected: false },
+    ])('checks the development VM driver entitlement: %j', async ({ platform, production, driverExists, expected }) => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue(platform as NodeJS.Platform);
+      vi.stubEnv('PROD', production);
+      const directory = production
+        ? join('/resources', 'openshell')
+        : join(EXTENSION_URI, 'assets', `${platform}-${process.arch}`);
+      const bundledPath = join(directory, 'openshell');
+      const driverPath = join(directory, 'openshell-driver-vm');
+      const originalResourcesPath = Object.getOwnPropertyDescriptor(process, 'resourcesPath');
+      Object.defineProperty(process, 'resourcesPath', { value: '/resources', configurable: true });
+      vi.mocked(existsSync).mockImplementation(
+        p => String(p) === bundledPath || (driverExists && String(p) === driverPath),
+      );
+      vi.mocked(extensionProcess.exec).mockImplementation(async cmd => {
+        if (cmd === bundledPath) return { stdout: 'openshell 0.2.0', stderr: '', command: cmd };
+        throw new Error(`unexpected exec: ${cmd}`);
+      });
+
+      try {
+        await createManager().init();
+        if (expected) {
+          expect(ensureHypervisorEntitlement).toHaveBeenCalledExactlyOnceWith(driverPath);
+        } else {
+          expect(ensureHypervisorEntitlement).not.toHaveBeenCalled();
+        }
+      } finally {
+        if (originalResourcesPath) Object.defineProperty(process, 'resourcesPath', originalResourcesPath);
+        else Reflect.deleteProperty(process, 'resourcesPath');
+      }
+    });
+
     test('prefers bundled resource over system PATH', async () => {
       const platformArch = `${process.platform}-${process.arch}`;
       const bundledPath = join(EXTENSION_URI, 'assets', platformArch, 'openshell');

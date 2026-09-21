@@ -34,6 +34,7 @@ import {
   OPENSHELL_IMAGE_BUILDER_DOWNLOAD,
   OPENSHELL_WINDOWS_GATEWAY_DOWNLOAD,
 } from './openshell-download';
+import { addHypervisorEntitlement } from './openshell-entitlements';
 import { sha256 } from './sha256';
 
 vi.mock(import('node:fs'));
@@ -46,6 +47,7 @@ vi.mock('adm-zip', () => {
   return { default: AdmZip };
 });
 vi.mock(import('tar'));
+vi.mock(import('./openshell-entitlements'));
 vi.mock(import('./sha256'));
 
 let fileMap: Map<string, boolean>;
@@ -108,6 +110,21 @@ describe('downloadBinaries', () => {
     );
 
     await downloadBinaries(OPENSHELL_DOWNLOAD, '0.0.55', 'linux', 'x64', '/output', new Map());
+    expect(addHypervisorEntitlement).not.toHaveBeenCalled();
+  });
+
+  test('adds the hypervisor entitlement to cached macOS binaries without downloading again', async () => {
+    fileMap.set('/output/.openshell-version', true);
+    fileMap.set('/output/openshell', true);
+    fileMap.set('/output/openshell-gateway', true);
+    fileMap.set('/output/openshell-driver-vm', true);
+    vi.mocked(readFile).mockResolvedValue('0.0.55-darwin-arm64');
+    stubDownloadFetch();
+
+    await downloadBinaries(OPENSHELL_DOWNLOAD, '0.0.55', 'darwin', 'arm64', '/output', new Map());
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(addHypervisorEntitlement).toHaveBeenCalledExactlyOnceWith(path.join('/output', 'openshell-driver-vm'));
   });
 
   test('skips image builder download when cached', async () => {
@@ -161,6 +178,7 @@ describe('downloadBinaries', () => {
       expect.any(Object),
     );
     expect(chmod).toHaveBeenCalledTimes(4);
+    expect(addHypervisorEntitlement).not.toHaveBeenCalled();
   });
 
   test('renames a direct image builder artifact and writes its version marker', async () => {
@@ -209,6 +227,26 @@ describe('downloadBinaries', () => {
     await downloadBinaries(OPENSHELL_DOWNLOAD, '0.0.55', 'darwin', 'arm64', '/output', digests);
 
     expect(mkdir).toHaveBeenCalledWith('/output', { recursive: true });
+    expect(addHypervisorEntitlement).toHaveBeenCalledExactlyOnceWith(path.join('/output', 'openshell-driver-vm'));
+    expect(addHypervisorEntitlement).toHaveBeenCalledAfter(vi.mocked(chmod));
+    expect(writeFile).toHaveBeenCalledAfter(vi.mocked(addHypervisorEntitlement));
+  });
+
+  test('does not mark the download ready if adding the entitlement fails', async () => {
+    stubDownloadFetch();
+    stubOpenShellExtraction();
+    vi.mocked(addHypervisorEntitlement).mockRejectedValue(new Error('codesign failed'));
+    const digests = new Map([
+      ['openshell-aarch64-apple-darwin.tar.gz', 'abc123'],
+      ['openshell-gateway-aarch64-apple-darwin.tar.gz', 'abc123'],
+      ['openshell-driver-vm-aarch64-apple-darwin.tar.gz', 'abc123'],
+    ]);
+
+    await expect(downloadBinaries(OPENSHELL_DOWNLOAD, '0.0.55', 'darwin', 'arm64', '/output', digests)).rejects.toThrow(
+      'codesign failed',
+    );
+
+    expect(writeFile).not.toHaveBeenCalled();
   });
 
   test('extracts Windows gateway from zip archive and skips chmod', async () => {

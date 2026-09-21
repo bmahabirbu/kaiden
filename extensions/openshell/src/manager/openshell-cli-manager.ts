@@ -24,6 +24,7 @@ import * as extensionApi from '@openkaiden/api';
 import { inject, injectable } from 'inversify';
 
 import { ExtensionContextSymbol } from '/@/inject/symbol';
+import { ensureHypervisorEntitlement } from '/@/openshell-entitlements';
 import { OpenshellImageBuilderInstaller } from '/@/openshell-image-builder-installer';
 import { OpenshellInstaller } from '/@/openshell-installer';
 
@@ -266,6 +267,12 @@ export class OpenshellCliManager implements Disposable {
       if (existsSync(bundledBinaryPath)) {
         const version = await this.getVersion(bundledBinaryPath);
         if (version || fallbackVersion !== undefined) {
+          if (!import.meta.env.PROD && process.platform === 'darwin' && binaryBaseName === 'openshell') {
+            const driverPath = join(resourcesPath, bundledResourceSubdir, 'openshell-driver-vm');
+            if (existsSync(driverPath)) {
+              await ensureHypervisorEntitlement(driverPath);
+            }
+          }
           console.log(`[${binaryBaseName}] binary found in bundled resources at ${bundledBinaryPath}`);
           return { path: bundledBinaryPath, version: version ?? fallbackVersion, installationSource: 'extension' };
         }

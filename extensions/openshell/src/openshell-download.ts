@@ -24,6 +24,7 @@ import { pipeline } from 'node:stream/promises';
 import AdmZip from 'adm-zip';
 import * as tar from 'tar';
 
+import { addHypervisorEntitlement } from './openshell-entitlements';
 import { sha256 } from './sha256';
 
 export interface ReleaseInfo {
@@ -36,6 +37,7 @@ interface AssetSpec {
   binaryName: string;
   subdir?: string;
   entryPath?: string;
+  postDownload?: (binaryPath: string) => Promise<void>;
 }
 
 export interface GitHubArtifactDownload {
@@ -58,6 +60,7 @@ export const OPENSHELL_DOWNLOAD: GitHubArtifactDownload = {
       {
         assetName: 'openshell-driver-vm-aarch64-apple-darwin.tar.gz',
         binaryName: 'openshell-driver-vm',
+        postDownload: addHypervisorEntitlement,
       },
     ],
     'linux-x64': [
@@ -251,6 +254,10 @@ export async function downloadBinaries(
     });
     if (existing.trim() === versionMarker && allPresent) {
       console.log(`${downloadConfig.name} ${version} for ${platform}/${arch} already downloaded`);
+      for (const asset of assets) {
+        const dir = asset.subdir ? join(outputDir, asset.subdir) : outputDir;
+        await asset.postDownload?.(join(dir, asset.binaryName));
+      }
       return;
     }
   }
@@ -291,6 +298,7 @@ export async function downloadBinaries(
     if (platform !== 'win32') {
       await chmod(binaryPath, 0o755);
     }
+    await asset.postDownload?.(binaryPath);
   }
 
   await writeFile(versionFile, versionMarker, { encoding: 'utf-8' });

@@ -27,7 +27,9 @@ const { promisify } = require('node:util');
 
 const OPENSHELL_VM_DRIVER_ENTITLEMENTS = path.resolve(
   __dirname,
-  'buildResources',
+  'extensions',
+  'openshell',
+  'resources',
   'entitlements.openshell-driver-vm.plist',
 );
 
