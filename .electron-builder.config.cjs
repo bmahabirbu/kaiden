@@ -16,56 +16,65 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-const { exec, execFile } = require('child_process');
+const { exec, execFile, execFileSync } = require('child_process');
 const Arch = require('builder-util').Arch;
 const path = require('path');
 const { flipFuses, FuseVersion, FuseV1Options } = require('@electron/fuses');
 const { signAsync } = require('@electron/osx-sign');
 const product = require('./product.json');
 const fs = require('node:fs');
-const { promisify } = require('node:util');
 
-const OPENSHELL_VM_DRIVER_ENTITLEMENTS = path.resolve(
-  __dirname,
-  'extensions',
-  'openshell',
-  'resources',
-  'entitlements.openshell-driver-vm.plist',
-);
+const { tmpdir } = require('node:os');
 
 async function signMacApplication(configuration, packager) {
-  const defaultOptionsForFile = configuration.optionsForFile;
-  const openshellVmDriverSuffix = path.join('Contents', 'Resources', 'openshell', 'openshell-driver-vm');
-
   if (!configuration.identity) {
     if (packager.forceCodeSigning) {
       throw new Error('No identity found for signing, but forceCodeSigning is set to true.');
     }
-    // If no apple singing cert we still can ad hoc sign the vm driver with the entitlement
-    await promisify(execFile)('/usr/bin/codesign', [
-      '--force',
-      '--sign',
-      '-',
-      '--entitlements',
-      OPENSHELL_VM_DRIVER_ENTITLEMENTS,
-      path.join(configuration.app, openshellVmDriverSuffix),
-    ]);
     return;
   }
 
-  await signAsync({
-    ...configuration,
-    optionsForFile: filePath => {
-      const options = defaultOptionsForFile?.(filePath) ?? {};
-      if (filePath.endsWith(openshellVmDriverSuffix)) {
-        return {
-          ...options,
-          entitlements: OPENSHELL_VM_DRIVER_ENTITLEMENTS,
-        };
-      }
-      return options;
-    },
-  });
+  const defaultOptionsForFile = configuration.optionsForFile;
+  const resourcesPath = path.resolve(configuration.app, 'Contents', 'Resources') + path.sep;
+  let entitlementsDirectory;
+  let entitlementsCount = 0;
+
+  try {
+    await signAsync({
+      ...configuration,
+      optionsForFile: filePath => {
+        const options = defaultOptionsForFile?.(filePath) ?? {};
+        if (!path.resolve(filePath).startsWith(resourcesPath) || !fs.statSync(filePath).isFile()) {
+          return options;
+        }
+
+        let entitlements;
+        try {
+          entitlements = execFileSync('/usr/bin/codesign', ['--display', '--entitlements', '-', '--xml', filePath], {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'pipe'],
+          });
+        } catch (error) {
+          if (error.stderr?.trim() === `${filePath}: code object is not signed at all`) {
+            return options;
+          }
+          throw error;
+        }
+        if (!entitlements.trim()) {
+          return options;
+        }
+
+        entitlementsDirectory ??= fs.mkdtempSync(path.join(tmpdir(), 'electron-entitlements-'));
+        const entitlementsPath = path.join(entitlementsDirectory, `${entitlementsCount++}.plist`);
+        fs.writeFileSync(entitlementsPath, entitlements);
+        return { ...options, entitlements: entitlementsPath };
+      },
+    });
+  } finally {
+    if (entitlementsDirectory) {
+      await fs.promises.rm(entitlementsDirectory, { recursive: true, force: true });
+    }
+  }
 }
 
 if (process.env.VITE_APP_VERSION === undefined) {

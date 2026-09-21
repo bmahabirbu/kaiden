@@ -90,10 +90,14 @@ test.each([
   await ensureHypervisorEntitlement('/binary/openshell-driver-vm');
 
   expect(execFileAsync).toHaveBeenCalledTimes(2);
-  expect(execFileAsync).toHaveBeenLastCalledWith(
-    '/usr/bin/codesign',
-    expect.arrayContaining(['--sign', '-', '--entitlements']),
-  );
+  expect(execFileAsync).toHaveBeenLastCalledWith('/usr/bin/codesign', [
+    '--force',
+    '--sign',
+    '-',
+    '--entitlements',
+    resolve(__dirname, '..', 'resources', 'entitlements.openshell-driver-vm.plist'),
+    '/binary/openshell-driver-vm',
+  ]);
 });
 
 test.each(['linux', 'win32'] as const)('skips entitlement inspection on %s', async host => {
