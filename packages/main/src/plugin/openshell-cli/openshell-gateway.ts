@@ -226,7 +226,7 @@ export class OpenshellGateway implements Disposable {
   }
 
   async createLocalGateway(options: CreateLocalGatewayOptions): Promise<void> {
-    const driver = options.driver ?? 'vm';
+    const driver = options.driver ?? 'podman';
     await this.createContainerGateway(options, driver);
   }
 
@@ -425,7 +425,11 @@ export class OpenshellGateway implements Disposable {
       this.#bindAddress = options.bindAddress;
     }
 
-    const configPath = await this.createGatewayConfig(binaryPath, options?.driver ?? 'vm', options?.supervisorImage);
+    const configPath = await this.createGatewayConfig(
+      binaryPath,
+      options?.driver ?? 'podman',
+      options?.supervisorImage,
+    );
     const args = this.buildArgs(options?.disableTls ?? true, configPath);
     console.log(`[openshell-gateway] starting: ${binaryPath} ${args.join(' ')}`);
     await this.initializeGatewayLog();

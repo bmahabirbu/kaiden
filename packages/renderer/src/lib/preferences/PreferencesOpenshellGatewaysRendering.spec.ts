@@ -67,7 +67,7 @@ test('creates a gateway after confirming the selected port is available', async 
     name: 'local-gateway',
     bindAddress: '127.0.0.1',
     port: 17675,
-    driver: 'vm',
+    driver: 'podman',
   });
 });
 
