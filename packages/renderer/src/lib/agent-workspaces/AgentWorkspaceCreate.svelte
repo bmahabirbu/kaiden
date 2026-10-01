@@ -10,7 +10,12 @@ import type { ChecklistItem } from '/@/lib/ui/ChecklistPanel.svelte';
 import FormPage from '/@/lib/ui/FormPage.svelte';
 import WizardStepper from '/@/lib/ui/WizardStepper.svelte';
 import { handleNavigation } from '/@/navigation';
-import { resetDraft, wizard } from '/@/stores/agent-workspace-create-draft.svelte';
+import {
+  applyProjectToDraft,
+  resetDraft,
+  wizard,
+  WORKSPACE_REGISTRY_HOSTS,
+} from '/@/stores/agent-workspace-create-draft.svelte';
 import { agentInfos } from '/@/stores/agents';
 import { mcpRemoteServerInfos } from '/@/stores/mcp-remote-servers';
 import { disabledModels, isModelEnabled, modelKey } from '/@/stores/model-catalog';
@@ -31,7 +36,7 @@ import { getSandboxNameValidationError, sanitizeDns1123Label } from '/@api/agent
 import type { ModelInfo } from '/@api/model-registry-info';
 import { NavigationPage } from '/@api/navigation-page';
 import type { DefaultWorkspaceSettings } from '/@api/onboarding-settings-info';
-import type { FilesystemConfiguration, WorkspaceProjectInfo } from '/@api/workspace-project-info';
+import type { WorkspaceProjectInfo } from '/@api/workspace-project-info';
 
 import AgentWorkspaceCreateStepAgentModel from './AgentWorkspaceCreateStepAgentModel.svelte';
 import type { CustomMount } from './AgentWorkspaceCreateStepFileSystem.svelte';
@@ -59,60 +64,6 @@ const wizardSteps = [
   { id: 'networking', title: 'Networking' },
 ];
 
-function applyFilesystemFromProject(fs: FilesystemConfiguration): void {
-  const hasMounts = fs.mounts.length > 0;
-  if (!hasMounts) {
-    wizard.draft.selectedFileAccess = 'workspace';
-    wizard.draft.customMounts = [{ host: '', target: '', ro: false }];
-    return;
-  }
-  wizard.draft.selectedFileAccess = 'custom';
-  wizard.draft.customMounts = fs.mounts.map(m => ({ host: m.host, target: m.target, ro: m.ro ?? false }));
-}
-
-const REGISTRY_PRESET = ['registry.npmjs.org', 'pypi.python.org'];
-
-function isRegistryPreset(hosts: string[]): boolean {
-  return hosts.length === REGISTRY_PRESET.length && hosts.every((h, i) => h === REGISTRY_PRESET[i]);
-}
-
-function applyNetworkFromProject(net: NetworkConfiguration | undefined): void {
-  if (!net) return;
-  // mode: allow is no longer offered in the UI; fall back to the recommended preset.
-  if (net.mode === 'allow') {
-    wizard.draft.selectedNetwork = 'registries';
-    wizard.draft.hostsByMode = {
-      ...wizard.draft.hostsByMode,
-      registries: [...REGISTRY_PRESET],
-    };
-    return;
-  }
-  const hosts = net.hosts ?? [];
-  if (hosts.length > 0 && isRegistryPreset(hosts)) {
-    wizard.draft.selectedNetwork = 'registries';
-    wizard.draft.hostsByMode = { ...wizard.draft.hostsByMode, registries: [...hosts] };
-  } else if (hosts.length > 0) {
-    wizard.draft.selectedNetwork = 'blocked';
-    wizard.draft.hostsByMode = { ...wizard.draft.hostsByMode, blocked: [...hosts] };
-  } else {
-    wizard.draft.selectedNetwork = 'blocked';
-    wizard.draft.hostsByMode = { ...wizard.draft.hostsByMode, blocked: [''] };
-  }
-}
-
-function applyProject(project: WorkspaceProjectInfo): void {
-  wizard.draft.selectedProjectId = project.id;
-  wizard.draft.sourcePath = project.folder;
-  wizard.draft.sessionName = sanitizeDns1123Label(project.name);
-  wizard.draft.nameManuallyEdited = true;
-  wizard.draft.selectedSkillIds = [...project.skills];
-  wizard.draft.selectedMcpIds = [...project.mcpServers];
-  wizard.draft.selectedSecretIds = [...project.secrets];
-  wizard.draft.selectedKnowledgeIds = [...project.knowledges];
-  applyFilesystemFromProject(project.filesystem);
-  applyNetworkFromProject(project.network);
-}
-
 function clearProject(): void {
   wizard.draft.selectedProjectId = undefined;
   wizard.draft.sourcePath = '';
@@ -125,13 +76,13 @@ function clearProject(): void {
   wizard.draft.selectedFileAccess = 'workspace';
   wizard.draft.selectedNetwork = 'registries';
   wizard.draft.customMounts = [{ host: '', target: '', ro: false }];
-  wizard.draft.hostsByMode = { registries: ['registry.npmjs.org', 'pypi.python.org'], blocked: [''] };
+  wizard.draft.hostsByMode = { registries: [...WORKSPACE_REGISTRY_HOSTS], blocked: [''] };
   wizard.draft.customImage = '';
 }
 
 function handleProjectSelect(project: WorkspaceProjectInfo | undefined): void {
   if (project) {
-    applyProject(project);
+    applyProjectToDraft(project);
   } else {
     clearProject();
   }

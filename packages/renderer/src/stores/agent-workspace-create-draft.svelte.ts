@@ -23,9 +23,11 @@ import { mcpRemoteServerInfos } from '/@/stores/mcp-remote-servers';
 import { ragEnvironments } from '/@/stores/rag-environments';
 import { secretVaultInfos } from '/@/stores/secret-vault';
 import { skillInfos } from '/@/stores/skills';
+import { type NetworkConfiguration, sanitizeDns1123Label } from '/@api/agent-workspace-info';
 import type { ModelInfo } from '/@api/model-registry-info';
+import type { FilesystemConfiguration, WorkspaceProjectInfo } from '/@api/workspace-project-info';
 
-const REGISTRY_HOSTS = ['registry.npmjs.org', 'pypi.python.org'];
+export const WORKSPACE_REGISTRY_HOSTS = ['registry.npmjs.org', 'pypi.python.org'];
 
 interface WorkspaceCreateDraft {
   currentStepIndex: number;
@@ -70,7 +72,7 @@ function createInitialDraft(): WorkspaceCreateDraft {
     selectedNetwork: 'registries',
     customMounts: [{ host: '', target: '', ro: false }],
     hostsByMode: {
-      registries: [...REGISTRY_HOSTS],
+      registries: [...WORKSPACE_REGISTRY_HOSTS],
       blocked: [''],
     },
     nameManuallyEdited: false,
@@ -97,6 +99,58 @@ export function resetDraft(): void {
   wizard.draft.selectedKnowledgeIds = get(ragEnvironments)
     .filter(r => r.mcpServer)
     .map(r => r.name);
+}
+
+function applyFilesystemFromProject(fs: FilesystemConfiguration): void {
+  const hasMounts = fs.mounts.length > 0;
+  if (!hasMounts) {
+    wizard.draft.selectedFileAccess = 'workspace';
+    wizard.draft.customMounts = [{ host: '', target: '', ro: false }];
+    return;
+  }
+  wizard.draft.selectedFileAccess = 'custom';
+  wizard.draft.customMounts = fs.mounts.map(m => ({ host: m.host, target: m.target, ro: m.ro ?? false }));
+}
+
+function isRegistryPreset(hosts: string[]): boolean {
+  return hosts.length === WORKSPACE_REGISTRY_HOSTS.length && hosts.every((h, i) => h === WORKSPACE_REGISTRY_HOSTS[i]);
+}
+
+function applyNetworkFromProject(net: NetworkConfiguration | undefined): void {
+  if (!net) return;
+  // mode: allow is no longer offered in the UI; fall back to the recommended preset.
+  if (net.mode === 'allow') {
+    wizard.draft.selectedNetwork = 'registries';
+    wizard.draft.hostsByMode = {
+      ...wizard.draft.hostsByMode,
+      registries: [...WORKSPACE_REGISTRY_HOSTS],
+    };
+    return;
+  }
+  const hosts = net.hosts ?? [];
+  if (hosts.length > 0 && isRegistryPreset(hosts)) {
+    wizard.draft.selectedNetwork = 'registries';
+    wizard.draft.hostsByMode = { ...wizard.draft.hostsByMode, registries: [...hosts] };
+  } else if (hosts.length > 0) {
+    wizard.draft.selectedNetwork = 'blocked';
+    wizard.draft.hostsByMode = { ...wizard.draft.hostsByMode, blocked: [...hosts] };
+  } else {
+    wizard.draft.selectedNetwork = 'blocked';
+    wizard.draft.hostsByMode = { ...wizard.draft.hostsByMode, blocked: [''] };
+  }
+}
+
+export function applyProjectToDraft(project: WorkspaceProjectInfo): void {
+  wizard.draft.selectedProjectId = project.id;
+  wizard.draft.sourcePath = project.folder;
+  wizard.draft.sessionName = sanitizeDns1123Label(project.name);
+  wizard.draft.nameManuallyEdited = true;
+  wizard.draft.selectedSkillIds = [...project.skills];
+  wizard.draft.selectedMcpIds = [...project.mcpServers];
+  wizard.draft.selectedSecretIds = [...project.secrets];
+  wizard.draft.selectedKnowledgeIds = [...project.knowledges];
+  applyFilesystemFromProject(project.filesystem);
+  applyNetworkFromProject(project.network);
 }
 
 let prevSkills: Set<string> | undefined;
