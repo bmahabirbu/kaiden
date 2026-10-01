@@ -123,6 +123,7 @@ test('displays active gateway in the Active Gateway section', () => {
   setOpenshellStarted();
   const activeGateway: GatewayInfo = {
     name: 'kaiden-local',
+    canStop: false,
     endpoint: 'http://127.0.0.1:17670',
     active: true,
     type: 'local',
@@ -147,12 +148,14 @@ test('displays non-active gateways in Other Gateways section', () => {
   const gateways: GatewayInfo[] = [
     {
       name: 'kaiden-local',
+      canStop: false,
       endpoint: 'http://127.0.0.1:17670',
       active: true,
       type: 'local',
     },
     {
       name: 'production',
+      canStop: false,
       endpoint: 'https://gateway.example.com',
       active: false,
       type: 'remote',
@@ -175,6 +178,7 @@ test('shows Referenced badge for non-local gateways', () => {
   const gateways: GatewayInfo[] = [
     {
       name: 'remote-gw',
+      canStop: false,
       endpoint: 'https://remote.example.com',
       active: false,
       type: 'remote',
@@ -191,6 +195,7 @@ test('shows Referenced badge for a local gateway not managed by Kaiden', () => {
   const gateways: GatewayInfo[] = [
     {
       name: 'local-gw',
+      canStop: false,
       endpoint: 'http://localhost:17670',
       active: true,
       type: 'local',
@@ -204,7 +209,7 @@ test('shows Referenced badge for a local gateway not managed by Kaiden', () => {
 
 test('hides empty screen when gateways exist', () => {
   setOpenshellStarted();
-  openshellGateways.set([{ name: 'gw', endpoint: 'http://localhost:17670', active: true }]);
+  openshellGateways.set([{ name: 'gw', canStop: false, endpoint: 'http://localhost:17670', active: true }]);
   render(PreferencesOpenshellGatewaysRendering);
 
   const emptyTitle = screen.queryByText('No gateways found');
@@ -215,9 +220,16 @@ test('hides empty screen when gateways exist', () => {
 test('renders multiple non-active gateways', () => {
   setOpenshellStarted();
   const gateways: GatewayInfo[] = [
-    { name: 'active-gw', endpoint: 'http://localhost:17670', active: true, type: 'local' },
-    { name: 'team-shared', endpoint: 'https://team.example.com', active: false, type: 'remote', is_remote: true },
-    { name: 'dev-remote', endpoint: 'https://dev.example.com', active: false, type: 'remote' },
+    { name: 'active-gw', canStop: false, endpoint: 'http://localhost:17670', active: true, type: 'local' },
+    {
+      name: 'team-shared',
+      canStop: false,
+      endpoint: 'https://team.example.com',
+      active: false,
+      type: 'remote',
+      is_remote: true,
+    },
+    { name: 'dev-remote', canStop: false, endpoint: 'https://dev.example.com', active: false, type: 'remote' },
   ];
   openshellGateways.set(gateways);
   render(PreferencesOpenshellGatewaysRendering);
@@ -228,7 +240,7 @@ test('renders multiple non-active gateways', () => {
 
 test('shows unknown state text and color when gatewayState is undefined', () => {
   setOpenshellStarted();
-  openshellGateways.set([{ name: 'no-state-gw', endpoint: 'http://localhost:17670', active: true }]);
+  openshellGateways.set([{ name: 'no-state-gw', canStop: false, endpoint: 'http://localhost:17670', active: true }]);
   render(PreferencesOpenshellGatewaysRendering);
 
   expect(screen.getByText('http://localhost:17670 · Unknown')).toBeInTheDocument();
@@ -241,6 +253,7 @@ test('shows disconnected state text and stopped color when gateway is unreachabl
   openshellGateways.set([
     {
       name: 'unreachable-gw',
+      canStop: false,
       endpoint: 'http://localhost:17670',
       active: true,
       gatewayState: { reachable: false, health: 'unknown' },
@@ -258,6 +271,7 @@ test('shows degraded state text and color for degraded gateway', () => {
   openshellGateways.set([
     {
       name: 'degraded-gw',
+      canStop: false,
       endpoint: 'http://localhost:17670',
       active: true,
       gatewayState: { reachable: true, health: 'degraded' },
@@ -275,6 +289,7 @@ test('shows unhealthy state text and terminated color for unhealthy gateway', ()
   openshellGateways.set([
     {
       name: 'unhealthy-gw',
+      canStop: false,
       endpoint: 'http://localhost:17670',
       active: true,
       gatewayState: { reachable: true, health: 'unhealthy' },
@@ -292,6 +307,7 @@ test('shows connected state text and running color for healthy gateway', () => {
   openshellGateways.set([
     {
       name: 'healthy-gw',
+      canStop: false,
       endpoint: 'http://localhost:17670',
       active: true,
       gatewayState: { reachable: true, health: 'healthy' },

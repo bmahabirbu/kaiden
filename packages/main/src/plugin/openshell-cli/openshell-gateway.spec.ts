@@ -641,6 +641,7 @@ describe('supportsMounts', () => {
     });
     await expect(
       gateway.supportsMounts({
+        canStop: false,
         name: 'discovered',
         endpoint: 'http://127.0.0.1:17671',
         type: 'local',
@@ -656,6 +657,7 @@ describe('supportsMounts', () => {
 
     await expect(
       gateway.supportsMounts({
+        canStop: false,
         name: 'kaiden-local',
         endpoint: 'http://127.0.0.1:17670',
         type: 'local',
@@ -670,6 +672,7 @@ describe('supportsMounts', () => {
 
     await expect(
       gateway.supportsMounts({
+        canStop: false,
         name: 'kaiden-local',
         endpoint: 'http://127.0.0.1:17670',
         type: 'local',
@@ -681,6 +684,7 @@ describe('supportsMounts', () => {
   test('falls back to runtime check when the managed gateway exits', async () => {
     vi.mocked(readFile).mockResolvedValue('[openshell.drivers.podman]\nenable_bind_mounts = true\n');
     const info = {
+      canStop: false,
       name: 'kaiden-local',
       endpoint: 'http://127.0.0.1:17670',
       type: 'local' as const,
@@ -703,6 +707,7 @@ describe('supportsMounts', () => {
     await expect(
       gateway.supportsMounts({
         name: 'kaiden-local',
+        canStop: false,
         ...registration,
         driver: 'podman',
       }),
@@ -723,6 +728,7 @@ describe('supportsMounts (non-managed gateways)', () => {
 
     await expect(
       gateway.supportsMounts({
+        canStop: false,
         name: 'external-gw',
         endpoint: 'http://127.0.0.1:17671',
         type: 'local',
@@ -740,6 +746,7 @@ describe('supportsMounts (non-managed gateways)', () => {
 
     await expect(
       gateway.supportsMounts({
+        canStop: false,
         name: 'external-gw',
         endpoint: 'http://127.0.0.1:17671',
         type: 'local',
@@ -753,6 +760,7 @@ describe('supportsMounts (non-managed gateways)', () => {
 
     await expect(
       gateway.supportsMounts({
+        canStop: false,
         name: 'external-gw',
         endpoint: 'http://127.0.0.1:17671',
         type: 'local',
@@ -769,6 +777,7 @@ describe('supportsMounts (non-managed gateways)', () => {
 
     await expect(
       gateway.supportsMounts({
+        canStop: false,
         name: 'external-gw',
         endpoint: 'http://127.0.0.1:17671',
         type: 'local',
@@ -780,6 +789,7 @@ describe('supportsMounts (non-managed gateways)', () => {
   test('returns false for a non-managed remote gateway with podman driver', async () => {
     await expect(
       gateway.supportsMounts({
+        canStop: false,
         name: 'remote-gw',
         endpoint: 'https://gateway.example.com',
         type: 'local',
@@ -793,6 +803,7 @@ describe('supportsMounts (non-managed gateways)', () => {
   test('returns false for a non-managed gateway on a non-local endpoint', async () => {
     await expect(
       gateway.supportsMounts({
+        canStop: false,
         name: 'external-gw',
         endpoint: 'http://10.0.0.5:17671',
         type: 'local',
@@ -810,6 +821,7 @@ describe('supportsMounts (non-managed gateways)', () => {
 
     await expect(
       gateway.supportsMounts({
+        canStop: false,
         name: 'ipv6-gw',
         endpoint: 'http://[::1]:17671',
         type: 'local',
@@ -1468,10 +1480,7 @@ describe('gateway.pid persistence', () => {
     vi.mocked(readFile).mockResolvedValue('12345');
     const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
 
-    const pid = await gateway.getGatewayPid({
-      name: 'local-dev',
-      endpoint: 'http://127.0.0.1:17675',
-    });
+    const pid = await gateway.getGatewayPid({ canStop: false, name: 'local-dev', endpoint: 'http://127.0.0.1:17675' });
 
     expect(pid).toBe(12345);
     killSpy.mockRestore();
@@ -1485,10 +1494,7 @@ describe('gateway.pid persistence', () => {
       throw err;
     });
 
-    const pid = await gateway.getGatewayPid({
-      name: 'local-dev',
-      endpoint: 'http://127.0.0.1:17675',
-    });
+    const pid = await gateway.getGatewayPid({ canStop: false, name: 'local-dev', endpoint: 'http://127.0.0.1:17675' });
 
     expect(pid).toBeUndefined();
     killSpy.mockRestore();
@@ -1497,10 +1503,7 @@ describe('gateway.pid persistence', () => {
   test('getGatewayPid returns undefined when no pid file exists', async () => {
     vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
 
-    const pid = await gateway.getGatewayPid({
-      name: 'local-dev',
-      endpoint: 'http://127.0.0.1:17675',
-    });
+    const pid = await gateway.getGatewayPid({ canStop: false, name: 'local-dev', endpoint: 'http://127.0.0.1:17675' });
 
     expect(pid).toBeUndefined();
   });

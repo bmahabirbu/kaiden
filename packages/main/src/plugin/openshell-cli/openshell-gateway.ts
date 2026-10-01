@@ -595,9 +595,13 @@ export class OpenshellGateway implements Disposable {
     await this.stopGateway(DEFAULT_GATEWAY_NAME);
   }
 
+  canStopGateway(name: string): boolean {
+    const proc = this.#gatewayProcesses.get(name);
+    return proc !== undefined && typeof proc.exitCode !== 'number' && !proc.signalCode;
+  }
+
   isRunning(): boolean {
-    const gatewayProcess = this.#gatewayProcesses.get(DEFAULT_GATEWAY_NAME);
-    return gatewayProcess !== undefined && typeof gatewayProcess.exitCode !== 'number';
+    return this.canStopGateway(DEFAULT_GATEWAY_NAME);
   }
 
   @preDestroy()

@@ -94,10 +94,7 @@ const TEST_SDK_REFS: {
   },
 ];
 
-const TEST_GATEWAY: GatewayInfo = {
-  name: 'kaiden',
-  endpoint: 'http://localhost:10080',
-};
+const TEST_GATEWAY: GatewayInfo = { canStop: false, name: 'kaiden', endpoint: 'http://localhost:10080' };
 
 function mockSdkListSandboxes(
   refs: {
@@ -249,6 +246,7 @@ beforeEach(() => {
   vi.mocked(openshellGateway.supportsMounts).mockResolvedValue(false);
   vi.mocked(openshellGatewayStateManager.listGateways).mockReturnValue([
     {
+      canStop: false,
       name: 'kaiden',
       endpoint: 'http://127.0.0.1:17670',
       gatewayState: { reachable: true, health: 'healthy' },
@@ -328,7 +326,7 @@ describe('init', () => {
   });
 
   test('refreshes gateway state before returning a newly created gateway', async () => {
-    const createdGateway = { name: 'local-dev', endpoint: 'https://127.0.0.1:17675' } as GatewayInfo;
+    const createdGateway = { canStop: false, name: 'local-dev', endpoint: 'https://127.0.0.1:17675' } as GatewayInfo;
     vi.mocked(openshellGatewayStateManager.listGateways).mockReturnValue([createdGateway]);
     const options = {
       name: 'local-dev',
@@ -455,6 +453,7 @@ describe('create – OpenShell mode', () => {
   test('rejects an unreachable gateway before creating a sandbox', async () => {
     vi.mocked(openshellGatewayStateManager.listGateways).mockReturnValue([
       {
+        canStop: false,
         name: 'kaiden',
         endpoint: 'http://127.0.0.1:17670',
         gatewayState: { reachable: false, health: 'unknown' },
@@ -768,6 +767,7 @@ describe('create – OpenShell mode', () => {
       vi.mocked(openshellGateway.supportsMounts).mockResolvedValue(true);
       vi.mocked(openshellGatewayStateManager.listGateways).mockReturnValue([
         {
+          canStop: false,
           name: 'kaiden',
           endpoint: 'http://127.0.0.1:17670',
           type: 'local',
@@ -783,6 +783,7 @@ describe('create – OpenShell mode', () => {
     ] as const)('mounts project and skills but uploads mutable agent config using %s', async driver => {
       vi.mocked(openshellGatewayStateManager.listGateways).mockReturnValue([
         {
+          canStop: false,
           name: 'kaiden',
           endpoint: 'http://127.0.0.1:17670',
           type: 'local',
@@ -844,6 +845,7 @@ describe('create – OpenShell mode', () => {
       vi.mocked(openshellGateway.supportsMounts).mockResolvedValue(false);
       vi.mocked(openshellGatewayStateManager.listGateways).mockReturnValue([
         {
+          canStop: false,
           name: 'kaiden',
           endpoint: 'http://127.0.0.1:17670',
           driver,
@@ -1499,6 +1501,7 @@ describe('list', () => {
 describe('listOpenshellGateways', () => {
   const TEST_GATEWAYS: GatewayInfo[] = [
     {
+      canStop: false,
       name: 'kaiden-local',
       endpoint: 'http://127.0.0.1:17670',
       active: true,
@@ -1508,6 +1511,7 @@ describe('listOpenshellGateways', () => {
       gatewayState: { reachable: true, health: 'healthy' },
     },
     {
+      canStop: false,
       name: 'remote-vm',
       endpoint: 'https://127.0.0.1:17670',
       active: false,
