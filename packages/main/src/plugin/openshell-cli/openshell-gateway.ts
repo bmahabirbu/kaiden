@@ -714,6 +714,13 @@ export class OpenshellGateway implements IAsyncDisposable {
     return proc !== undefined && typeof proc.exitCode !== 'number' && !proc.signalCode;
   }
 
+  async stopManagedGateway(name: string): Promise<void> {
+    if (!this.#gatewayBookkeeping.has(name)) {
+      throw new Error(`Gateway "${name}" is not managed by this instance`);
+    }
+    await this.stopAndDrainGateway(name);
+  }
+
   // Cancels any in-flight startup, then waits for both the process exit and the startup to settle.
   protected async stopAndDrainGateway(name: string): Promise<void> {
     const startups = [...(this.#gatewayBookkeeping.get(name)?.startups ?? [])];

@@ -906,6 +906,56 @@ describe('stop', () => {
   });
 });
 
+describe('stopManagedGateway', () => {
+  test.each([
+    { name: 'kaiden-local', otherName: 'local-dev' },
+    { name: 'local-dev', otherName: 'kaiden-local' },
+  ] as const)('stops only the named managed gateway: $name', async ({ name, otherName }) => {
+    const processes = {
+      'kaiden-local': createMockChildProcess(),
+      'local-dev': createMockChildProcess(),
+    };
+    vi.mocked(spawn).mockReturnValueOnce(processes['kaiden-local']).mockReturnValueOnce(processes['local-dev']);
+    await gateway.start();
+    await gateway.createLocalGateway({ name: 'local-dev', port: 17675, bindAddress: '127.0.0.1' });
+
+    const stopping = gateway.stopManagedGateway(name);
+    const stoppedProcess = processes[name];
+    const otherProcess = processes[otherName];
+    stoppedProcess.emit('exit', 0, undefined);
+    await stopping;
+
+    expect(stoppedProcess.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+    expect(otherProcess.kill).not.toHaveBeenCalled();
+    expect(gateway.canStopGateway(name)).toBe(false);
+    expect(gateway.canStopGateway(otherName)).toBe(true);
+    expect(gatewayManager.removeGateway).not.toHaveBeenCalled();
+  });
+
+  test('rejects an unowned gateway without stopping a managed gateway', async () => {
+    const proc = createMockChildProcess();
+    vi.mocked(spawn).mockReturnValue(proc);
+    await gateway.start();
+
+    await expect(gateway.stopManagedGateway('external')).rejects.toThrow(
+      'Gateway "external" is not managed by this instance',
+    );
+    expect(proc.kill).not.toHaveBeenCalled();
+    expect(gateway.isRunning()).toBe(true);
+  });
+
+  test('treats a managed gateway that already exited as stopped', async () => {
+    const proc = createMockChildProcess();
+    vi.mocked(spawn).mockReturnValue(proc);
+    await gateway.start();
+    proc.emit('exit', 0, undefined);
+
+    await expect(gateway.stopManagedGateway('kaiden-local')).resolves.toBeUndefined();
+    expect(proc.kill).not.toHaveBeenCalled();
+    expect(gateway.isRunning()).toBe(false);
+  });
+});
+
 describe('isRunning', () => {
   test('returns false when no process is spawned', () => {
     expect(gateway.isRunning()).toBe(false);
@@ -2118,6 +2168,23 @@ describe.each([
     start: (): Promise<void> =>
       gateway.createLocalGateway({ name: 'local-dev', bindAddress: '127.0.0.1', port: 17675 }),
     stop: (): Promise<void> => gateway.stopAndDrainGateway('local-dev'),
+  },
+  {
+    kind: 'default managed',
+    name: 'kaiden-local',
+    configCalls: 2,
+    removed: 0,
+    start: (): Promise<void> => gateway.start(),
+    stop: (): Promise<void> => gateway.stopManagedGateway('kaiden-local'),
+  },
+  {
+    kind: 'named managed',
+    name: 'local-dev',
+    configCalls: 1,
+    removed: 1,
+    start: (): Promise<void> =>
+      gateway.createLocalGateway({ name: 'local-dev', bindAddress: '127.0.0.1', port: 17675 }),
+    stop: (): Promise<void> => gateway.stopManagedGateway('local-dev'),
   },
 ])('$kind gateway startup cancellation', ({ name, configCalls, removed, start, stop }) => {
   beforeEach(() => {
