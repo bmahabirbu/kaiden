@@ -23,6 +23,26 @@ import { coerce, major } from 'semver';
 @injectable()
 export class PodmanVersionDetector {
   #cachedMajorVersion: number | undefined;
+  #cachedInstalled: boolean | undefined;
+
+  // Whether the podman CLI is available, cached for the session so callers on a polling
+  // loop do not spawn `podman --version` repeatedly.
+  async isInstalled(): Promise<boolean> {
+    if (this.#cachedInstalled !== undefined) {
+      return this.#cachedInstalled;
+    }
+
+    try {
+      const binary = env.isWindows ? 'podman.exe' : 'podman';
+      await process.exec(binary, ['--version']);
+      this.#cachedInstalled = true;
+    } catch (error: unknown) {
+      console.debug('PodmanVersionDetector: podman does not appear to be installed', error);
+      this.#cachedInstalled = false;
+    }
+
+    return this.#cachedInstalled;
+  }
 
   async getMajorVersion(): Promise<number> {
     if (this.#cachedMajorVersion !== undefined) {
