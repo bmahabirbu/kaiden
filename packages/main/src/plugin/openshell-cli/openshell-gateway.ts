@@ -418,7 +418,7 @@ export class OpenshellGateway implements Disposable {
       signal,
     );
     try {
-      await this.waitForIndependentGateway(gatewayProcess, name, processState);
+      await this.waitForIndependentGateway(gatewayProcess, name, processState, signal);
       signal.throwIfAborted();
     } catch (err: unknown) {
       await this.stopGateway(name);
@@ -971,12 +971,14 @@ export class OpenshellGateway implements Disposable {
     gatewayProcess: ChildProcess,
     name: string,
     processState: { spawnError?: Error },
+    signal?: AbortSignal,
   ): Promise<void> {
     for (let attempt = 0; attempt < MAX_HEALTH_CHECK_ATTEMPTS; attempt++) {
+      signal?.throwIfAborted();
       if (processState.spawnError) {
         throw processState.spawnError;
       }
-      if (typeof gatewayProcess.exitCode === 'number') {
+      if (typeof gatewayProcess.exitCode === 'number' || gatewayProcess.signalCode) {
         throw new Error('Gateway process exited before becoming ready');
       }
       try {

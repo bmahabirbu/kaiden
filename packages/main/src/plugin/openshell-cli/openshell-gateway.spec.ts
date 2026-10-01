@@ -1615,6 +1615,44 @@ describe('gateway.pid persistence', () => {
 });
 
 describe('explicit stop cancels startup recovery', () => {
+  test('stops polling when a created gateway startup is cancelled', async () => {
+    vi.useFakeTimers();
+    const proc = createMockChildProcess();
+    vi.mocked(spawn).mockReturnValue(proc);
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(gatewayManager.listGateways).mockResolvedValue([listed('local-dev', 'http://127.0.0.1:17675')]);
+    vi.mocked(gatewayManager.health).mockRejectedValueOnce(new Error('not ready'));
+    vi.mocked(gatewayManager.getGatewayInfo).mockRejectedValue(new Error('not ready'));
+    vi.mocked(proc.kill).mockImplementation(() => {
+      Object.defineProperty(proc, 'signalCode', { value: 'SIGTERM', configurable: true });
+      queueMicrotask(() => proc.emit('exit', undefined, 'SIGTERM'));
+      return true;
+    });
+    const starting = gateway.init();
+    await vi.waitFor(() => expect(gatewayManager.getGatewayInfo).toHaveBeenCalledOnce());
+    await gateway.stopManagedGateway('local-dev');
+    await vi.advanceTimersByTimeAsync(1000);
+    await starting;
+    expect(gatewayManager.getGatewayInfo).toHaveBeenCalledOnce();
+    expect(spawn).toHaveBeenCalledOnce();
+    expect(rename).not.toHaveBeenCalled();
+  });
+
+  test('rejects readiness for a signal-terminated process without polling', async () => {
+    const proc = createMockChildProcess();
+    Object.defineProperty(proc, 'signalCode', { value: 'SIGTERM', configurable: true });
+    vi.mocked(proc.kill).mockImplementation(() => {
+      queueMicrotask(() => proc.emit('exit', undefined, 'SIGTERM'));
+      return true;
+    });
+    vi.mocked(spawn).mockReturnValue(proc);
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.69'));
+    await expect(
+      gateway.createLocalGateway({ name: 'local-dev', bindAddress: '127.0.0.1', port: 17675 }),
+    ).rejects.toThrow('Gateway process exited before becoming ready');
+    expect(gatewayManager.getGatewayInfo).not.toHaveBeenCalled();
+  });
+
   test('does not recover from migration output after stopping a pending default startup', async () => {
     const proc = createMockChildProcess();
     const health = Promise.withResolvers<{ status: string; version: string }>();
