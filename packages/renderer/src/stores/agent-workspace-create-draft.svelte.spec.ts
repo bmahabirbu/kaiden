@@ -29,19 +29,12 @@ import type { RagEnvironment } from '/@api/rag/rag-environment';
 import type { SecretVaultInfo } from '/@api/secret-vault/secret-vault-info';
 import type { WorkspaceProjectInfo } from '/@api/workspace-project-info';
 
-import { applyProjectToDraft, resetDraft, wizard } from './agent-workspace-create-draft.svelte';
-
-const project: WorkspaceProjectInfo = {
-  id: 'project',
-  name: 'My Project',
-  folder: '/projects/app',
-  skills: ['skill'],
-  mcpServers: ['mcp'],
-  secrets: ['secret'],
-  knowledges: ['knowledge'],
-  filesystem: { mode: 'custom', mounts: [{ host: '/data', target: '/data', ro: true }] },
-  network: { mode: 'deny', hosts: ['example.com'] },
-};
+import {
+  applyProjectToDraft,
+  resetDraft,
+  wizard,
+  WORKSPACE_REGISTRY_HOSTS,
+} from './agent-workspace-create-draft.svelte';
 
 beforeEach(() => {
   skillInfos.set([]);
@@ -91,87 +84,103 @@ describe('wizard.draft initial state', () => {
 
   test('should start with default hostsByMode', () => {
     expect(wizard.draft.hostsByMode).toEqual({
-      registries: ['registry.npmjs.org', 'pypi.python.org'],
+      registries: WORKSPACE_REGISTRY_HOSTS,
       blocked: [''],
     });
   });
 });
 
-test('applyProjectToDraft copies project configuration without overwriting runtime selections', () => {
-  const model: ModelInfo = {
-    providerId: 'provider',
-    connectionId: 'connection',
-    connectionName: 'My connection',
-    type: 'cloud',
-    label: 'My model',
-  };
-  wizard.draft.selectedModel = model;
-  wizard.draft.customImage = 'custom:image';
-  wizard.draft.currentStepIndex = 3;
-  wizard.draft.initialized = true;
-  wizard.draft.selectedAgent = 'claude';
-  wizard.draft.selectedGateway = 'gateway';
-  wizard.draft.description = 'Keep description';
-  applyProjectToDraft(project);
+describe('applyProjectToDraft', () => {
+  let project: WorkspaceProjectInfo;
 
-  expect(wizard.draft).toMatchObject({
-    selectedProjectId: project.id,
-    sourcePath: project.folder,
-    sessionName: 'my-project',
-    nameManuallyEdited: true,
-    selectedSkillIds: ['skill'],
-    selectedMcpIds: ['mcp'],
-    selectedSecretIds: ['secret'],
-    selectedKnowledgeIds: ['knowledge'],
-    selectedFileAccess: 'custom',
-    customMounts: project.filesystem.mounts,
-    selectedNetwork: 'blocked',
-    hostsByMode: { blocked: ['example.com'] },
-    selectedAgent: 'claude',
-    selectedGateway: 'gateway',
-    description: 'Keep description',
-    selectedModel: model,
-    customImage: 'custom:image',
-    currentStepIndex: 3,
-    initialized: true,
-    projectOpen: false,
+  beforeEach(() => {
+    project = {
+      id: 'project',
+      name: 'My Project',
+      folder: '/projects/app',
+      skills: ['skill'],
+      mcpServers: ['mcp'],
+      secrets: ['secret'],
+      knowledges: ['knowledge'],
+      filesystem: { mode: 'custom', mounts: [{ host: '/data', target: '/data', ro: true }] },
+      network: { mode: 'deny', hosts: ['example.com'] },
+    };
   });
-  wizard.draft.selectedSkillIds.push('another');
-  const mount = wizard.draft.customMounts[0];
-  assert(mount);
-  mount.host = '/changed';
-  expect(project.skills).toEqual(['skill']);
-  expect(project.filesystem.mounts).toEqual([{ host: '/data', target: '/data', ro: true }]);
-});
 
-test('project without mounts restores workspace-only file access', () => {
-  wizard.draft.selectedFileAccess = 'custom';
-  wizard.draft.customMounts = [{ host: '/old', target: '/old', ro: true }];
-  applyProjectToDraft({ ...project, filesystem: { mode: 'project', mounts: [] } });
-  expect(wizard.draft.selectedFileAccess).toBe('workspace');
-  expect(wizard.draft.customMounts).toEqual([{ host: '', target: '', ro: false }]);
-});
+  test('copies project configuration without overwriting runtime selections', () => {
+    const model: ModelInfo = {
+      providerId: 'provider',
+      connectionId: 'connection',
+      connectionName: 'My connection',
+      type: 'cloud',
+      label: 'My model',
+    };
+    wizard.draft.selectedModel = model;
+    wizard.draft.customImage = 'custom:image';
+    wizard.draft.currentStepIndex = 3;
+    wizard.draft.initialized = true;
+    wizard.draft.selectedAgent = 'claude';
+    wizard.draft.selectedGateway = 'gateway';
+    wizard.draft.description = 'Keep description';
+    applyProjectToDraft(project);
 
-test('project writable mounts remain writable', () => {
-  applyProjectToDraft({
-    ...project,
-    filesystem: { mode: 'custom', mounts: [{ host: '/data', target: '/data', ro: false }] },
+    expect(wizard.draft).toMatchObject({
+      selectedProjectId: project.id,
+      sourcePath: project.folder,
+      sessionName: 'my-project',
+      nameManuallyEdited: true,
+      selectedSkillIds: ['skill'],
+      selectedMcpIds: ['mcp'],
+      selectedSecretIds: ['secret'],
+      selectedKnowledgeIds: ['knowledge'],
+      selectedFileAccess: 'custom',
+      customMounts: project.filesystem.mounts,
+      selectedNetwork: 'blocked',
+      hostsByMode: { blocked: ['example.com'] },
+      selectedAgent: 'claude',
+      selectedGateway: 'gateway',
+      description: 'Keep description',
+      selectedModel: model,
+      customImage: 'custom:image',
+      currentStepIndex: 3,
+      initialized: true,
+      projectOpen: false,
+    });
+    wizard.draft.selectedSkillIds.push('another');
+    const mount = wizard.draft.customMounts[0];
+    assert(mount);
+    mount.host = '/changed';
+    expect(project.skills).toEqual(['skill']);
+    expect(project.filesystem.mounts).toEqual([{ host: '/data', target: '/data', ro: true }]);
   });
-  expect(wizard.draft.customMounts).toEqual([{ host: '/data', target: '/data', ro: false }]);
-});
 
-test.each<[NetworkConfiguration, string, string[]]>([
-  [{ mode: 'allow' }, 'registries', ['registry.npmjs.org', 'pypi.python.org']],
-  [
-    { mode: 'deny', hosts: ['registry.npmjs.org', 'pypi.python.org'] },
-    'registries',
-    ['registry.npmjs.org', 'pypi.python.org'],
-  ],
-  [{ mode: 'deny' }, 'blocked', ['']],
-])('project network %j maps to workspace controls', (network, mode, hosts) => {
-  applyProjectToDraft({ ...project, network });
-  expect(wizard.draft.selectedNetwork).toBe(mode);
-  expect(wizard.draft.hostsByMode[mode]).toEqual(hosts);
+  test('project without mounts restores workspace-only file access', () => {
+    wizard.draft.selectedFileAccess = 'custom';
+    wizard.draft.customMounts = [{ host: '/old', target: '/old', ro: true }];
+    applyProjectToDraft({ ...project, filesystem: { mode: 'project', mounts: [] } });
+    expect(wizard.draft.selectedFileAccess).toBe('workspace');
+    expect(wizard.draft.customMounts).toEqual([{ host: '', target: '', ro: false }]);
+  });
+
+  test.each([false, true])('project mount is writable with ro omitted: %s', omitReadOnly => {
+    const mount = { host: '/data', target: '/data', ro: false };
+    if (omitReadOnly) Reflect.deleteProperty(mount, 'ro');
+    applyProjectToDraft({
+      ...project,
+      filesystem: { mode: 'custom', mounts: [mount] },
+    });
+    expect(wizard.draft.customMounts).toEqual([{ host: '/data', target: '/data', ro: false }]);
+  });
+
+  test.each<[NetworkConfiguration, string, string[]]>([
+    [{ mode: 'allow' }, 'registries', WORKSPACE_REGISTRY_HOSTS],
+    [{ mode: 'deny', hosts: [...WORKSPACE_REGISTRY_HOSTS] }, 'registries', WORKSPACE_REGISTRY_HOSTS],
+    [{ mode: 'deny' }, 'blocked', ['']],
+  ])('project network %j maps to workspace controls', (network, mode, hosts) => {
+    applyProjectToDraft({ ...project, network });
+    expect(wizard.draft.selectedNetwork).toBe(mode);
+    expect(wizard.draft.hostsByMode[mode]).toEqual(hosts);
+  });
 });
 
 describe('resetDraft', () => {
