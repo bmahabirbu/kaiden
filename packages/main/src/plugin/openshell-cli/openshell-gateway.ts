@@ -71,7 +71,10 @@ interface ManagedGateway {
   port: number;
   bindAddress: string;
   migrationRetryInProgress?: boolean;
-  startup?: { controller: AbortController };
+  startup?: {
+    controller: AbortController;
+    promise: Promise<void>;
+  };
 }
 
 /**
@@ -226,6 +229,10 @@ export class OpenshellGateway implements Disposable {
       await this.removeSamePortGateways(this.defaultGateway.port);
       this._onDidGatewayStart.fire();
     } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        console.log(`[openshell-gateway] auto-start cancelled: ${err.message}`);
+        return;
+      }
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[openshell-gateway] auto-start failed: ${message}`);
       this._onDidGatewayInitFailed.fire(message);
@@ -313,11 +320,27 @@ export class OpenshellGateway implements Disposable {
     if (bindAddress !== DEFAULT_BIND_ADDRESS) {
       throw new Error(`Local gateways must bind to ${DEFAULT_BIND_ADDRESS}`);
     }
+    const gateway = this.#gateways.get(name);
+    if (gateway?.process || gateway?.startup) {
+      throw new Error(`A gateway named "${name}" is already registered or starting`);
+    }
+    await this.startGateway(name, signal => this.createContainerGatewayAttempt(options, driver, signal));
+  }
+
+  private async createContainerGatewayAttempt(
+    options: CreateLocalGatewayOptions,
+    driver: LocalGatewayDriver,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const name = options.name.trim();
+    const bindAddress = options.bindAddress.trim();
     const gateways = await this.gatewayManager.listGateways();
+    signal.throwIfAborted();
     if (gateways.some(gw => gw.metadata.name === name)) {
       throw new Error(`A gateway named "${name}" is already registered`);
     }
     await isFreePort(options.port);
+    signal.throwIfAborted();
 
     const binaryPath = this.getGatewayBinaryPath();
     if (!binaryPath) {
@@ -325,6 +348,7 @@ export class OpenshellGateway implements Disposable {
     }
     const storageDirectory = this.getGatewayStorageDirectory(name);
     const configPath = await this.createNamedGatewayConfig(binaryPath, storageDirectory, driver);
+    signal.throwIfAborted();
     const { gatewayProcess, processState } = await this.spawnCreatedGateway(
       name,
       binaryPath,
@@ -333,10 +357,12 @@ export class OpenshellGateway implements Disposable {
       options.port,
       bindAddress,
       'w',
+      signal,
     );
 
     let registered = false;
     try {
+      signal.throwIfAborted();
       await this.gatewayManager.addGateway(name, {
         name,
         gateway_endpoint: `http://${DEFAULT_BIND_ADDRESS}:${options.port}`,
@@ -344,11 +370,19 @@ export class OpenshellGateway implements Disposable {
         gateway_port: options.port,
       });
       registered = true;
-      await this.waitForIndependentGateway(gatewayProcess, name, processState);
+      await this.waitForIndependentGateway(gatewayProcess, name, processState, signal);
+      signal.throwIfAborted();
     } catch (err: unknown) {
-      await this.stopGateway(name);
-      if (registered) {
-        await this.gatewayManager.removeGateway(name).catch(() => undefined);
+      try {
+        await this.stopGatewayAfterStartupError(name);
+      } finally {
+        if (registered) {
+          try {
+            await this.gatewayManager.removeGateway(name);
+          } catch (removeErr: unknown) {
+            console.warn(`[openshell-gateway] failed to remove gateway "${name}" after startup error:`, removeErr);
+          }
+        }
       }
       throw err;
     }
@@ -402,13 +436,7 @@ export class OpenshellGateway implements Disposable {
   }
 
   private async startCreatedGateway(name: string, endpoint: string): Promise<void> {
-    const controller = new AbortController();
-    this.getGatewayState(name).startup = { controller };
-    try {
-      await this.startCreatedGatewayAttempt(name, endpoint, controller.signal);
-    } finally {
-      if (this.#gateways.get(name)?.startup?.controller === controller) this.getGatewayState(name).startup = undefined;
-    }
+    await this.startGateway(name, signal => this.startCreatedGatewayAttempt(name, endpoint, signal));
   }
 
   private async startCreatedGatewayAttempt(name: string, endpoint: string, signal: AbortSignal): Promise<void> {
@@ -438,7 +466,7 @@ export class OpenshellGateway implements Disposable {
       await this.waitForIndependentGateway(gatewayProcess, name, processState, signal);
       signal.throwIfAborted();
     } catch (err: unknown) {
-      await this.stopGateway(name);
+      await this.stopGatewayAfterStartupError(name);
       let logContent = '';
       try {
         logContent = await readFile(join(storageDirectory, GATEWAY_LOG_FILENAME), 'utf-8');
@@ -446,7 +474,7 @@ export class OpenshellGateway implements Disposable {
         // ignore if log can't be read
       }
       signal.throwIfAborted();
-      if (this.isMigrationError(logContent)) {
+      if (!this.canStopGateway(name) && this.isMigrationError(logContent)) {
         console.warn(`[openshell-gateway] migration error detected for "${name}", backing up database`);
         const backupPath = await this.backupGatewayDatabase(name);
         signal.throwIfAborted();
@@ -485,13 +513,13 @@ export class OpenshellGateway implements Disposable {
     port: number,
     bindAddress: string,
     logFlags: 'a' | 'w',
-    signal?: AbortSignal,
+    signal: AbortSignal,
   ): Promise<{ gatewayProcess: ChildProcess; processState: { spawnError?: Error } }> {
     const logFile = await open(join(storageDirectory, GATEWAY_LOG_FILENAME), logFlags);
     const processState: { spawnError?: Error } = {};
     let gatewayProcess: ChildProcess;
     try {
-      signal?.throwIfAborted();
+      signal.throwIfAborted();
       gatewayProcess = spawn(binaryPath, this.buildArgs(true, configPath, storageDirectory, port, bindAddress), {
         stdio: ['ignore', logFile.fd, logFile.fd],
         detached: false,
@@ -516,18 +544,48 @@ export class OpenshellGateway implements Disposable {
   }
 
   async start(options?: OpenshellGatewayStartOptions): Promise<void> {
-    if (this.#gateways.get(DEFAULT_GATEWAY_NAME)?.startup || this.#gateways.get(DEFAULT_GATEWAY_NAME)?.process) {
-      console.log('[openshell-gateway] already running or starting, skipping start');
+    const gateway = this.defaultGateway;
+    await this.startGateway(DEFAULT_GATEWAY_NAME, async signal => {
+      const previousPort = gateway.port;
+      const previousBindAddress = gateway.bindAddress;
+      try {
+        await this.startDefaultGateway(options, signal);
+      } catch (err: unknown) {
+        if (signal.aborted) {
+          console.debug('[openshell-gateway] startup cancelled');
+        } else {
+          console.warn('[openshell-gateway] startup did not complete:', err);
+        }
+        gateway.port = previousPort;
+        gateway.bindAddress = previousBindAddress;
+        throw err;
+      }
+    });
+  }
+
+  private async startGateway(name: string, start: (signal: AbortSignal) => Promise<void>): Promise<void> {
+    const gateway = this.getGatewayState(name);
+    if (gateway.startup) {
+      return gateway.startup.promise;
+    }
+    if (gateway.process) {
       return;
     }
     const controller = new AbortController();
-    this.getGatewayState(DEFAULT_GATEWAY_NAME).startup = { controller };
+    const promise = this.runGatewayStartup(gateway, controller.signal, start);
+    gateway.startup = { controller, promise };
+    await promise;
+  }
+
+  private async runGatewayStartup(
+    gateway: ManagedGateway,
+    signal: AbortSignal,
+    start: (signal: AbortSignal) => Promise<void>,
+  ): Promise<void> {
     try {
-      await this.startDefaultGateway(options, controller.signal);
+      await start(signal);
     } finally {
-      if (this.#gateways.get(DEFAULT_GATEWAY_NAME)?.startup?.controller === controller) {
-        this.getGatewayState(DEFAULT_GATEWAY_NAME).startup = undefined;
-      }
+      gateway.startup = undefined;
     }
   }
 
@@ -536,18 +594,10 @@ export class OpenshellGateway implements Disposable {
     signal: AbortSignal,
   ): Promise<void> {
     signal.throwIfAborted();
-    if (this.#gateways.get(DEFAULT_GATEWAY_NAME)?.process) {
-      console.log('[openshell-gateway] already running, skipping start');
-      return;
-    }
-
     const binaryPath = this.getGatewayBinaryPath();
     if (!binaryPath) {
       throw new Error('openshell-gateway binary not registered in CLI tool registry');
     }
-
-    const previousPort = this.defaultGateway.port;
-    const previousBindAddress = this.defaultGateway.bindAddress;
 
     if (options?.port !== undefined) {
       this.defaultGateway.port = options.port;
@@ -598,27 +648,20 @@ export class OpenshellGateway implements Disposable {
       try {
         await this.registerGateway();
       } catch (err: unknown) {
-        await this.stop().catch((stopErr: unknown) => {
-          console.warn('[openshell-gateway] failed to stop after registration error:', stopErr);
-        });
-        this.defaultGateway.port = previousPort;
-        this.defaultGateway.bindAddress = previousBindAddress;
+        await this.stopGatewayAfterStartupError(DEFAULT_GATEWAY_NAME);
+        signal.throwIfAborted();
         throw err;
       }
     }
 
     try {
-      await this.waitForReady();
+      await this.waitForReady(signal);
       signal.throwIfAborted();
     } catch (err: unknown) {
-      await this.stop().catch((stopErr: unknown) => {
-        console.warn('[openshell-gateway] failed to stop after startup error:', stopErr);
-      });
-      this.defaultGateway.port = previousPort;
-      this.defaultGateway.bindAddress = previousBindAddress;
+      await this.stopGatewayAfterStartupError(DEFAULT_GATEWAY_NAME);
       signal.throwIfAborted();
       const stderrOutput = stderrChunks.join('\n').trim();
-      if (this.isMigrationError(stderrOutput)) {
+      if (!this.isRunning() && this.isMigrationError(stderrOutput)) {
         console.warn('[openshell-gateway] migration error detected, backing up database');
         const backupPath = await this.backupGatewayDatabase(DEFAULT_GATEWAY_NAME);
         signal.throwIfAborted();
@@ -652,7 +695,9 @@ export class OpenshellGateway implements Disposable {
 
   async stop(): Promise<void> {
     console.log('[openshell-gateway] stopping');
-    await this.stopGateway(DEFAULT_GATEWAY_NAME);
+    if (this.canStopGateway(DEFAULT_GATEWAY_NAME) || this.defaultGateway.startup) {
+      await this.stopManagedGateway(DEFAULT_GATEWAY_NAME);
+    }
   }
 
   canStopGateway(name: string): boolean {
@@ -661,11 +706,18 @@ export class OpenshellGateway implements Disposable {
   }
 
   async stopManagedGateway(name: string): Promise<void> {
-    if (!this.canStopGateway(name) && !this.#gateways.get(name)?.startup) {
+    const startup = this.#gateways.get(name)?.startup;
+    if (!this.canStopGateway(name) && !startup) {
       throw new Error(`Gateway "${name}" is not a running gateway managed by this instance`);
     }
-    this.#gateways.get(name)?.startup?.controller?.abort(new Error(`Gateway "${name}" startup cancelled by Stop`));
-    await this.stopGateway(name);
+    startup?.controller.abort(new DOMException(`Gateway "${name}" startup cancelled by Stop`, 'AbortError'));
+    try {
+      await this.stopGateway(name);
+    } finally {
+      await startup?.promise.catch(() => {
+        // The original startup caller receives the failure; Stop reports process shutdown errors only.
+      });
+    }
   }
 
   isRunning(): boolean {
@@ -675,14 +727,14 @@ export class OpenshellGateway implements Disposable {
   @preDestroy()
   dispose(): void {
     Promise.all(
-      [...this.#gateways.keys()].filter(name => this.#gateways.get(name)?.process).map(name => this.stopGateway(name)),
+      [...this.#gateways.keys()]
+        .filter(name => this.canStopGateway(name) || this.#gateways.get(name)?.startup)
+        .map(name => this.stopManagedGateway(name)),
     )
       .catch((err: unknown) => console.error('[openshell-gateway] failed to stop: ', err))
       .finally(() => {
-        for (const gateway of this.#gateways.values()) {
-          gateway.process = undefined;
-        }
         this.closeGatewayLog();
+        this.#gateways.clear();
       });
     this._onDidGatewayStart.dispose();
     this._onDidGatewayInitFailed.dispose();
@@ -735,13 +787,21 @@ export class OpenshellGateway implements Disposable {
     }
   }
 
+  private async stopGatewayAfterStartupError(name: string): Promise<void> {
+    try {
+      await this.stopGateway(name);
+    } catch (err: unknown) {
+      console.warn(`[openshell-gateway] failed to stop gateway "${name}" after startup error:`, err);
+    }
+  }
+
   private async stopGateway(name: string): Promise<void> {
     const proc = this.#gateways.get(name)?.process;
     if (!proc) {
       return;
     }
     proc.kill('SIGTERM');
-    if (typeof proc.exitCode === 'number') {
+    if (!this.canStopGateway(name)) {
       this.getGatewayState(name).process = undefined;
       return;
     }
@@ -864,24 +924,50 @@ export class OpenshellGateway implements Disposable {
     }
   }
 
-  private async waitForReady(): Promise<void> {
+  private async waitForReady(signal: AbortSignal): Promise<void> {
     const endpoint = `http://${this.defaultGateway.bindAddress}:${this.defaultGateway.port}`;
     console.log(`[openshell-gateway] waiting for server at ${endpoint}`);
 
     for (let attempt = 0; attempt < MAX_HEALTH_CHECK_ATTEMPTS; attempt++) {
+      signal.throwIfAborted();
       if (!this.isRunning()) {
         throw new Error('Gateway process exited before becoming ready');
       }
 
-      if (await this.isGatewayHealthy(DEFAULT_GATEWAY_NAME)) {
+      if (await this.waitForStartupCheck(() => this.isGatewayHealthy(DEFAULT_GATEWAY_NAME), signal)) {
         console.log('[openshell-gateway] server is ready');
         return;
       }
 
-      await new Promise<void>(resolve => setTimeout(resolve, HEALTH_CHECK_INTERVAL_MS));
+      await this.waitForNextHealthCheck(signal);
     }
 
     throw new Error(`Gateway did not become ready within ${MAX_HEALTH_CHECK_ATTEMPTS}s`);
+  }
+
+  private async waitForStartupCheck<T>(check: () => Promise<T>, signal: AbortSignal): Promise<T> {
+    signal.throwIfAborted();
+    const aborted = Promise.withResolvers<never>();
+    const onAbort = (): void => aborted.reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    try {
+      // Readiness requests are read-only, so a late response cannot resume cancelled startup.
+      return await Promise.race([check(), aborted.promise]);
+    } finally {
+      signal.removeEventListener('abort', onAbort);
+    }
+  }
+
+  private async waitForNextHealthCheck(signal: AbortSignal): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await this.waitForStartupCheck(
+        () => new Promise<void>(resolve => (timer = setTimeout(resolve, HEALTH_CHECK_INTERVAL_MS))),
+        signal,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async registerGateway(): Promise<void> {
@@ -992,10 +1078,10 @@ export class OpenshellGateway implements Disposable {
     gatewayProcess: ChildProcess,
     name: string,
     processState: { spawnError?: Error },
-    signal?: AbortSignal,
+    signal: AbortSignal,
   ): Promise<void> {
     for (let attempt = 0; attempt < MAX_HEALTH_CHECK_ATTEMPTS; attempt++) {
-      signal?.throwIfAborted();
+      signal.throwIfAborted();
       if (processState.spawnError) {
         throw processState.spawnError;
       }
@@ -1003,12 +1089,13 @@ export class OpenshellGateway implements Disposable {
         throw new Error('Gateway process exited before becoming ready');
       }
       try {
-        await this.gatewayManager.getGatewayInfo(name);
+        await this.waitForStartupCheck(() => this.gatewayManager.getGatewayInfo(name), signal);
         return;
       } catch {
+        signal.throwIfAborted();
         // The gateway may accept connections shortly after its process starts; retry until the timeout.
       }
-      await new Promise<void>(resolve => setTimeout(resolve, HEALTH_CHECK_INTERVAL_MS));
+      await this.waitForNextHealthCheck(signal);
     }
     throw new Error(`Gateway did not become ready within ${MAX_HEALTH_CHECK_ATTEMPTS}s`);
   }
