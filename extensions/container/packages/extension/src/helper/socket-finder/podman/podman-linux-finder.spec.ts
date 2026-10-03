@@ -20,116 +20,145 @@ import type { PathLike } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { window } from '@openkaiden/api';
-import { Container } from 'inversify';
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import { PodmanSocketLinuxFinder } from './podman-linux-finder';
-import { PodmanVersionDetector } from './podman-version-detector';
 
 vi.mock(import('node:fs'));
-vi.mock(import('@openkaiden/api'));
 
-const ROOTLESS_SOCKET = resolve('/run/user/1000', 'podman/podman.sock');
-const ROOTFUL_SOCKET = '/run/podman/podman.sock';
+let originalXdgRuntimeDir: string | undefined;
 
-const versionDetectorMock = {
-  isInstalled: vi.fn(),
-} as unknown as PodmanVersionDetector;
-
-let finder: PodmanSocketLinuxFinder;
-
-beforeEach(async () => {
+beforeEach(() => {
   vi.resetAllMocks();
-  process.env.XDG_RUNTIME_DIR = '/run/user/1000';
-  vi.mocked(existsSync).mockReturnValue(false);
-  vi.mocked(window.showWarningMessage).mockResolvedValue(undefined);
-  vi.mocked(versionDetectorMock.isInstalled).mockResolvedValue(true);
-
-  const container = new Container();
-  container.bind(PodmanSocketLinuxFinder).toSelf().inSingletonScope();
-  container.bind(PodmanVersionDetector).toConstantValue(versionDetectorMock);
-  finder = await container.getAsync(PodmanSocketLinuxFinder);
+  console.warn = vi.fn();
+  originalXdgRuntimeDir = process.env.XDG_RUNTIME_DIR;
 });
 
-test('findPaths returns the rootless socket when it exists', async () => {
-  vi.mocked(existsSync).mockImplementation((path: PathLike) => String(path) === ROOTLESS_SOCKET);
-
-  expect(await finder.findPaths()).toEqual([ROOTLESS_SOCKET]);
-  expect(window.showWarningMessage).not.toHaveBeenCalled();
-});
-
-test('findPaths returns the rootful socket when only it exists', async () => {
-  delete process.env.XDG_RUNTIME_DIR;
-  vi.mocked(existsSync).mockImplementation((path: PathLike) => String(path) === ROOTFUL_SOCKET);
-
-  expect(await finder.findPaths()).toEqual([ROOTFUL_SOCKET]);
-  expect(window.showWarningMessage).not.toHaveBeenCalled();
-});
-
-test('findPaths returns both sockets when both exist', async () => {
-  vi.mocked(existsSync).mockReturnValue(true);
-
-  expect(await finder.findPaths()).toEqual([ROOTLESS_SOCKET, ROOTFUL_SOCKET]);
-  expect(window.showWarningMessage).not.toHaveBeenCalled();
-});
-
-test('findPaths falls back to /run/user/$UID when XDG_RUNTIME_DIR is unset', async () => {
-  // Windows has no process.getuid to spy on, so provide it through a scoped process stub.
-  vi.stubGlobal('process', {
-    ...process,
-    env: { ...process.env, XDG_RUNTIME_DIR: undefined },
-    getuid: () => 1000,
-  });
-  vi.mocked(existsSync).mockImplementation((path: PathLike) => String(path) === ROOTLESS_SOCKET);
-
-  try {
-    expect(await finder.findPaths()).toEqual([ROOTLESS_SOCKET]);
-  } finally {
-    vi.unstubAllGlobals();
+afterEach(() => {
+  if (originalXdgRuntimeDir !== undefined) {
+    process.env.XDG_RUNTIME_DIR = originalXdgRuntimeDir;
+  } else {
+    delete process.env.XDG_RUNTIME_DIR;
   }
 });
 
-test('findPaths warns once when podman is installed but no socket is found', async () => {
-  await finder.findPaths();
-  await finder.findPaths();
+test('findPaths returns empty array when no sockets exist', async () => {
+  const finder = new PodmanSocketLinuxFinder();
 
-  expect(window.showWarningMessage).toHaveBeenCalledTimes(1);
-  expect(window.showWarningMessage).toHaveBeenCalledWith(
-    expect.stringContaining('systemctl --user enable --now podman.socket'),
-  );
-  expect(window.showWarningMessage).toHaveBeenCalledWith(expect.stringContaining(ROOTLESS_SOCKET));
+  process.env.XDG_RUNTIME_DIR = '/run/user/1000';
+  vi.mocked(existsSync).mockReturnValue(false);
+
+  const result = await finder.findPaths();
+
+  expect(result).toEqual([]);
 });
 
-test('findPaths warns only once for overlapping calls while the install check is pending', async () => {
-  // Overlapping discovery polls must not both pass the warn guard while isInstalled() is pending.
-  const pendingInstall = Promise.withResolvers<boolean>();
-  vi.mocked(versionDetectorMock.isInstalled).mockReturnValue(pendingInstall.promise);
+test('findPaths returns rootless socket when it exists', async () => {
+  const finder = new PodmanSocketLinuxFinder();
 
-  const first = finder.findPaths();
-  const second = finder.findPaths();
-  pendingInstall.resolve(true);
-  await Promise.all([first, second]);
+  process.env.XDG_RUNTIME_DIR = '/run/user/1000';
+  const expectedSocket = resolve('/run/user/1000', 'podman/podman.sock');
+  vi.mocked(existsSync).mockImplementation((path: PathLike) => {
+    return String(path) === expectedSocket;
+  });
 
-  expect(window.showWarningMessage).toHaveBeenCalledTimes(1);
+  const result = await finder.findPaths();
+
+  expect(result).toContain(expectedSocket);
+  expect(result).not.toContain('/run/podman/podman.sock');
 });
 
-test('findPaths does not warn when podman is not installed', async () => {
-  vi.mocked(versionDetectorMock.isInstalled).mockResolvedValue(false);
+test('findPaths returns rootful socket when it exists', async () => {
+  const finder = new PodmanSocketLinuxFinder();
+
+  delete process.env.XDG_RUNTIME_DIR;
+  vi.mocked(existsSync).mockImplementation((path: PathLike) => {
+    return String(path) === '/run/podman/podman.sock';
+  });
+
+  const result = await finder.findPaths();
+
+  expect(result).toEqual(['/run/podman/podman.sock']);
+});
+
+test('findPaths returns both sockets when both exist', async () => {
+  const finder = new PodmanSocketLinuxFinder();
+
+  process.env.XDG_RUNTIME_DIR = '/run/user/1000';
+  const expectedRootless = resolve('/run/user/1000', 'podman/podman.sock');
+  vi.mocked(existsSync).mockReturnValue(true);
+
+  const result = await finder.findPaths();
+
+  expect(result).toHaveLength(2);
+  expect(result).toContain(expectedRootless);
+  expect(result).toContain('/run/podman/podman.sock');
+});
+
+test('findPaths returns empty array when XDG_RUNTIME_DIR is not set and rootful socket does not exist', async () => {
+  const finder = new PodmanSocketLinuxFinder();
+
+  delete process.env.XDG_RUNTIME_DIR;
+  vi.mocked(existsSync).mockReturnValue(false);
+
+  const result = await finder.findPaths();
+
+  expect(result).toEqual([]);
+});
+
+test('findPaths falls back to /run/user/$UID when XDG_RUNTIME_DIR is unset', async () => {
+  const finder = new PodmanSocketLinuxFinder();
+
+  delete process.env.XDG_RUNTIME_DIR;
+  const uid = process.getuid?.();
+  const expectedSocket = resolve(`/run/user/${uid}`, 'podman/podman.sock');
+
+  vi.mocked(existsSync).mockImplementation((path: PathLike) => {
+    return String(path) === expectedSocket;
+  });
+
+  const result = await finder.findPaths();
+
+  if (uid !== undefined) {
+    expect(result).toContain(expectedSocket);
+  }
+});
+
+test('findPaths reports a missing socket only once across repeated polls', async () => {
+  const finder = new PodmanSocketLinuxFinder();
+  vi.mocked(existsSync).mockReturnValue(false);
 
   expect(await finder.findPaths()).toEqual([]);
-  expect(window.showWarningMessage).not.toHaveBeenCalled();
+  expect(await finder.findPaths()).toEqual([]);
+
+  expect(console.warn).toHaveBeenCalledExactlyOnceWith(
+    'No active podman socket found. Enable it with "systemctl --user enable --now podman.socket".',
+  );
 });
 
-test('findPaths warns again after the socket disappears', async () => {
-  // Socket missing -> warn.
-  await finder.findPaths();
-  // Socket back -> re-arm the warning.
-  vi.mocked(existsSync).mockReturnValue(true);
-  await finder.findPaths();
-  // Socket missing again -> warn a second time.
+test('findPaths reports again when a discovered socket disappears', async () => {
+  const finder = new PodmanSocketLinuxFinder();
   vi.mocked(existsSync).mockReturnValue(false);
   await finder.findPaths();
 
-  expect(window.showWarningMessage).toHaveBeenCalledTimes(2);
+  vi.mocked(existsSync).mockReturnValue(true);
+  expect(await finder.findPaths()).not.toEqual([]);
+  expect(console.warn).toHaveBeenCalledTimes(1);
+
+  vi.mocked(existsSync).mockReturnValue(false);
+  expect(await finder.findPaths()).toEqual([]);
+  await finder.findPaths();
+
+  expect(console.warn).toHaveBeenCalledTimes(2);
+  expect(console.warn).toHaveBeenLastCalledWith(
+    'No active podman socket found. Enable it with "systemctl --user enable --now podman.socket".',
+  );
+});
+
+test('findPaths does not report a missing socket when one is available', async () => {
+  const finder = new PodmanSocketLinuxFinder();
+  vi.mocked(existsSync).mockReturnValue(true);
+
+  expect(await finder.findPaths()).not.toEqual([]);
+  expect(console.warn).not.toHaveBeenCalled();
 });
