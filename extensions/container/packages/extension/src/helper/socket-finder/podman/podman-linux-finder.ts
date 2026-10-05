@@ -47,7 +47,6 @@ export class PodmanSocketLinuxFinder implements SocketFinder {
       paths.push(rootfulSocket);
     }
 
-    // Discovery polls every 30 seconds; report once until a socket is found again.
     if (paths.length === 0 && !this.#reported) {
       console.warn('No active podman socket found. Enable it with "systemctl --user enable --now podman.socket".');
     }

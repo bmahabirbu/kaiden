@@ -30,7 +30,6 @@ export class DockerSocketLinuxFinder implements SocketFinder {
     const socketPath = '/var/run/docker.sock';
 
     if (!existsSync(socketPath)) {
-      // Discovery polls every 30 seconds; report once until a socket is found again.
       if (!this.#reported) {
         console.warn('No active docker socket found.');
       }
