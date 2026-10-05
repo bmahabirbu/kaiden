@@ -181,10 +181,11 @@ describe('applyProjectToDraft', () => {
   });
 });
 
-test('initializeDraftFromProject replaces project settings but preserves workspace-only choices', () => {
+test('initializeDraftFromProject clears previous workspace details but preserves runtime choices', () => {
   wizard.draft.currentStepIndex = 4;
   wizard.draft.initialized = true;
   wizard.draft.description = 'My workspace';
+  wizard.draft.configAction = 'replace';
   wizard.draft.selectedAgent = 'claude';
   wizard.draft.selectedGateway = 'my-gateway';
   wizard.draft.customImage = 'my-image:latest';
@@ -201,7 +202,8 @@ test('initializeDraftFromProject replaces project settings but preserves workspa
   expect(wizard.draft).toMatchObject({
     currentStepIndex: 0,
     initialized: true,
-    description: 'My workspace',
+    description: '',
+    configAction: 'merge',
     selectedAgent: 'claude',
     selectedGateway: 'my-gateway',
     customImage: 'my-image:latest',
