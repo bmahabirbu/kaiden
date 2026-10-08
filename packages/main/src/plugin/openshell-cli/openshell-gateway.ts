@@ -65,6 +65,14 @@ const GatewayConfigSchema = z.object({
   }),
 });
 
+interface GatewayBookkeeping {
+  process?: ChildProcess;
+  logStream?: WriteStream;
+  port: number;
+  bindAddress: string;
+  migrationRetryInProgress?: boolean;
+}
+
 /**
  * Manages the `openshell-gateway` server binary lifecycle.
  *
@@ -75,11 +83,15 @@ const GatewayConfigSchema = z.object({
  */
 @injectable()
 export class OpenshellGateway implements Disposable {
-  #gatewayProcesses = new Map<string, ChildProcess>();
-  #gatewayLogStream: WriteStream | undefined;
-  #port: number = DEFAULT_PORT;
-  #bindAddress: string = DEFAULT_BIND_ADDRESS;
-  #migrationRetryInProgress = new Set<string>();
+  readonly #defaultGatewayBookkeeping: GatewayBookkeeping = {
+    port: DEFAULT_PORT,
+    bindAddress: DEFAULT_BIND_ADDRESS,
+  };
+  // Records live for this OpenshellGateway instance's lifetime, including after failed starts.
+  // Process cleanup clears only the handle; registrations are owned by OpenshellGatewayManager.
+  readonly #gatewayBookkeeping = new Map<string, GatewayBookkeeping>([
+    [DEFAULT_GATEWAY_NAME, this.#defaultGatewayBookkeeping],
+  ]);
 
   private readonly _onDidGatewayStart = new Emitter<void>();
   readonly onDidGatewayStart: Event<void> = this._onDidGatewayStart.event;
@@ -193,7 +205,7 @@ export class OpenshellGateway implements Disposable {
       await this.registerGateway();
       if (await this.isGatewayHealthy(DEFAULT_GATEWAY_NAME)) {
         console.log('[openshell-gateway] found healthy gateway on default port, registering');
-        await this.removeSamePortGateways(this.#port);
+        await this.removeSamePortGateways(this.#defaultGatewayBookkeeping.port);
         this._onDidGatewayStart.fire();
         return;
       }
@@ -205,7 +217,7 @@ export class OpenshellGateway implements Disposable {
     console.log('[openshell-gateway] no existing gateways found, auto-starting local gateway');
     try {
       await this.start();
-      await this.removeSamePortGateways(this.#port);
+      await this.removeSamePortGateways(this.#defaultGatewayBookkeeping.port);
       this._onDidGatewayStart.fire();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -350,7 +362,7 @@ export class OpenshellGateway implements Disposable {
       return false;
     }
 
-    if (this.#gatewayProcesses.has(gateway.name)) {
+    if (this.#gatewayBookkeeping.get(gateway.name)?.process) {
       return this.#supportsMountsFromConfig(gateway);
     }
 
@@ -395,7 +407,7 @@ export class OpenshellGateway implements Disposable {
     }
     const storageDirectory = this.getGatewayStorageDirectory(name);
     const configPath = join(storageDirectory, 'gateway.toml');
-    const { gatewayProcess, processState } = await this.spawnCreatedGateway(
+    const { gatewayProcess, processState, gatewayBookkeeping } = await this.spawnCreatedGateway(
       name,
       binaryPath,
       configPath,
@@ -425,8 +437,8 @@ export class OpenshellGateway implements Disposable {
           highlight: true,
           silent: false,
         });
-        if (!this.#migrationRetryInProgress.has(name)) {
-          this.#migrationRetryInProgress.add(name);
+        if (!gatewayBookkeeping.migrationRetryInProgress) {
+          gatewayBookkeeping.migrationRetryInProgress = true;
           try {
             console.log(`[openshell-gateway] retrying start for "${name}" after migration error recovery`);
             await this.startCreatedGateway(name, endpoint);
@@ -436,7 +448,7 @@ export class OpenshellGateway implements Disposable {
             console.error(`[openshell-gateway] retry after migration error for "${name}" also failed: ${retryMessage}`);
             throw retryErr;
           } finally {
-            this.#migrationRetryInProgress.delete(name);
+            gatewayBookkeeping.migrationRetryInProgress = false;
           }
         }
       }
@@ -452,10 +464,15 @@ export class OpenshellGateway implements Disposable {
     port: number,
     bindAddress: string,
     logFlags: 'a' | 'w',
-  ): Promise<{ gatewayProcess: ChildProcess; processState: { spawnError?: Error } }> {
+  ): Promise<{
+    gatewayProcess: ChildProcess;
+    processState: { spawnError?: Error };
+    gatewayBookkeeping: GatewayBookkeeping;
+  }> {
     const logFile = await open(join(storageDirectory, GATEWAY_LOG_FILENAME), logFlags);
     const processState: { spawnError?: Error } = {};
     let gatewayProcess: ChildProcess;
+    let gatewayBookkeeping: GatewayBookkeeping;
     try {
       gatewayProcess = spawn(binaryPath, this.buildArgs(true, configPath, storageDirectory, port, bindAddress), {
         stdio: ['ignore', logFile.fd, logFile.fd],
@@ -463,11 +480,11 @@ export class OpenshellGateway implements Disposable {
         env: this.getGatewayEnvironment(binaryPath, storageDirectory),
       });
       gatewayProcess.once('error', err => (processState.spawnError = err));
-      this.trackGatewayProcess(name, gatewayProcess);
+      gatewayBookkeeping = this.trackGatewayProcess(name, gatewayProcess, port, bindAddress);
     } finally {
       await logFile.close();
     }
-    return { gatewayProcess, processState };
+    return { gatewayProcess, processState, gatewayBookkeeping };
   }
 
   private getGatewayEnvironment(binaryPath: string, storageDirectory: string): NodeJS.ProcessEnv {
@@ -481,7 +498,7 @@ export class OpenshellGateway implements Disposable {
   }
 
   async start(options?: OpenshellGatewayStartOptions): Promise<void> {
-    if (this.#gatewayProcesses.has(DEFAULT_GATEWAY_NAME)) {
+    if (this.#defaultGatewayBookkeeping.process) {
       console.log('[openshell-gateway] already running, skipping start');
       return;
     }
@@ -491,14 +508,14 @@ export class OpenshellGateway implements Disposable {
       throw new Error('openshell-gateway binary not registered in CLI tool registry');
     }
 
-    const previousPort = this.#port;
-    const previousBindAddress = this.#bindAddress;
+    const previousPort = this.#defaultGatewayBookkeeping.port;
+    const previousBindAddress = this.#defaultGatewayBookkeeping.bindAddress;
 
     if (options?.port !== undefined) {
-      this.#port = options.port;
+      this.#defaultGatewayBookkeeping.port = options.port;
     }
     if (options?.bindAddress !== undefined) {
-      this.#bindAddress = options.bindAddress;
+      this.#defaultGatewayBookkeeping.bindAddress = options.bindAddress;
     }
 
     const configPath = await this.createGatewayConfig(
@@ -515,16 +532,21 @@ export class OpenshellGateway implements Disposable {
       detached: false,
       env: this.getGatewayEnvironment(binaryPath, this.getGatewayStorageDirectory(DEFAULT_GATEWAY_NAME)),
     });
-    this.trackGatewayProcess(DEFAULT_GATEWAY_NAME, gatewayProcess);
+    this.trackGatewayProcess(
+      DEFAULT_GATEWAY_NAME,
+      gatewayProcess,
+      this.#defaultGatewayBookkeeping.port,
+      this.#defaultGatewayBookkeeping.bindAddress,
+    );
 
     gatewayProcess.stdout?.on('data', (data: Buffer) => {
-      this.#gatewayLogStream?.write(data);
+      this.#defaultGatewayBookkeeping.logStream?.write(data);
     });
 
     const stderrChunks: string[] = [];
     gatewayProcess.stderr?.on('data', (data: Buffer) => {
       const text = data.toString().trimEnd();
-      this.#gatewayLogStream?.write(data);
+      this.#defaultGatewayBookkeeping.logStream?.write(data);
       stderrChunks.push(text);
     });
 
@@ -544,8 +566,8 @@ export class OpenshellGateway implements Disposable {
         await this.stop().catch((stopErr: unknown) => {
           console.warn('[openshell-gateway] failed to stop after registration error:', stopErr);
         });
-        this.#port = previousPort;
-        this.#bindAddress = previousBindAddress;
+        this.#defaultGatewayBookkeeping.port = previousPort;
+        this.#defaultGatewayBookkeeping.bindAddress = previousBindAddress;
         throw err;
       }
     }
@@ -556,8 +578,8 @@ export class OpenshellGateway implements Disposable {
       await this.stop().catch((stopErr: unknown) => {
         console.warn('[openshell-gateway] failed to stop after startup error:', stopErr);
       });
-      this.#port = previousPort;
-      this.#bindAddress = previousBindAddress;
+      this.#defaultGatewayBookkeeping.port = previousPort;
+      this.#defaultGatewayBookkeeping.bindAddress = previousBindAddress;
       const stderrOutput = stderrChunks.join('\n').trim();
       if (this.isMigrationError(stderrOutput)) {
         console.warn('[openshell-gateway] migration error detected, backing up database');
@@ -570,8 +592,8 @@ export class OpenshellGateway implements Disposable {
           highlight: true,
           silent: false,
         });
-        if (!this.#migrationRetryInProgress.has(DEFAULT_GATEWAY_NAME)) {
-          this.#migrationRetryInProgress.add(DEFAULT_GATEWAY_NAME);
+        if (!this.#defaultGatewayBookkeeping.migrationRetryInProgress) {
+          this.#defaultGatewayBookkeeping.migrationRetryInProgress = true;
           try {
             console.log('[openshell-gateway] retrying start after migration error recovery');
             await this.start(options);
@@ -581,7 +603,7 @@ export class OpenshellGateway implements Disposable {
             console.error(`[openshell-gateway] retry after migration error also failed: ${retryMessage}`);
             throw retryErr;
           } finally {
-            this.#migrationRetryInProgress.delete(DEFAULT_GATEWAY_NAME);
+            this.#defaultGatewayBookkeeping.migrationRetryInProgress = false;
           }
         }
       }
@@ -596,7 +618,7 @@ export class OpenshellGateway implements Disposable {
   }
 
   canStopGateway(name: string): boolean {
-    const proc = this.#gatewayProcesses.get(name);
+    const proc = this.#gatewayBookkeeping.get(name)?.process;
     return proc !== undefined && typeof proc.exitCode !== 'number' && !proc.signalCode;
   }
 
@@ -606,17 +628,24 @@ export class OpenshellGateway implements Disposable {
 
   @preDestroy()
   dispose(): void {
-    Promise.all([...this.#gatewayProcesses.keys()].map(name => this.stopGateway(name)))
+    Promise.all([...this.#gatewayBookkeeping.keys()].map(name => this.stopGateway(name)))
       .catch((err: unknown) => console.error('[openshell-gateway] failed to stop: ', err))
       .finally(() => {
-        this.#gatewayProcesses.clear();
+        for (const bookkeeping of this.#gatewayBookkeeping.values()) {
+          bookkeeping.process = undefined;
+        }
         this.closeGatewayLog();
       });
     this._onDidGatewayStart.dispose();
     this._onDidGatewayInitFailed.dispose();
   }
 
-  private trackGatewayProcess(name: string, gatewayProcess: ChildProcess): void {
+  private trackGatewayProcess(
+    name: string,
+    gatewayProcess: ChildProcess,
+    port: number,
+    bindAddress: string,
+  ): GatewayBookkeeping {
     const pidPath = join(this.getGatewayStorageDirectory(name), GATEWAY_PID_FILENAME);
 
     const pidWritten =
@@ -625,14 +654,24 @@ export class OpenshellGateway implements Disposable {
         : Promise.resolve();
 
     const cleanup = (): void => {
-      if (this.#gatewayProcesses.get(name) === gatewayProcess) {
-        this.#gatewayProcesses.delete(name);
+      const bookkeeping = this.#gatewayBookkeeping.get(name);
+      if (bookkeeping?.process === gatewayProcess) {
+        bookkeeping.process = undefined;
         pidWritten.then(() => unlink(pidPath).catch(() => {})).catch(() => {});
       }
     };
     gatewayProcess.once('exit', cleanup);
     gatewayProcess.once('error', cleanup);
-    this.#gatewayProcesses.set(name, gatewayProcess);
+    let bookkeeping = this.#gatewayBookkeeping.get(name);
+    if (!bookkeeping) {
+      bookkeeping = { port, bindAddress };
+      this.#gatewayBookkeeping.set(name, bookkeeping);
+    } else {
+      bookkeeping.port = port;
+      bookkeeping.bindAddress = bindAddress;
+    }
+    bookkeeping.process = gatewayProcess;
+    return bookkeeping;
   }
 
   async getGatewayPid(gateway: GatewayInfo): Promise<number | undefined> {
@@ -664,13 +703,14 @@ export class OpenshellGateway implements Disposable {
   }
 
   private async stopGateway(name: string): Promise<void> {
-    const proc = this.#gatewayProcesses.get(name);
-    if (!proc) {
+    const bookkeeping = this.#gatewayBookkeeping.get(name);
+    const proc = bookkeeping?.process;
+    if (!bookkeeping || !proc) {
       return;
     }
     proc.kill('SIGTERM');
     if (typeof proc.exitCode === 'number') {
-      this.#gatewayProcesses.delete(name);
+      bookkeeping.process = undefined;
       return;
     }
     await new Promise<void>(resolve => {
@@ -686,8 +726,8 @@ export class OpenshellGateway implements Disposable {
         resolve();
       });
     });
-    if (this.#gatewayProcesses.get(name) === proc) {
-      this.#gatewayProcesses.delete(name);
+    if (bookkeeping.process === proc) {
+      bookkeeping.process = undefined;
     }
   }
 
@@ -716,8 +756,8 @@ export class OpenshellGateway implements Disposable {
     disableTls: boolean,
     configPath: string | undefined,
     storageDirectory = this.getGatewayStorageDirectory(DEFAULT_GATEWAY_NAME),
-    port = this.#port,
-    bindAddress = this.#bindAddress,
+    port = this.#defaultGatewayBookkeeping.port,
+    bindAddress = this.#defaultGatewayBookkeeping.bindAddress,
   ): string[] {
     const args: string[] = [];
     if (configPath) {
@@ -783,7 +823,7 @@ export class OpenshellGateway implements Disposable {
   }
 
   private async waitForReady(): Promise<void> {
-    const endpoint = `http://${this.#bindAddress}:${this.#port}`;
+    const endpoint = `http://${this.#defaultGatewayBookkeeping.bindAddress}:${this.#defaultGatewayBookkeeping.port}`;
     console.log(`[openshell-gateway] waiting for server at ${endpoint}`);
 
     for (let attempt = 0; attempt < MAX_HEALTH_CHECK_ATTEMPTS; attempt++) {
@@ -803,7 +843,7 @@ export class OpenshellGateway implements Disposable {
   }
 
   private async registerGateway(): Promise<void> {
-    const endpoint = `http://${this.#bindAddress}:${this.#port}`;
+    const endpoint = `http://${this.#defaultGatewayBookkeeping.bindAddress}:${this.#defaultGatewayBookkeeping.port}`;
     try {
       const existing = await this.gatewayManager.getGateway(DEFAULT_GATEWAY_NAME);
       if (existing.gateway_endpoint === endpoint) {
@@ -818,13 +858,13 @@ export class OpenshellGateway implements Disposable {
       name: DEFAULT_GATEWAY_NAME,
       gateway_endpoint: endpoint,
       is_remote: false,
-      gateway_port: this.#port,
+      gateway_port: this.#defaultGatewayBookkeeping.port,
     });
     console.log(`[openshell-gateway] registered as ${DEFAULT_GATEWAY_NAME} at ${endpoint}`);
   }
 
   private async initializeGatewayLog(): Promise<void> {
-    if (this.#gatewayLogStream) {
+    if (this.#defaultGatewayBookkeeping.logStream) {
       return;
     }
 
@@ -832,10 +872,10 @@ export class OpenshellGateway implements Disposable {
     try {
       await mkdir(this.getGatewayStorageDirectory(DEFAULT_GATEWAY_NAME), { recursive: true });
       const stream = createWriteStream(logPath, { flags: 'w' });
-      this.#gatewayLogStream = stream;
+      this.#defaultGatewayBookkeeping.logStream = stream;
       stream.on('error', (err: Error) => {
-        if (this.#gatewayLogStream === stream) {
-          this.#gatewayLogStream = undefined;
+        if (this.#defaultGatewayBookkeeping.logStream === stream) {
+          this.#defaultGatewayBookkeeping.logStream = undefined;
         }
         console.error(`[openshell-gateway] unable to write log file ${logPath}: ${err.message}`);
       });
@@ -846,8 +886,8 @@ export class OpenshellGateway implements Disposable {
   }
 
   private closeGatewayLog(): void {
-    this.#gatewayLogStream?.end();
-    this.#gatewayLogStream = undefined;
+    this.#defaultGatewayBookkeeping.logStream?.end();
+    this.#defaultGatewayBookkeeping.logStream = undefined;
   }
 
   private validateGatewayName(name: string, allowDefault = true): void {
