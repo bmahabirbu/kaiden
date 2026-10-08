@@ -610,6 +610,83 @@ describe('isRunning', () => {
   });
 });
 
+describe('gateway bookkeeping', () => {
+  test.each(['exit', 'stop'])('retains the default endpoint and log stream after %s', async action => {
+    const firstProcess = createMockChildProcess();
+    const nextProcess = createMockChildProcess();
+    vi.mocked(spawn).mockReturnValueOnce(firstProcess).mockReturnValueOnce(nextProcess);
+
+    await gateway.start({ port: 18000, bindAddress: '0.0.0.0' });
+    const stopping = action === 'stop' ? gateway.stop() : undefined;
+    firstProcess.emit('exit', 0, undefined);
+    await stopping;
+    expect(gateway.isRunning()).toBe(false);
+    expect(gatewayManager.removeGateway).not.toHaveBeenCalled();
+
+    await gateway.start();
+
+    expect(gateway.isRunning()).toBe(true);
+    expect(spawn).toHaveBeenLastCalledWith(
+      GATEWAY_BINARY,
+      expect.arrayContaining(['--port', '18000', '--bind-address', '0.0.0.0']),
+      expect.anything(),
+    );
+    expect(gatewayManager.addGateway).toHaveBeenLastCalledWith(
+      'kaiden-local',
+      expect.objectContaining({ gateway_endpoint: 'http://0.0.0.0:18000', gateway_port: 18000 }),
+    );
+    const output = Buffer.from('restarted gateway output');
+    nextProcess._stdout.emit('data', output);
+    expect(createWriteStream).toHaveBeenCalledOnce();
+    expect(gatewayLogStream.write).toHaveBeenLastCalledWith(output);
+  });
+
+  test.each(['exit', 'error'])('isolates named gateway %s cleanup from other processes', async event => {
+    const defaultProcess = createMockChildProcess();
+    const namedProcess = createMockChildProcess();
+    const replacementProcess = createMockChildProcess();
+    vi.mocked(spawn)
+      .mockReturnValueOnce(defaultProcess)
+      .mockReturnValueOnce(namedProcess)
+      .mockReturnValueOnce(replacementProcess);
+    await gateway.start({ port: 18000 });
+    const options = { name: 'local-dev', port: 17675, bindAddress: '127.0.0.1' };
+    await gateway.createLocalGateway(options);
+    vi.mocked(gatewayManager.listGateways).mockResolvedValue([
+      listed('kaiden-local', 'http://127.0.0.1:18000'),
+      listed('local-dev', 'http://127.0.0.1:17675'),
+    ]);
+    vi.mocked(gatewayManager.getActiveGateway).mockResolvedValue('kaiden-local');
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(gatewayManager.health).mockResolvedValueOnce({ status: 'unhealthy', version: '1.0.0' });
+
+    namedProcess.emit(event, new Error('gateway ended'));
+    expect(gateway.canStopGateway('local-dev')).toBe(false);
+    expect(gateway.isRunning()).toBe(true);
+    expect(gatewayManager.removeGateway).not.toHaveBeenCalled();
+
+    await gateway.init();
+    expect(spawn).toHaveBeenCalledTimes(3);
+    expect(gatewayManager.addGateway).toHaveBeenCalledTimes(2);
+    expect(spawn).toHaveBeenLastCalledWith(
+      GATEWAY_BINARY,
+      expect.arrayContaining(['--port', '17675', '--bind-address', '127.0.0.1']),
+      expect.anything(),
+    );
+    namedProcess.emit('exit', 0, undefined);
+    expect(gateway.canStopGateway('local-dev')).toBe(true);
+    expect(gateway.isRunning()).toBe(true);
+
+    const stopping = gateway.stop();
+    defaultProcess.emit('exit', 0, undefined);
+    await stopping;
+    expect(gateway.isRunning()).toBe(false);
+    expect(gateway.canStopGateway('local-dev')).toBe(true);
+    expect(replacementProcess.kill).not.toHaveBeenCalled();
+    expect(gatewayManager.removeGateway).not.toHaveBeenCalled();
+  });
+});
+
 describe('dispose', () => {
   test('stops the gateway process and closes its log', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -1099,6 +1176,39 @@ describe('migration backup in start()', () => {
 });
 
 describe('migration backup in startCreatedGateway via init()', () => {
+  test('retains the retry guard through process cleanup and clears it after a failed retry', async () => {
+    const firstProcess = createMockChildProcess();
+    const retryProcess = createMockChildProcess();
+    const nextProcess = createMockChildProcess();
+    const recoveredProcess = createMockChildProcess();
+    for (const proc of [firstProcess, retryProcess, nextProcess]) {
+      Object.defineProperty(proc, 'exitCode', { value: 1, configurable: true });
+    }
+    vi.mocked(spawn)
+      .mockReturnValueOnce(firstProcess)
+      .mockReturnValueOnce(retryProcess)
+      .mockReturnValueOnce(nextProcess)
+      .mockReturnValueOnce(recoveredProcess);
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(gatewayManager.listGateways).mockResolvedValue([listed('local-dev', 'http://127.0.0.1:17675')]);
+    vi.mocked(gatewayManager.health)
+      .mockRejectedValueOnce(new Error('not ready'))
+      .mockResolvedValueOnce({ status: 'healthy', version: '1.0.0' })
+      .mockRejectedValueOnce(new Error('not ready'))
+      .mockResolvedValueOnce({ status: 'healthy', version: '1.0.0' });
+    vi.mocked(readFile).mockResolvedValue('migration error: incompatible database');
+
+    await gateway.init();
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(gateway.canStopGateway('local-dev')).toBe(false);
+
+    await gateway.init();
+
+    expect(spawn).toHaveBeenCalledTimes(4);
+    expect(gateway.canStopGateway('local-dev')).toBe(true);
+  });
+
   test('backs up database, notifies, and retries once when created gateway fails with migration error', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
