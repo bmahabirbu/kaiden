@@ -22,6 +22,7 @@ import { parse, stringify } from 'smol-toml';
 import { z } from 'zod';
 
 export const CODEX_CONFIG_PATH = '.codex/config.toml';
+export const CODEX_AUTH_PATH = '.codex/auth.json';
 
 const McpServerEntrySchema = z.looseObject({
   command: z.string().optional(),
@@ -52,6 +53,12 @@ export async function activate(extensionContext: ExtensionContext): Promise<void
         path: CODEX_CONFIG_PATH,
         async read(): Promise<string> {
           return '';
+        },
+      },
+      {
+        path: CODEX_AUTH_PATH,
+        async read(): Promise<string> {
+          return JSON.stringify({ auth_mode: 'apikey' });
         },
       },
     ],
