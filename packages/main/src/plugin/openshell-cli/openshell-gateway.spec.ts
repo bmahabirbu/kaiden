@@ -23,7 +23,7 @@ import { type FileHandle, mkdir, open, readFile, rename, unlink, writeFile } fro
 import { delimiter, join } from 'node:path';
 
 import type { RunResult } from '@openkaiden/api';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, assert, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
 import type { Directories } from '/@/plugin/directories.js';
@@ -1762,17 +1762,21 @@ describe('gateway config generation', () => {
     await gateway.start();
 
     expect(mkdir).toHaveBeenCalledWith(GATEWAY_STORAGE_DIRECTORY, { recursive: true });
-    expect(exec.exec).toHaveBeenCalledWith(GATEWAY_BINARY, [
-      'generate-certs',
-      '--server-san',
-      '127.0.0.1',
-      '--server-san',
-      'localhost',
-      '--server-san',
-      'host.openshell.internal',
-      '--output-dir',
-      GATEWAY_STORAGE_DIRECTORY,
-    ]);
+    expect(exec.exec).toHaveBeenCalledWith(
+      GATEWAY_BINARY,
+      [
+        'generate-certs',
+        '--server-san',
+        '127.0.0.1',
+        '--server-san',
+        'localhost',
+        '--server-san',
+        'host.openshell.internal',
+        '--output-dir',
+        GATEWAY_STORAGE_DIRECTORY,
+      ],
+      { signal: expect.any(AbortSignal), killSignal: 'SIGKILL' },
+    );
   });
 
   test('writes gateway config under the kaiden data directory', async () => {
@@ -1820,7 +1824,10 @@ describe('gateway config generation', () => {
 
     await gateway.start({ driver: 'podman' });
 
-    expect(exec.exec).toHaveBeenCalledWith(GATEWAY_BINARY, ['--version']);
+    expect(exec.exec).toHaveBeenCalledWith(GATEWAY_BINARY, ['--version'], {
+      signal: expect.any(AbortSignal),
+      killSignal: 'SIGKILL',
+    });
     expect(writeFile).toHaveBeenCalledWith(
       GATEWAY_CONFIG_PATH,
       expect.stringContaining('supervisor_image = "ghcr.io/nvidia/openshell/supervisor:0.0.69"'),
@@ -1843,7 +1850,7 @@ describe('gateway config generation', () => {
   test('uses custom supervisorImage without version detection', async () => {
     await gateway.start({ driver: 'podman', supervisorImage: 'my-registry.io/supervisor:custom' });
 
-    expect(exec.exec).not.toHaveBeenCalledWith(GATEWAY_BINARY, ['--version']);
+    expect(exec.exec).not.toHaveBeenCalledWith(GATEWAY_BINARY, ['--version'], expect.anything());
     expect(writeFile).toHaveBeenCalledWith(
       GATEWAY_CONFIG_PATH,
       expect.stringContaining('supervisor_image = "my-registry.io/supervisor:custom"'),
@@ -2041,6 +2048,61 @@ describe('gateway.pid persistence', () => {
     const pid = await gateway.getGatewayPid({ canStop: false, name: 'local-dev', endpoint: 'http://127.0.0.1:17675' });
 
     expect(pid).toBeUndefined();
+  });
+});
+
+describe.each(['--version', 'generate-certs'])('startup cancellation during %s', command => {
+  test.each([
+    'stop',
+    'stopManagedGateway',
+    'asyncDispose',
+  ] as const)('%s cancels the command and waits for it before finishing', async action => {
+    const pending = Promise.withResolvers<RunResult>();
+    let signal: AbortSignal | undefined;
+    vi.mocked(exec.exec).mockImplementation((_binary, args, options) => {
+      if (args?.[0] === command) {
+        signal = options?.signal;
+        expect(options?.killSignal).toBe('SIGKILL');
+        return pending.promise;
+      }
+      return Promise.resolve(mockExecResult('openshell-gateway 0.0.69'));
+    });
+
+    const starting = expect(gateway.start()).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => assert(signal));
+    assert(signal);
+    let stopped = false;
+    const stopping = gateway[action]('kaiden-local').finally(() => {
+      stopped = true;
+    });
+    await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+    expect(stopped).toBe(false);
+
+    pending.reject(new DOMException('Command cancelled', 'AbortError'));
+    await Promise.all([starting, stopping]);
+    expect(stopped).toBe(true);
+    expect(exec.exec).toHaveBeenCalledTimes(command === '--version' ? 1 : 2);
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+    expect(gatewayManager.addGateway).not.toHaveBeenCalled();
+    expect(gateway.isRunning()).toBe(false);
+  });
+
+  test('does not continue config generation when the command succeeds after cancellation', async () => {
+    const pending = Promise.withResolvers<RunResult>();
+    vi.mocked(exec.exec).mockImplementation((_binary, args) =>
+      args?.[0] === command ? pending.promise : Promise.resolve(mockExecResult('openshell-gateway 0.0.69')),
+    );
+    const starting = expect(gateway.start()).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() =>
+      expect(exec.exec).toHaveBeenCalledWith(GATEWAY_BINARY, expect.arrayContaining([command]), expect.anything()),
+    );
+    const stopping = gateway.stop();
+    pending.resolve(mockExecResult('openshell-gateway 0.0.69'));
+    await Promise.all([starting, stopping]);
+    expect(exec.exec).toHaveBeenCalledTimes(command === '--version' ? 1 : 2);
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
   });
 });
 

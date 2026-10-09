@@ -16,7 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
-import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import type { ChildProcessWithoutNullStreams, SpawnOptions } from 'node:child_process';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
@@ -48,7 +48,14 @@ class RunErrorImpl extends Error implements RunError {
 export class Exec {
   constructor(private proxy: Proxy) {}
 
-  exec(command: string, args?: string[], options?: RunOptions): Promise<RunResult> {
+  exec(
+    command: string,
+    args?: string[],
+    options?: RunOptions & Pick<SpawnOptions, 'signal' | 'killSignal'>,
+  ): Promise<RunResult> {
+    if (options?.signal?.aborted) {
+      return Promise.reject(options.signal.reason);
+    }
     let env = { ...process.env };
 
     if (options?.env) {
@@ -158,8 +165,13 @@ export class Exec {
     return new Promise((resolve, reject) => {
       let stdout = '';
       let stderr = '';
+      let processError: RunError | undefined;
 
-      const childProcess: ChildProcessWithoutNullStreams = spawn(command, args, { env, cwd });
+      const childProcess: ChildProcessWithoutNullStreams = spawn(command, args, {
+        env,
+        cwd,
+        ...(options?.signal ? { signal: options.signal, killSignal: options.killSignal } : {}),
+      });
 
       options?.token?.onCancellationRequested(() => {
         if (!childProcess.killed) {
@@ -213,14 +225,24 @@ export class Exec {
           command,
           stdout.trim(),
           stderr.trim(),
-          false,
+          options?.signal?.aborted ?? false,
           childProcess.killed,
         );
+        // Abort emits an error before the child closes. Keep the caller waiting
+        // until its subprocess and stdio have actually closed.
+        if (options?.signal) {
+          processError = errResult;
+          return;
+        }
         reject(errResult);
       });
 
       childProcess.on('close', exitCode => {
-        if (exitCode === 0) {
+        if (processError) {
+          reject(processError);
+        } else if (options?.signal?.aborted) {
+          reject(options.signal.reason);
+        } else if (exitCode === 0) {
           const result: RunResult = {
             command,
             stdout: stdout.trim(),
