@@ -361,7 +361,7 @@ export class OpenshellGateway implements IAsyncDisposable {
       throw new Error('openshell-gateway binary not registered in CLI tool registry');
     }
     const storageDirectory = this.getGatewayStorageDirectory(name);
-    const configPath = await this.createNamedGatewayConfig(binaryPath, storageDirectory, driver);
+    const configPath = await this.createNamedGatewayConfig(binaryPath, storageDirectory, driver, signal);
     signal.throwIfAborted();
     const { gatewayProcess, processState } = await this.spawnCreatedGateway(
       name,
@@ -386,15 +386,12 @@ export class OpenshellGateway implements IAsyncDisposable {
       await this.waitForIndependentGateway(gatewayProcess, name, processState, signal);
       signal.throwIfAborted();
     } catch (err: unknown) {
-      try {
-        await this.stopGatewayAfterStartupError(name);
-      } finally {
-        if (registered && !this.canStopGateway(name)) {
-          try {
-            await this.gatewayManager.removeGateway(name);
-          } catch (removeErr: unknown) {
-            console.warn(`[openshell-gateway] failed to remove gateway "${name}" after startup error:`, removeErr);
-          }
+      await this.stopGatewayAfterStartupError(name);
+      if (registered && !this.canStopGateway(name)) {
+        try {
+          await this.gatewayManager.removeGateway(name);
+        } catch (removeErr: unknown) {
+          console.warn(`[openshell-gateway] failed to remove gateway "${name}" after startup error:`, removeErr);
         }
       }
       throw err;
@@ -865,8 +862,8 @@ export class OpenshellGateway implements IAsyncDisposable {
   private async generateCerts(
     binaryPath: string,
     gatewayDir: string,
+    signal: AbortSignal,
     isolate = false,
-    signal?: AbortSignal,
   ): Promise<void> {
     const args = [
       'generate-certs',
@@ -880,14 +877,15 @@ export class OpenshellGateway implements IAsyncDisposable {
       gatewayDir,
     ];
     if (!isolate) {
-      await this.exec.exec(binaryPath, args, signal ? { signal, killSignal: 'SIGKILL' } : undefined);
+      await this.exec.exec(binaryPath, args, { signal, killSignal: 'SIGKILL' });
       return;
     }
     const isolatedConfigDirectory = join(gatewayDir, 'xdg-config');
     await mkdir(isolatedConfigDirectory, { recursive: true });
     await this.exec.exec(binaryPath, args, {
       env: { XDG_CONFIG_HOME: isolatedConfigDirectory },
-      ...(signal ? { signal, killSignal: 'SIGKILL' } : {}),
+      signal,
+      killSignal: 'SIGKILL',
     });
   }
 
@@ -910,12 +908,8 @@ export class OpenshellGateway implements IAsyncDisposable {
     return args;
   }
 
-  private async getGatewayVersion(binaryPath: string, signal?: AbortSignal): Promise<string> {
-    const result = await this.exec.exec(
-      binaryPath,
-      ['--version'],
-      signal ? { signal, killSignal: 'SIGKILL' } : undefined,
-    );
+  private async getGatewayVersion(binaryPath: string, signal: AbortSignal): Promise<string> {
+    const result = await this.exec.exec(binaryPath, ['--version'], { signal, killSignal: 'SIGKILL' });
     const output = result.stdout.trim();
     const token = output.split(' ').pop() ?? '';
     const parts = token.split('.');
@@ -949,7 +943,7 @@ export class OpenshellGateway implements IAsyncDisposable {
       const configPath = join(storageDirectory, 'gateway.toml');
       await mkdir(storageDirectory, { recursive: true });
       signal.throwIfAborted();
-      await this.generateCerts(binaryPath, storageDirectory, false, signal);
+      await this.generateCerts(binaryPath, storageDirectory, signal);
       signal.throwIfAborted();
       const config = Mustache.render(gatewayConfigTemplate, {
         supervisorImage: image,
@@ -1095,17 +1089,21 @@ export class OpenshellGateway implements IAsyncDisposable {
     binaryPath: string,
     storageDirectory: string,
     driver: LocalGatewayDriver,
+    signal: AbortSignal,
   ): Promise<string> {
     const configPath = join(storageDirectory, 'gateway.toml');
     await mkdir(storageDirectory, { recursive: true });
-    await this.generateCerts(binaryPath, storageDirectory, true);
+    signal.throwIfAborted();
+    await this.generateCerts(binaryPath, storageDirectory, signal, true);
+    signal.throwIfAborted();
     let supervisorImage: string | undefined;
     try {
-      supervisorImage = `${SUPERVISOR_IMAGE_BASE}:${await this.getGatewayVersion(binaryPath)}`;
+      supervisorImage = `${SUPERVISOR_IMAGE_BASE}:${await this.getGatewayVersion(binaryPath, signal)}`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn(`[openshell-gateway] unable to detect version for supervisor pinning: ${message}`);
     }
+    signal.throwIfAborted();
     await writeFile(
       configPath,
       Mustache.render(gatewayConfigTemplate, {

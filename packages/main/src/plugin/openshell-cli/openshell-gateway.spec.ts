@@ -2051,58 +2051,75 @@ describe('gateway.pid persistence', () => {
   });
 });
 
-describe.each(['--version', 'generate-certs'])('startup cancellation during %s', command => {
-  test.each([
-    'stop',
-    'stopManagedGateway',
-    'asyncDispose',
-  ] as const)('%s cancels the command and waits for it before finishing', async action => {
-    const pending = Promise.withResolvers<RunResult>();
-    let signal: AbortSignal | undefined;
-    vi.mocked(exec.exec).mockImplementation((_binary, args, options) => {
-      if (args?.[0] === command) {
-        signal = options?.signal;
-        expect(options?.killSignal).toBe('SIGKILL');
-        return pending.promise;
-      }
-      return Promise.resolve(mockExecResult('openshell-gateway 0.0.69'));
+describe.each([
+  {
+    kind: 'default',
+    name: 'kaiden-local',
+    commands: ['--version', 'generate-certs'],
+    start: (): Promise<void> => gateway.start(),
+    stop: (): Promise<void> => gateway.stop(),
+  },
+  {
+    kind: 'named',
+    name: 'local-dev',
+    commands: ['generate-certs', '--version'],
+    start: (): Promise<void> =>
+      gateway.createLocalGateway({ name: 'local-dev', bindAddress: '127.0.0.1', port: 17675 }),
+    stop: (): Promise<void> => gateway.stopManagedGateway('local-dev'),
+  },
+])('$kind gateway config cancellation', ({ name, commands, start, stop }) => {
+  describe.each(commands)('during %s', command => {
+    test.each([
+      'stop',
+      'asyncDispose',
+    ] as const)('%s cancels the command and waits for it before finishing', async action => {
+      const pending = Promise.withResolvers<RunResult>();
+      let signal: AbortSignal | undefined;
+      vi.mocked(exec.exec).mockImplementation((_binary, args, options) => {
+        if (args?.[0] === command) {
+          signal = options?.signal;
+          expect(options?.killSignal).toBe('SIGKILL');
+          return pending.promise;
+        }
+        return Promise.resolve(mockExecResult('openshell-gateway 0.0.69'));
+      });
+
+      const starting = expect(start()).rejects.toMatchObject({ name: 'AbortError' });
+      await vi.waitFor(() => assert(signal));
+      assert(signal);
+      let stopped = false;
+      const stopping = (action === 'stop' ? stop() : gateway.asyncDispose()).finally(() => {
+        stopped = true;
+      });
+      await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+      expect(stopped).toBe(false);
+
+      pending.reject(new DOMException('Command cancelled', 'AbortError'));
+      await Promise.all([starting, stopping]);
+      expect(stopped).toBe(true);
+      expect(exec.exec).toHaveBeenCalledTimes(commands.indexOf(command) + 1);
+      expect(writeFile).not.toHaveBeenCalled();
+      expect(spawn).not.toHaveBeenCalled();
+      expect(gatewayManager.addGateway).not.toHaveBeenCalled();
+      expect(gateway.canStopGateway(name)).toBe(false);
     });
 
-    const starting = expect(gateway.start()).rejects.toMatchObject({ name: 'AbortError' });
-    await vi.waitFor(() => assert(signal));
-    assert(signal);
-    let stopped = false;
-    const stopping = gateway[action]('kaiden-local').finally(() => {
-      stopped = true;
+    test('does not continue config generation when the command succeeds after cancellation', async () => {
+      const pending = Promise.withResolvers<RunResult>();
+      vi.mocked(exec.exec).mockImplementation((_binary, args) =>
+        args?.[0] === command ? pending.promise : Promise.resolve(mockExecResult('openshell-gateway 0.0.69')),
+      );
+      const starting = expect(start()).rejects.toMatchObject({ name: 'AbortError' });
+      await vi.waitFor(() =>
+        expect(exec.exec).toHaveBeenCalledWith(GATEWAY_BINARY, expect.arrayContaining([command]), expect.anything()),
+      );
+      const stopping = stop();
+      pending.resolve(mockExecResult('openshell-gateway 0.0.69'));
+      await Promise.all([starting, stopping]);
+      expect(exec.exec).toHaveBeenCalledTimes(commands.indexOf(command) + 1);
+      expect(writeFile).not.toHaveBeenCalled();
+      expect(spawn).not.toHaveBeenCalled();
     });
-    await vi.waitFor(() => expect(signal?.aborted).toBe(true));
-    expect(stopped).toBe(false);
-
-    pending.reject(new DOMException('Command cancelled', 'AbortError'));
-    await Promise.all([starting, stopping]);
-    expect(stopped).toBe(true);
-    expect(exec.exec).toHaveBeenCalledTimes(command === '--version' ? 1 : 2);
-    expect(writeFile).not.toHaveBeenCalled();
-    expect(spawn).not.toHaveBeenCalled();
-    expect(gatewayManager.addGateway).not.toHaveBeenCalled();
-    expect(gateway.isRunning()).toBe(false);
-  });
-
-  test('does not continue config generation when the command succeeds after cancellation', async () => {
-    const pending = Promise.withResolvers<RunResult>();
-    vi.mocked(exec.exec).mockImplementation((_binary, args) =>
-      args?.[0] === command ? pending.promise : Promise.resolve(mockExecResult('openshell-gateway 0.0.69')),
-    );
-    const starting = expect(gateway.start()).rejects.toMatchObject({ name: 'AbortError' });
-    await vi.waitFor(() =>
-      expect(exec.exec).toHaveBeenCalledWith(GATEWAY_BINARY, expect.arrayContaining([command]), expect.anything()),
-    );
-    const stopping = gateway.stop();
-    pending.resolve(mockExecResult('openshell-gateway 0.0.69'));
-    await Promise.all([starting, stopping]);
-    expect(exec.exec).toHaveBeenCalledTimes(command === '--version' ? 1 : 2);
-    expect(writeFile).not.toHaveBeenCalled();
-    expect(spawn).not.toHaveBeenCalled();
   });
 });
 
