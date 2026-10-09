@@ -33,7 +33,7 @@ import { Directories } from '/@/plugin/directories.js';
 import { Emitter } from '/@/plugin/events/emitter.js';
 import { OpenshellGatewayManager } from '/@/plugin/openshell-cli/openshell-gateway-manager.js';
 import { NotificationRegistry } from '/@/plugin/tasks/notification-registry.js';
-import { Exec } from '/@/plugin/util/exec.js';
+import { getInstallationPath } from '/@/plugin/util/exec.js';
 import { isFreePort } from '/@/plugin/util/port.js';
 import { isLinux, isMac } from '/@/util.js';
 import type { IAsyncDisposable } from '/@api/async-disposable.js';
@@ -121,8 +121,6 @@ export class OpenshellGateway implements IAsyncDisposable {
     private readonly gatewayManager: OpenshellGatewayManager,
     @inject(Directories)
     private readonly directories: Directories,
-    @inject(Exec)
-    private readonly exec: Exec,
     @inject(NotificationRegistry)
     private readonly notificationRegistry: NotificationRegistry,
   ) {}
@@ -859,6 +857,41 @@ export class OpenshellGateway implements IAsyncDisposable {
     }
   }
 
+  protected async runConfigCommand(
+    binaryPath: string,
+    args: string[],
+    signal: AbortSignal,
+    env?: NodeJS.ProcessEnv,
+  ): Promise<string> {
+    signal.throwIfAborted();
+    return new Promise((resolve, reject) => {
+      const child = spawn(binaryPath, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, PATH: getInstallationPath(process.env['PATH']), ...env },
+        signal,
+        killSignal: 'SIGKILL',
+      });
+      let stdout = '';
+      let stderr = '';
+      let processError: Error | undefined;
+      child.stdout?.on('data', (data: Buffer) => (stdout += data.toString()));
+      child.stderr?.on('data', (data: Buffer) => (stderr += data.toString()));
+      // Abort emits an error before close; startup must wait for the child and its stdio.
+      child.on('error', (err: Error) => (processError = err));
+      child.once('close', code => {
+        if (signal.aborted) {
+          reject(signal.reason);
+        } else if (processError) {
+          reject(processError);
+        } else if (code !== 0) {
+          reject(new Error(`Gateway command "${args[0]}" failed with exit code ${code}: ${stderr.trim()}`));
+        } else {
+          resolve(stdout.trim());
+        }
+      });
+    });
+  }
+
   private async generateCerts(
     binaryPath: string,
     gatewayDir: string,
@@ -877,15 +910,13 @@ export class OpenshellGateway implements IAsyncDisposable {
       gatewayDir,
     ];
     if (!isolate) {
-      await this.exec.exec(binaryPath, args, { signal, killSignal: 'SIGKILL' });
+      await this.runConfigCommand(binaryPath, args, signal);
       return;
     }
     const isolatedConfigDirectory = join(gatewayDir, 'xdg-config');
     await mkdir(isolatedConfigDirectory, { recursive: true });
-    await this.exec.exec(binaryPath, args, {
-      env: { XDG_CONFIG_HOME: isolatedConfigDirectory },
-      signal,
-      killSignal: 'SIGKILL',
+    await this.runConfigCommand(binaryPath, args, signal, {
+      XDG_CONFIG_HOME: isolatedConfigDirectory,
     });
   }
 
@@ -909,8 +940,7 @@ export class OpenshellGateway implements IAsyncDisposable {
   }
 
   private async getGatewayVersion(binaryPath: string, signal: AbortSignal): Promise<string> {
-    const result = await this.exec.exec(binaryPath, ['--version'], { signal, killSignal: 'SIGKILL' });
-    const output = result.stdout.trim();
+    const output = await this.runConfigCommand(binaryPath, ['--version'], signal);
     const token = output.split(' ').pop() ?? '';
     const parts = token.split('.');
     if (parts.length !== 3 || parts.some(p => p.length === 0 || !Number.isFinite(Number(p)))) {

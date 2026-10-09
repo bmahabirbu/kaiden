@@ -20,7 +20,7 @@ import type { ChildProcess, ChildProcessWithoutNullStreams } from 'node:child_pr
 import { spawn } from 'node:child_process';
 import { homedir, platform } from 'node:os';
 import { delimiter, join } from 'node:path';
-import { PassThrough, type Readable } from 'node:stream';
+import type { Readable } from 'node:stream';
 
 import * as sudo from '@expo/sudo-prompt';
 import type { Mock } from 'vitest';
@@ -64,76 +64,6 @@ describe('exec', () => {
   });
 
   const exec = new Exec(proxy);
-
-  describe('abort signal', () => {
-    let child: ChildProcess;
-    let controller: AbortController;
-
-    beforeEach(async () => {
-      const actual = await vi.importActual<{ ChildProcess: typeof ChildProcess }>('node:child_process');
-      child = new actual.ChildProcess();
-      child.stdout = new PassThrough();
-      child.stderr = new PassThrough();
-      vi.mocked(spawn).mockReturnValue(child);
-      controller = new AbortController();
-    });
-
-    test('does not spawn a command when already aborted', async () => {
-      controller.abort();
-      await expect(exec.exec('command', [], { signal: controller.signal })).rejects.toBe(controller.signal.reason);
-      expect(spawn).not.toHaveBeenCalled();
-    });
-
-    test('waits for close after an abort error, including after exit', async () => {
-      let settled = false;
-      const result = exec.exec('command', [], { signal: controller.signal, killSignal: 'SIGKILL' }).finally(() => {
-        settled = true;
-      });
-      const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError', cancelled: true });
-      expect(spawn).toHaveBeenCalledWith(
-        'command',
-        [],
-        expect.objectContaining({
-          signal: controller.signal,
-          killSignal: 'SIGKILL',
-        }),
-      );
-
-      controller.abort();
-      child.emit('error', new DOMException('Command cancelled', 'AbortError'));
-      child.emit('exit', undefined, 'SIGKILL');
-      await Promise.resolve();
-      expect(settled).toBe(false);
-
-      child.emit('close', undefined, 'SIGKILL');
-      await rejected;
-      expect(settled).toBe(true);
-    });
-
-    test('rejects cancellation even if the process closes successfully without an abort error', async () => {
-      const result = exec.exec('command', [], { signal: controller.signal });
-      controller.abort();
-      child.emit('close', 0);
-      await expect(result).rejects.toBe(controller.signal.reason);
-    });
-
-    test('preserves process errors when waiting for close', async () => {
-      const result = exec.exec('command', [], { signal: controller.signal });
-      child.emit('error', new Error('spawn failed'));
-      child.emit('close', -1);
-      await expect(result).rejects.toMatchObject({
-        message: 'Failed to execute command: spawn failed',
-        cancelled: false,
-      });
-    });
-
-    test('returns command output on successful close', async () => {
-      const result = exec.exec('command', [], { signal: controller.signal });
-      child.stdout?.emit('data', 'output\n');
-      child.emit('close', 0);
-      await expect(result).resolves.toMatchObject({ stdout: 'output', stderr: '' });
-    });
-  });
 
   test('should run the command and resolve with the result', async () => {
     const command = 'echo';
