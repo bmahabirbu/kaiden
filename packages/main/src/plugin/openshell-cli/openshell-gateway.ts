@@ -93,6 +93,15 @@ export class OpenshellGateway implements Disposable {
     [DEFAULT_GATEWAY_NAME, this.#defaultGatewayBookkeeping],
   ]);
 
+  private getOrCreateGatewayBookkeeping(name: string): GatewayBookkeeping {
+    let gateway = this.#gatewayBookkeeping.get(name);
+    if (!gateway) {
+      gateway = { port: DEFAULT_PORT, bindAddress: DEFAULT_BIND_ADDRESS };
+      this.#gatewayBookkeeping.set(name, gateway);
+    }
+    return gateway;
+  }
+
   private readonly _onDidGatewayStart = new Emitter<void>();
   readonly onDidGatewayStart: Event<void> = this._onDidGatewayStart.event;
 
@@ -319,13 +328,15 @@ export class OpenshellGateway implements Disposable {
     }
     const storageDirectory = this.getGatewayStorageDirectory(name);
     const configPath = await this.createNamedGatewayConfig(binaryPath, storageDirectory, driver);
+    const gateway = this.getOrCreateGatewayBookkeeping(name);
+    gateway.port = options.port;
+    gateway.bindAddress = bindAddress;
     const { gatewayProcess, processState } = await this.spawnCreatedGateway(
       name,
       binaryPath,
       configPath,
       storageDirectory,
-      options.port,
-      bindAddress,
+      gateway,
       'w',
     );
 
@@ -333,9 +344,9 @@ export class OpenshellGateway implements Disposable {
     try {
       await this.gatewayManager.addGateway(name, {
         name,
-        gateway_endpoint: `http://${DEFAULT_BIND_ADDRESS}:${options.port}`,
+        gateway_endpoint: `http://${gateway.bindAddress}:${gateway.port}`,
         is_remote: false,
-        gateway_port: options.port,
+        gateway_port: gateway.port,
       });
       registered = true;
       await this.waitForIndependentGateway(gatewayProcess, name, processState);
@@ -405,15 +416,17 @@ export class OpenshellGateway implements Disposable {
     if (!Number.isInteger(port) || port < 1 || port > 65_535) {
       throw new Error(`Gateway "${name}" has an invalid endpoint port`);
     }
+    const gatewayBookkeeping = this.getOrCreateGatewayBookkeeping(name);
+    gatewayBookkeeping.port = port;
+    gatewayBookkeeping.bindAddress = url.hostname;
     const storageDirectory = this.getGatewayStorageDirectory(name);
     const configPath = join(storageDirectory, 'gateway.toml');
-    const { gatewayProcess, processState, gatewayBookkeeping } = await this.spawnCreatedGateway(
+    const { gatewayProcess, processState } = await this.spawnCreatedGateway(
       name,
       binaryPath,
       configPath,
       storageDirectory,
-      port,
-      url.hostname,
+      gatewayBookkeeping,
       'a',
     );
     try {
@@ -461,30 +474,24 @@ export class OpenshellGateway implements Disposable {
     binaryPath: string,
     configPath: string,
     storageDirectory: string,
-    port: number,
-    bindAddress: string,
+    gateway: GatewayBookkeeping,
     logFlags: 'a' | 'w',
-  ): Promise<{
-    gatewayProcess: ChildProcess;
-    processState: { spawnError?: Error };
-    gatewayBookkeeping: GatewayBookkeeping;
-  }> {
+  ): Promise<{ gatewayProcess: ChildProcess; processState: { spawnError?: Error } }> {
     const logFile = await open(join(storageDirectory, GATEWAY_LOG_FILENAME), logFlags);
     const processState: { spawnError?: Error } = {};
     let gatewayProcess: ChildProcess;
-    let gatewayBookkeeping: GatewayBookkeeping;
     try {
-      gatewayProcess = spawn(binaryPath, this.buildArgs(true, configPath, storageDirectory, port, bindAddress), {
+      gatewayProcess = spawn(binaryPath, this.buildArgs(true, configPath, storageDirectory, gateway), {
         stdio: ['ignore', logFile.fd, logFile.fd],
         detached: false,
         env: this.getGatewayEnvironment(binaryPath, storageDirectory),
       });
       gatewayProcess.once('error', err => (processState.spawnError = err));
-      gatewayBookkeeping = this.trackGatewayProcess(name, gatewayProcess, port, bindAddress);
+      this.trackGatewayProcess(name, gatewayProcess);
     } finally {
       await logFile.close();
     }
-    return { gatewayProcess, processState, gatewayBookkeeping };
+    return { gatewayProcess, processState };
   }
 
   private getGatewayEnvironment(binaryPath: string, storageDirectory: string): NodeJS.ProcessEnv {
@@ -532,12 +539,7 @@ export class OpenshellGateway implements Disposable {
       detached: false,
       env: this.getGatewayEnvironment(binaryPath, this.getGatewayStorageDirectory(DEFAULT_GATEWAY_NAME)),
     });
-    this.trackGatewayProcess(
-      DEFAULT_GATEWAY_NAME,
-      gatewayProcess,
-      this.#defaultGatewayBookkeeping.port,
-      this.#defaultGatewayBookkeeping.bindAddress,
-    );
+    this.trackGatewayProcess(DEFAULT_GATEWAY_NAME, gatewayProcess);
 
     gatewayProcess.stdout?.on('data', (data: Buffer) => {
       this.#defaultGatewayBookkeeping.logStream?.write(data);
@@ -640,12 +642,7 @@ export class OpenshellGateway implements Disposable {
     this._onDidGatewayInitFailed.dispose();
   }
 
-  private trackGatewayProcess(
-    name: string,
-    gatewayProcess: ChildProcess,
-    port: number,
-    bindAddress: string,
-  ): GatewayBookkeeping {
+  private trackGatewayProcess(name: string, gatewayProcess: ChildProcess): void {
     const pidPath = join(this.getGatewayStorageDirectory(name), GATEWAY_PID_FILENAME);
 
     const pidWritten =
@@ -662,16 +659,7 @@ export class OpenshellGateway implements Disposable {
     };
     gatewayProcess.once('exit', cleanup);
     gatewayProcess.once('error', cleanup);
-    let bookkeeping = this.#gatewayBookkeeping.get(name);
-    if (!bookkeeping) {
-      bookkeeping = { port, bindAddress };
-      this.#gatewayBookkeeping.set(name, bookkeeping);
-    } else {
-      bookkeeping.port = port;
-      bookkeeping.bindAddress = bindAddress;
-    }
-    bookkeeping.process = gatewayProcess;
-    return bookkeeping;
+    this.getOrCreateGatewayBookkeeping(name).process = gatewayProcess;
   }
 
   async getGatewayPid(gateway: GatewayInfo): Promise<number | undefined> {
@@ -756,15 +744,14 @@ export class OpenshellGateway implements Disposable {
     disableTls: boolean,
     configPath: string | undefined,
     storageDirectory = this.getGatewayStorageDirectory(DEFAULT_GATEWAY_NAME),
-    port = this.#defaultGatewayBookkeeping.port,
-    bindAddress = this.#defaultGatewayBookkeeping.bindAddress,
+    bookkeeping = this.#defaultGatewayBookkeeping,
   ): string[] {
     const args: string[] = [];
     if (configPath) {
       args.push('--config', configPath);
     }
-    args.push('--port', String(port));
-    args.push('--bind-address', bindAddress);
+    args.push('--port', String(bookkeeping.port));
+    args.push('--bind-address', bookkeeping.bindAddress);
     if (disableTls) {
       args.push('--disable-tls');
     }

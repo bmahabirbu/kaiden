@@ -221,11 +221,15 @@ describe('init', () => {
     expect(spawn).not.toHaveBeenCalled();
   });
 
-  test('starts a stopped gateway previously created by Kaiden', async () => {
+  test.each([
+    '127.0.0.1',
+    'localhost',
+    '0.0.0.0',
+  ])('starts a stopped gateway using its registered bind address %s', async bindAddress => {
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
     vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(gatewayManager.listGateways).mockResolvedValue([listed('local-dev', 'http://127.0.0.1:17675')]);
+    vi.mocked(gatewayManager.listGateways).mockResolvedValue([listed('local-dev', `http://${bindAddress}:17675`)]);
     vi.mocked(gatewayManager.health)
       .mockRejectedValueOnce(new Error('not ready'))
       .mockResolvedValue({ status: 'healthy', version: '1.0.0' });
@@ -239,6 +243,8 @@ describe('init', () => {
         join(KAIDEN_DATA_DIRECTORY, 'openshell-gateways', 'local-dev', 'gateway.toml'),
         '--port',
         '17675',
+        '--bind-address',
+        bindAddress,
       ]),
       expect.objectContaining({ detached: false }),
     );
