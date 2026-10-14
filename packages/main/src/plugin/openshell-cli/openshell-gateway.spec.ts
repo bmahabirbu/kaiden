@@ -23,7 +23,7 @@ import { type FileHandle, mkdir, open, readFile, rename, unlink, writeFile } fro
 import { delimiter, join } from 'node:path';
 
 import type { RunResult } from '@openkaiden/api';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, assert, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
 import type { Directories } from '/@/plugin/directories.js';
@@ -399,6 +399,54 @@ describe('init', () => {
 });
 
 describe('createLocalGateway', () => {
+  test('preserves each requested endpoint when same-name creations overlap', async () => {
+    const opening = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const openLogFile = vi.mocked(open).getMockImplementation();
+    assert(openLogFile);
+    vi.mocked(open).mockImplementationOnce(async (...args) => {
+      const logFile = await openLogFile(...args);
+      opening.resolve();
+      await resume.promise;
+      return logFile;
+    });
+    vi.mocked(spawn).mockImplementation(() => createMockChildProcess());
+
+    const firstCreation = gateway.createLocalGateway({
+      name: 'local-dev',
+      bindAddress: '127.0.0.1',
+      port: 17675,
+    });
+    await opening.promise;
+    try {
+      await gateway.createLocalGateway({
+        name: 'local-dev',
+        bindAddress: '127.0.0.1',
+        port: 17676,
+      });
+    } finally {
+      resume.resolve();
+      await firstCreation;
+    }
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(gatewayManager.addGateway).toHaveBeenCalledTimes(2);
+    for (const [index, port] of [17676, 17675].entries()) {
+      expect(spawn).toHaveBeenNthCalledWith(
+        index + 1,
+        GATEWAY_BINARY,
+        expect.arrayContaining(['--port', String(port), '--bind-address', '127.0.0.1']),
+        expect.anything(),
+      );
+      expect(gatewayManager.addGateway).toHaveBeenNthCalledWith(index + 1, 'local-dev', {
+        name: 'local-dev',
+        gateway_endpoint: `http://127.0.0.1:${port}`,
+        is_remote: false,
+        gateway_port: port,
+      });
+    }
+  });
+
   test('starts and registers a named plaintext gateway on loopback', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const proc = createMockChildProcess();

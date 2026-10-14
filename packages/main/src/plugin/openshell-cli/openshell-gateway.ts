@@ -308,8 +308,9 @@ export class OpenshellGateway implements Disposable {
 
   private async createContainerGateway(options: CreateLocalGatewayOptions, driver: LocalGatewayDriver): Promise<void> {
     const name = options.name.trim();
+    const port = options.port;
     this.validateGatewayName(name, false);
-    if (!Number.isInteger(options.port) || options.port < 1024 || options.port > 65_535) {
+    if (!Number.isInteger(port) || port < 1024 || port > 65_535) {
       throw new Error('Port must be an integer between 1024 and 65535');
     }
     const bindAddress = options.bindAddress.trim();
@@ -320,7 +321,7 @@ export class OpenshellGateway implements Disposable {
     if (gateways.some(gw => gw.metadata.name === name)) {
       throw new Error(`A gateway named "${name}" is already registered`);
     }
-    await isFreePort(options.port);
+    await isFreePort(port);
 
     const binaryPath = this.getGatewayBinaryPath();
     if (!binaryPath) {
@@ -329,7 +330,7 @@ export class OpenshellGateway implements Disposable {
     const storageDirectory = this.getGatewayStorageDirectory(name);
     const configPath = await this.createNamedGatewayConfig(binaryPath, storageDirectory, driver);
     const gateway = this.getOrCreateGatewayBookkeeping(name);
-    gateway.port = options.port;
+    gateway.port = port;
     gateway.bindAddress = bindAddress;
     const { gatewayProcess, processState } = await this.spawnCreatedGateway(
       name,
@@ -344,9 +345,9 @@ export class OpenshellGateway implements Disposable {
     try {
       await this.gatewayManager.addGateway(name, {
         name,
-        gateway_endpoint: `http://${gateway.bindAddress}:${gateway.port}`,
+        gateway_endpoint: `http://${bindAddress}:${port}`,
         is_remote: false,
-        gateway_port: gateway.port,
+        gateway_port: port,
       });
       registered = true;
       await this.waitForIndependentGateway(gatewayProcess, name, processState);
@@ -477,11 +478,12 @@ export class OpenshellGateway implements Disposable {
     gateway: GatewayBookkeeping,
     logFlags: 'a' | 'w',
   ): Promise<{ gatewayProcess: ChildProcess; processState: { spawnError?: Error } }> {
+    const args = this.buildArgs(true, configPath, storageDirectory, gateway);
     const logFile = await open(join(storageDirectory, GATEWAY_LOG_FILENAME), logFlags);
     const processState: { spawnError?: Error } = {};
     let gatewayProcess: ChildProcess;
     try {
-      gatewayProcess = spawn(binaryPath, this.buildArgs(true, configPath, storageDirectory, gateway), {
+      gatewayProcess = spawn(binaryPath, args, {
         stdio: ['ignore', logFile.fd, logFile.fd],
         detached: false,
         env: this.getGatewayEnvironment(binaryPath, storageDirectory),
