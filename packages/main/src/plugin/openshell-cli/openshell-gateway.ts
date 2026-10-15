@@ -29,6 +29,7 @@ import Mustache from 'mustache';
 import { parse as parseToml } from 'smol-toml';
 import z from 'zod';
 
+import { CancellationTokenSource } from '/@/plugin/cancellation-token.js';
 import { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
 import { Directories } from '/@/plugin/directories.js';
 import { Emitter } from '/@/plugin/events/emitter.js';
@@ -67,15 +68,12 @@ const GatewayConfigSchema = z.object({
 });
 
 interface GatewayBookkeeping {
-  process?: ChildProcess;
+  processes: Set<ChildProcess>;
   logStream?: WriteStream;
   port: number;
   bindAddress: string;
   migrationRetryInProgress?: boolean;
-  startup?: {
-    controller: AbortController;
-    promise: Promise<void>;
-  };
+  startups: Map<AbortController, Promise<void>>;
   shutdown?: Promise<void>;
 }
 
@@ -90,11 +88,13 @@ interface GatewayBookkeeping {
 @injectable()
 export class OpenshellGateway implements IAsyncDisposable {
   readonly #defaultGatewayBookkeeping: GatewayBookkeeping = {
+    processes: new Set(),
+    startups: new Map(),
     port: DEFAULT_PORT,
     bindAddress: DEFAULT_BIND_ADDRESS,
   };
   // Records live for this OpenshellGateway instance's lifetime, including after failed starts.
-  // Process cleanup clears only the handle; registrations are owned by OpenshellGatewayManager.
+  // Process cleanup removes handles; registrations are owned by OpenshellGatewayManager.
   readonly #gatewayBookkeeping = new Map<string, GatewayBookkeeping>([
     [DEFAULT_GATEWAY_NAME, this.#defaultGatewayBookkeeping],
   ]);
@@ -104,7 +104,12 @@ export class OpenshellGateway implements IAsyncDisposable {
   private getOrCreateGatewayBookkeeping(name: string): GatewayBookkeeping {
     let gateway = this.#gatewayBookkeeping.get(name);
     if (!gateway) {
-      gateway = { port: DEFAULT_PORT, bindAddress: DEFAULT_BIND_ADDRESS };
+      gateway = {
+        processes: new Set(),
+        startups: new Map(),
+        port: DEFAULT_PORT,
+        bindAddress: DEFAULT_BIND_ADDRESS,
+      };
       this.#gatewayBookkeeping.set(name, gateway);
     }
     return gateway;
@@ -241,9 +246,11 @@ export class OpenshellGateway implements IAsyncDisposable {
       await this.removeSamePortGateways(this.#defaultGatewayBookkeeping.port);
       this._onDidGatewayStart.fire();
     } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        console.log(`[openshell-gateway] auto-start cancelled: ${err.message}`);
-        return;
+      if (err instanceof Error) {
+        if (err.name === 'AbortError') {
+          console.log(`[openshell-gateway] auto-start cancelled: ${err.message}`);
+          return;
+        }
       }
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[openshell-gateway] auto-start failed: ${message}`);
@@ -333,25 +340,19 @@ export class OpenshellGateway implements IAsyncDisposable {
     if (bindAddress !== DEFAULT_BIND_ADDRESS) {
       throw new Error(`Local gateways must bind to ${DEFAULT_BIND_ADDRESS}`);
     }
-    const gateway = this.#gatewayBookkeeping.get(name);
-    if (gateway?.process || gateway?.startup) {
-      throw new Error(`A gateway named "${name}" is already registered or starting`);
-    }
-    await this.startGateway(name, signal => {
-      const gateway = this.getOrCreateGatewayBookkeeping(name);
-      gateway.port = port;
-      gateway.bindAddress = bindAddress;
-      return this.createContainerGatewayAttempt(name, gateway, driver, signal);
-    });
+    const gateway = this.getOrCreateGatewayBookkeeping(name);
+    await this.runGatewayStartup(gateway, signal =>
+      this.createContainerGatewayAttempt(name, port, bindAddress, driver, signal),
+    );
   }
 
   private async createContainerGatewayAttempt(
     name: string,
-    gateway: GatewayBookkeeping,
+    port: number,
+    bindAddress: string,
     driver: LocalGatewayDriver,
     signal: AbortSignal,
   ): Promise<void> {
-    const { port, bindAddress } = gateway;
     const gateways = await this.gatewayManager.listGateways();
     signal.throwIfAborted();
     if (gateways.some(gw => gw.metadata.name === name)) {
@@ -367,6 +368,9 @@ export class OpenshellGateway implements IAsyncDisposable {
     const storageDirectory = this.getGatewayStorageDirectory(name);
     const configPath = await this.createNamedGatewayConfig(binaryPath, storageDirectory, driver, signal);
     signal.throwIfAborted();
+    const gateway = this.getOrCreateGatewayBookkeeping(name);
+    gateway.port = port;
+    gateway.bindAddress = bindAddress;
     const { gatewayProcess, processState } = await this.spawnCreatedGateway(
       name,
       binaryPath,
@@ -416,7 +420,7 @@ export class OpenshellGateway implements IAsyncDisposable {
       return false;
     }
 
-    if (this.#gatewayBookkeeping.get(gateway.name)?.process) {
+    if (this.#gatewayBookkeeping.get(gateway.name)?.processes.size) {
       return this.#supportsMountsFromConfig(gateway);
     }
 
@@ -490,8 +494,7 @@ export class OpenshellGateway implements IAsyncDisposable {
         // ignore if log can't be read
       }
       signal.throwIfAborted();
-      if (!this.canStopGateway(name) && this.isMigrationError(logContent)) {
-        if (gatewayBookkeeping.migrationRetryInProgress) throw err;
+      if (this.isMigrationError(logContent)) {
         console.warn(`[openshell-gateway] migration error detected for "${name}", backing up database`);
         const backupPath = await this.backupGatewayDatabase(name);
         signal.throwIfAborted();
@@ -503,17 +506,19 @@ export class OpenshellGateway implements IAsyncDisposable {
           highlight: true,
           silent: false,
         });
-        gatewayBookkeeping.migrationRetryInProgress = true;
-        try {
-          console.log(`[openshell-gateway] retrying start for "${name}" after migration error recovery`);
-          await this.startCreatedGatewayAttempt(name, endpoint, signal);
-          return;
-        } catch (retryErr: unknown) {
-          const retryMessage = retryErr instanceof Error ? retryErr.message : String(retryErr);
-          console.error(`[openshell-gateway] retry after migration error for "${name}" also failed: ${retryMessage}`);
-          throw retryErr;
-        } finally {
-          gatewayBookkeeping.migrationRetryInProgress = false;
+        if (!gatewayBookkeeping.migrationRetryInProgress) {
+          gatewayBookkeeping.migrationRetryInProgress = true;
+          try {
+            console.log(`[openshell-gateway] retrying start for "${name}" after migration error recovery`);
+            await this.startCreatedGatewayAttempt(name, endpoint, signal);
+            return;
+          } catch (retryErr: unknown) {
+            const retryMessage = retryErr instanceof Error ? retryErr.message : String(retryErr);
+            console.error(`[openshell-gateway] retry after migration error for "${name}" also failed: ${retryMessage}`);
+            throw retryErr;
+          } finally {
+            gatewayBookkeeping.migrationRetryInProgress = false;
+          }
         }
       }
       throw err;
@@ -579,32 +584,32 @@ export class OpenshellGateway implements IAsyncDisposable {
   }
 
   private async startGateway(name: string, start: (signal: AbortSignal) => Promise<void>): Promise<void> {
-    if (this.#disposed) {
-      throw new DOMException('Gateway lifecycle has been disposed', 'AbortError');
-    }
     const gateway = this.getOrCreateGatewayBookkeeping(name);
-    if (gateway.startup) {
-      return gateway.startup.promise;
+    const startup = gateway.startups.values().next().value;
+    if (startup) {
+      return startup;
     }
-    if (gateway.process) {
+    if (gateway.processes.size > 0) {
       console.log('[openshell-gateway] already running, skipping start');
       return;
     }
-    const controller = new AbortController();
-    const promise = this.runGatewayStartup(gateway, controller.signal, start);
-    gateway.startup = { controller, promise };
-    await promise;
+    await this.runGatewayStartup(gateway, start);
   }
 
   private async runGatewayStartup(
     gateway: GatewayBookkeeping,
-    signal: AbortSignal,
     start: (signal: AbortSignal) => Promise<void>,
   ): Promise<void> {
+    if (this.#disposed) {
+      throw new DOMException('Gateway lifecycle has been disposed', 'AbortError');
+    }
+    const controller = new AbortController();
+    const promise = start(controller.signal);
+    gateway.startups.set(controller, promise);
     try {
-      await start(signal);
+      await promise;
     } finally {
-      gateway.startup = undefined;
+      gateway.startups.delete(controller);
     }
   }
 
@@ -681,8 +686,7 @@ export class OpenshellGateway implements IAsyncDisposable {
       await this.stopGatewayAfterStartupError(DEFAULT_GATEWAY_NAME);
       signal.throwIfAborted();
       const stderrOutput = stderrChunks.join('\n').trim();
-      if (!this.isRunning() && this.isMigrationError(stderrOutput)) {
-        if (this.#defaultGatewayBookkeeping.migrationRetryInProgress) throw err;
+      if (this.isMigrationError(stderrOutput)) {
         console.warn('[openshell-gateway] migration error detected, backing up database');
         const backupPath = await this.backupGatewayDatabase(DEFAULT_GATEWAY_NAME);
         signal.throwIfAborted();
@@ -694,17 +698,19 @@ export class OpenshellGateway implements IAsyncDisposable {
           highlight: true,
           silent: false,
         });
-        this.#defaultGatewayBookkeeping.migrationRetryInProgress = true;
-        try {
-          console.log('[openshell-gateway] retrying start after migration error recovery');
-          await this.startDefaultGateway(options, signal);
-          return;
-        } catch (retryErr: unknown) {
-          const retryMessage = retryErr instanceof Error ? retryErr.message : String(retryErr);
-          console.error(`[openshell-gateway] retry after migration error also failed: ${retryMessage}`);
-          throw retryErr;
-        } finally {
-          this.#defaultGatewayBookkeeping.migrationRetryInProgress = false;
+        if (!this.#defaultGatewayBookkeeping.migrationRetryInProgress) {
+          this.#defaultGatewayBookkeeping.migrationRetryInProgress = true;
+          try {
+            console.log('[openshell-gateway] retrying start after migration error recovery');
+            await this.startDefaultGateway(options, signal);
+            return;
+          } catch (retryErr: unknown) {
+            const retryMessage = retryErr instanceof Error ? retryErr.message : String(retryErr);
+            console.error(`[openshell-gateway] retry after migration error also failed: ${retryMessage}`);
+            throw retryErr;
+          } finally {
+            this.#defaultGatewayBookkeeping.migrationRetryInProgress = false;
+          }
         }
       }
       const baseMessage = err instanceof Error ? err.message : String(err);
@@ -718,20 +724,28 @@ export class OpenshellGateway implements IAsyncDisposable {
   }
 
   canStopGateway(name: string): boolean {
-    const proc = this.#gatewayBookkeeping.get(name)?.process;
-    return proc !== undefined && typeof proc.exitCode !== 'number' && !proc.signalCode;
+    const processes = this.#gatewayBookkeeping.get(name)?.processes ?? [];
+    return [...processes].some(proc => typeof proc.exitCode !== 'number' && !proc.signalCode);
   }
 
   // Cancels any in-flight startup, then waits for both the process exit and the startup to settle.
   protected async stopAndDrainGateway(name: string): Promise<void> {
-    const startup = this.#gatewayBookkeeping.get(name)?.startup;
-    startup?.controller.abort(new DOMException(`Gateway "${name}" startup cancelled by Stop`, 'AbortError'));
+    const startups = [...(this.#gatewayBookkeeping.get(name)?.startups ?? [])];
+    for (const [controller] of startups) {
+      controller.abort(new DOMException(`Gateway "${name}" startup cancelled by Stop`, 'AbortError'));
+    }
     try {
       await this.stopGateway(name);
     } finally {
-      await startup?.promise.catch((err: unknown) => {
-        console.debug(`[openshell-gateway] startup of "${name}" ended after Stop:`, err);
-      });
+      await Promise.all(
+        startups.map(async ([, promise]) => {
+          try {
+            await promise;
+          } catch (err: unknown) {
+            console.debug(`[openshell-gateway] startup of "${name}" ended after Stop:`, err);
+          }
+        }),
+      );
     }
   }
 
@@ -756,7 +770,7 @@ export class OpenshellGateway implements IAsyncDisposable {
       this.closeGatewayLog();
       this._onDidGatewayStart.dispose();
       this._onDidGatewayInitFailed.dispose();
-      this.#defaultGatewayBookkeeping.process = undefined;
+      this.#defaultGatewayBookkeeping.processes.clear();
       this.#gatewayBookkeeping.clear();
     }
   }
@@ -771,9 +785,10 @@ export class OpenshellGateway implements IAsyncDisposable {
 
     const cleanup = (): void => {
       const bookkeeping = this.#gatewayBookkeeping.get(name);
-      if (bookkeeping?.process === gatewayProcess) {
-        bookkeeping.process = undefined;
-        pidWritten.then(() => unlink(pidPath).catch(() => {})).catch(() => {});
+      if (bookkeeping?.processes.delete(gatewayProcess)) {
+        if (bookkeeping.processes.size === 0) {
+          pidWritten.then(() => unlink(pidPath).catch(() => {})).catch(() => {});
+        }
       }
     };
     gatewayProcess.once('exit', cleanup);
@@ -781,7 +796,7 @@ export class OpenshellGateway implements IAsyncDisposable {
       console.error(`[openshell-gateway] process error for gateway "${name}":`, err);
       if (gatewayProcess.pid === undefined) cleanup();
     });
-    this.getOrCreateGatewayBookkeeping(name).process = gatewayProcess;
+    this.getOrCreateGatewayBookkeeping(name).processes.add(gatewayProcess);
   }
 
   async getGatewayPid(gateway: GatewayInfo): Promise<number | undefined> {
@@ -822,20 +837,25 @@ export class OpenshellGateway implements IAsyncDisposable {
 
   private async stopGateway(name: string): Promise<void> {
     const bookkeeping = this.#gatewayBookkeeping.get(name);
-    const proc = bookkeeping?.process;
-    if (!bookkeeping || !proc) {
+    if (!bookkeeping || bookkeeping.processes.size === 0) {
       return;
     }
     if (bookkeeping.shutdown) {
       return bookkeeping.shutdown;
     }
-    const shutdown = this.stopGatewayProcess(name, proc);
+    const shutdown = this.stopGatewayProcesses(name, [...bookkeeping.processes]);
     bookkeeping.shutdown = shutdown;
     try {
       await shutdown;
     } finally {
       bookkeeping.shutdown = undefined;
     }
+  }
+
+  private async stopGatewayProcesses(name: string, processes: ChildProcess[]): Promise<void> {
+    const results = await Promise.allSettled(processes.map(proc => this.stopGatewayProcess(name, proc)));
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
   }
 
   private async stopGatewayProcess(name: string, proc: ChildProcess): Promise<void> {
@@ -876,10 +896,7 @@ export class OpenshellGateway implements IAsyncDisposable {
         onError(err);
       }
     });
-    const bookkeeping = this.#gatewayBookkeeping.get(name);
-    if (bookkeeping?.process === proc) {
-      bookkeeping.process = undefined;
-    }
+    this.#gatewayBookkeeping.get(name)?.processes.delete(proc);
   }
 
   private async runConfigCommand(
@@ -889,19 +906,14 @@ export class OpenshellGateway implements IAsyncDisposable {
     env?: Record<string, string>,
   ): Promise<string> {
     signal.throwIfAborted();
-    const cancellation = new Emitter<unknown>();
-    const onAbort = (): void => cancellation.fire(undefined);
+    const source = new CancellationTokenSource();
+    const onAbort = (): void => source.cancel();
     signal.addEventListener('abort', onAbort, { once: true });
     try {
       // Exec requests termination on cancellation but rejects before the config child closes.
       const result = await this.exec.exec(binaryPath, args, {
         env,
-        token: {
-          get isCancellationRequested(): boolean {
-            return signal.aborted;
-          },
-          onCancellationRequested: cancellation.event,
-        },
+        token: source.token,
       });
       signal.throwIfAborted();
       return result.stdout;
@@ -911,7 +923,7 @@ export class OpenshellGateway implements IAsyncDisposable {
       throw err;
     } finally {
       signal.removeEventListener('abort', onAbort);
-      cancellation.dispose();
+      source.dispose();
     }
   }
 
