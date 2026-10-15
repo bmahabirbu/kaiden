@@ -21,6 +21,7 @@ import { EventEmitter } from 'node:events';
 import { createWriteStream, existsSync, type WriteStream } from 'node:fs';
 import { type FileHandle, mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
+import type * as Timers from 'node:timers/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import type { CancellationToken, RunResult } from '@openkaiden/api';
@@ -508,39 +509,6 @@ describe('createLocalGateway', () => {
       expect(closeLogFile).toHaveBeenCalledTimes(2);
     });
 
-    test.each([
-      'running',
-      'exited',
-      'signal failure',
-    ])('waits for overlapping processes when the first has state %s', async state => {
-      const first = createMockChildProcess();
-      const second = createMockChildProcess();
-      vi.mocked(spawn).mockReturnValueOnce(first).mockReturnValueOnce(second);
-      await gateway.createLocalGateway(options);
-      await gateway.createLocalGateway({ ...options, port: 17676 });
-      if (state === 'exited') first.emit('exit', 0);
-      if (state === 'signal failure') fixture.failSignals(first);
-
-      let settled = false;
-      const stopping = gateway.stopAndDrainGateway(options.name);
-      const result = state === 'signal failure' ? expect(stopping).rejects.toThrow('kill ENOSYS') : stopping;
-      const completed = result.finally(() => {
-        settled = true;
-      });
-      await vi.waitFor(() => expect(second.kill).toHaveBeenCalledWith('SIGTERM'));
-      if (state === 'running') first.emit('exit', 0);
-      expect(gateway.canStopGateway(options.name)).toBe(true);
-      expect(settled).toBe(false);
-
-      second.emit('exit', 0);
-      await completed;
-
-      expect(first.kill).toHaveBeenCalledTimes(state === 'exited' ? 0 : 1);
-      expect(second.kill).toHaveBeenCalledOnce();
-      expect(gateway.canStopGateway(options.name)).toBe(state === 'signal failure');
-      expect(notificationRegistry.addNotification).not.toHaveBeenCalled();
-    });
-
     test('cancels creation during registration and permits an immediate restart', async () => {
       const pending = Promise.withResolvers<void>();
       vi.mocked(gatewayManager.addGateway).mockReturnValueOnce(pending.promise);
@@ -578,7 +546,7 @@ describe('createLocalGateway', () => {
       expect(gatewayManager.getGatewayInfo).not.toHaveBeenCalled();
     });
 
-    test('preserves readiness failure and registration after an exit timeout', async () => {
+    test('preserves readiness failure and removes the registration after an exit timeout', async () => {
       vi.useFakeTimers();
       vi.mocked(fixture.process.kill).mockReturnValue(true);
       vi.mocked(gatewayManager.getGatewayInfo).mockRejectedValue(new Error('not ready'));
@@ -587,7 +555,7 @@ describe('createLocalGateway', () => {
       await vi.runAllTimersAsync();
       await rejected;
 
-      expect(gatewayManager.removeGateway).not.toHaveBeenCalled();
+      expect(gatewayManager.removeGateway).toHaveBeenCalledExactlyOnceWith('local-dev');
       expect(gateway.canStopGateway('local-dev')).toBe(true);
       expect(spawn).toHaveBeenCalledOnce();
       expect(vi.getTimerCount()).toBe(0);
@@ -598,21 +566,18 @@ describe('createLocalGateway', () => {
     });
   });
 
-  test('starts and registers a named gateway using the validated listener settings', async () => {
+  test('starts and registers a named plaintext gateway on loopback', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const proc = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(proc);
     vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.69'));
 
-    const discovering = Promise.withResolvers<ListedGateway[]>();
-    vi.mocked(gatewayManager.listGateways).mockReturnValueOnce(discovering.promise);
-    const options = { name: ' local-dev ', bindAddress: ' 127.0.0.1 ', port: 17675 };
-    const starting = gateway.createLocalGateway(options);
-    options.port = 19000;
-    options.bindAddress = '0.0.0.0';
-    discovering.resolve([]);
-    await starting;
-    expect(isFreePort).toHaveBeenCalledExactlyOnceWith(17675);
+    await gateway.createLocalGateway({
+      name: 'local-dev',
+      bindAddress: '127.0.0.1',
+      port: 17675,
+      driver: 'podman',
+    });
 
     const storageDirectory = join(KAIDEN_DATA_DIRECTORY, 'openshell-gateways', 'local-dev');
     expect(writeFile).toHaveBeenCalledWith(
@@ -838,16 +803,13 @@ describe('stop', () => {
     });
 
     test.each([
-      { failOn: 'SIGTERM', report: 'throw', message: 'kill ENOSYS' },
-      { failOn: undefined, report: 'timeout', message: 'did not exit after SIGKILL' },
-    ])('retains ownership after $failOn / $report', async ({ failOn, report, message }) => {
+      { failOn: 'SIGTERM', message: 'kill ENOSYS' },
+      { failOn: undefined, message: 'did not exit after SIGKILL' },
+    ])('retains ownership after $message', async ({ failOn, message }) => {
       Object.defineProperty(fixture.process, 'pid', { value: 12345 });
       vi.mocked(fixture.process.kill).mockImplementation(signal => {
         if (signal === failOn) {
-          const error = new Error('kill ENOSYS');
-          if (report === 'throw') throw error;
-          fixture.process.emit('error', error);
-          return false;
+          throw new Error('kill ENOSYS');
         }
         return true;
       });
@@ -871,7 +833,6 @@ describe('stop', () => {
     await gateway.start();
     const stopping = gateway.stop();
     const concurrent = gateway.stop();
-    await vi.advanceTimersByTimeAsync(0);
     fixture.process.emit('exit', 0);
     await Promise.all([stopping, concurrent]);
     expect(fixture.process.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
@@ -2098,6 +2059,24 @@ describe.each([
     vi.mocked(spawn).mockReturnValue(createMockChildProcess());
     await start();
     expect(spawn).toHaveBeenCalledTimes(2);
+  });
+
+  test('cancels the real readiness interval when stopped', async () => {
+    const timers = await vi.importActual<typeof Timers>('node:timers/promises');
+    vi.mocked(delay).mockImplementation(timers.setTimeout);
+    const check = removed === 0 ? gatewayManager.health : gatewayManager.getGatewayInfo;
+    vi.mocked(check).mockRejectedValue(new Error('not ready'));
+    const rejected = expect(start()).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(delay).toHaveBeenCalledOnce());
+    const interval = vi.mocked(delay).mock.results[0]?.value;
+    assert(interval);
+    const cancelled = expect(interval).rejects.toMatchObject({ name: 'AbortError' });
+
+    await stop();
+    await Promise.all([rejected, cancelled]);
+
+    expect(check).toHaveBeenCalledOnce();
+    expect(gateway.canStopGateway(name)).toBe(false);
   });
 });
 
