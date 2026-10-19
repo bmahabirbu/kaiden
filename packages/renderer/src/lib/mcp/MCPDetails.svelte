@@ -7,11 +7,12 @@ import { router } from 'tinro';
 import MonacoEditor from '/@/lib/editor/MonacoEditor.svelte';
 import MCPIcon from '/@/lib/images/MCPIcon.svelte';
 import DetailsPage from '/@/lib/ui/DetailsPage.svelte';
-import ToolParts from '/@/lib/ui/shadcn/tool-parts.svelte';
 import { getTabUrl, isTabSelected } from '/@/lib/ui/Util';
 import Route from '/@/Route.svelte';
 import { mcpRemoteServerInfos } from '/@/stores/mcp-remote-servers';
 import type { MCPRemoteServerInfo } from '/@api/mcp/mcp-server-info';
+
+import ToolParts from './tool-parts.svelte';
 
 interface Props {
   id: string;
@@ -74,7 +75,7 @@ onMount(() => {
         <ToolParts tools={messages} />
         </div>
       {:else}
-        <div class="text-sm text-zinc-600 dark:text-zinc-400">No messages recorded yet.</div>
+        <div class="text-sm text-(--pd-content-card-text) opacity-70">No messages recorded yet.</div>
       {/if}
     </Route>
   {/snippet}

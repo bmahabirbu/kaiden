@@ -44,7 +44,6 @@ vi.hoisted(() => {
       dispatchEvent: () => false,
     }) as MediaQueryList;
 
-  // localStorage mock for mode-watcher
   const localStorageData = new Map<string, string>();
   const localStorageMock = {
     getItem: (key: string): string | null => localStorageData.get(key) ?? null,

@@ -20,7 +20,7 @@ import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import type { DynamicToolUIPart } from 'ai';
-import { describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import ToolParts from './tool-parts.svelte';
 
@@ -39,7 +39,41 @@ vi.mock('svelte/transition', () => ({
   }),
 }));
 
+beforeEach(() => {
+  vi.resetAllMocks();
+});
+
 describe('tool-parts.svelte', () => {
+  test.each(['{Enter}', ' '])('toggles tool details with the keyboard using %j', async key => {
+    const user = userEvent.setup();
+    render(ToolParts, {
+      tools: [
+        {
+          type: 'dynamic-tool',
+          state: 'output-available',
+          toolCallId: 't1',
+          toolName: 'Tool Text',
+          input: {},
+          output: { content: [{ type: 'text', text: 'Hello world' }] },
+        },
+      ],
+    });
+
+    const toggle = screen.getByRole('button', { name: 'Toggle details for Tool Text', expanded: false });
+    expect(toggle).toHaveAttribute('type', 'button');
+    expect(screen.queryByText('Hello world')).not.toBeInTheDocument();
+
+    await user.tab();
+    expect(toggle).toHaveFocus();
+    await user.keyboard(key);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Hello world')).toBeVisible();
+
+    await user.keyboard(key);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Hello world')).not.toBeInTheDocument();
+  });
+
   test('renders tool sections collapsed by default and toggles to show input/output details', async () => {
     const tools: Array<DynamicToolUIPart> = [
       {
