@@ -36,7 +36,7 @@ import { Emitter } from '/@/plugin/events/emitter.js';
 import { OpenshellGatewayManager } from '/@/plugin/openshell-cli/openshell-gateway-manager.js';
 import { NotificationRegistry } from '/@/plugin/tasks/notification-registry.js';
 import { Exec } from '/@/plugin/util/exec.js';
-import { isFreePort } from '/@/plugin/util/port.js';
+import { getFreePort, isFreePort } from '/@/plugin/util/port.js';
 import { isLinux, isMac } from '/@/util.js';
 import type { IAsyncDisposable } from '/@api/async-disposable.js';
 import type { Event } from '/@api/event.js';
@@ -133,12 +133,19 @@ export class OpenshellGateway implements IAsyncDisposable {
   ) {}
 
   async init(): Promise<void> {
+    const reservedPorts = new Set<number>();
     try {
       const gateways = await this.gatewayManager.listGateways();
-      const activeGatewayName = await this.gatewayManager.getActiveGateway();
       const localGateways = gateways.filter(
         gw => !gw.metadata.is_remote || this.isLocalEndpoint(gw.metadata.gateway_endpoint),
       );
+      // Keep known reservations even if active-gateway lookup or later discovery fails.
+      for (const gw of localGateways) {
+        if (gw.metadata.name === DEFAULT_GATEWAY_NAME) continue;
+        const port = this.getEndpointPort(gw.metadata.gateway_endpoint);
+        if (port !== undefined) reservedPorts.add(port);
+      }
+      const activeGatewayName = await this.gatewayManager.getActiveGateway();
       await Promise.all(
         localGateways.map(async gw => {
           if (this.isCreatedGateway(gw.metadata.name) && !(await this.isGatewayHealthy(gw.metadata.name))) {
@@ -237,8 +244,18 @@ export class OpenshellGateway implements IAsyncDisposable {
 
     console.log('[openshell-gateway] no existing gateways found, auto-starting local gateway');
     try {
-      await this.start();
-      await this.removeSamePortGateways(this.#defaultGatewayBookkeeping.port);
+      const pid = await this.readAndValidatePid(DEFAULT_GATEWAY_NAME);
+      if (pid !== undefined) {
+        throw new Error(
+          `A process recorded for ${DEFAULT_GATEWAY_NAME} is still alive (PID ${pid}). Stop it before restarting.`,
+        );
+      }
+      const port = await this.allocateDefaultGatewayPort(reservedPorts);
+      await this.start({ port });
+      // Preserve default-port deduplication without deleting registrations on fallback ports.
+      if (this.#defaultGatewayBookkeeping.port === DEFAULT_PORT) {
+        await this.removeSamePortGateways(this.#defaultGatewayBookkeeping.port);
+      }
       this._onDidGatewayStart.fire();
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
@@ -257,6 +274,21 @@ export class OpenshellGateway implements IAsyncDisposable {
         silent: false,
       });
     }
+  }
+
+  private async allocateDefaultGatewayPort(reservedPorts: Set<number>): Promise<number> {
+    let port = await getFreePort(DEFAULT_PORT);
+    // The default port keeps its existing adoption and stale-registration cleanup behavior.
+    while (port !== DEFAULT_PORT && reservedPorts.has(port)) {
+      if (port === 65_535) {
+        throw new Error('Unable to find an available gateway port: remaining ports are busy or reserved.');
+      }
+      port = await getFreePort(port + 1);
+    }
+    if (port !== DEFAULT_PORT) {
+      console.log(`[openshell-gateway] default port ${DEFAULT_PORT} unavailable, using ${port}`);
+    }
+    return port;
   }
 
   private async isGatewayHealthy(gatewayName: string): Promise<boolean> {
