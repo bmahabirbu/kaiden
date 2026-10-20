@@ -32,7 +32,7 @@ import type { GatewayMetadata } from '/@api/openshell-gateway-info.js';
  */
 @injectable()
 export class OpenshellSdkClientManager {
-  readonly #cache = new Map<string, Promise<OpenShellClient>>();
+  readonly #cache = new Map<string, { endpoint: string; client: Promise<OpenShellClient> }>();
 
   constructor(
     @inject(OpenshellGatewayManager)
@@ -45,16 +45,19 @@ export class OpenshellSdkClientManager {
     const gateway = await this.#resolveGateway(gatewayName);
 
     const cached = this.#cache.get(gateway.name);
-    if (cached) {
-      return cached;
+    if (cached?.endpoint === gateway.gateway_endpoint) {
+      return cached.client;
     }
 
     const connecting = this.#connect(gateway);
-    this.#cache.set(gateway.name, connecting);
+    this.#cache.set(gateway.name, { endpoint: gateway.gateway_endpoint, client: connecting });
     try {
       return await connecting;
     } catch (err: unknown) {
-      this.#cache.delete(gateway.name);
+      console.error(`[openshell-sdk-client] failed to connect to gateway "${gateway.name}":`, err);
+      if (this.#cache.get(gateway.name)?.client === connecting) {
+        this.#cache.delete(gateway.name);
+      }
       throw err;
     }
   }

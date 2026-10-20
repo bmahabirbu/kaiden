@@ -16,6 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  ***********************************************************************/
 
+import { OpenShellClient } from '@nvidia/openshell-sdk';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { GatewayMetadata, ListedGateway } from '/@api/openshell-gateway-info.js';
@@ -116,6 +117,59 @@ describe('OpenshellSdkClientManager', () => {
 
       expect(first).toBe(second);
       expect(mockConnect).toHaveBeenCalledTimes(1);
+    });
+
+    describe('endpoint changes', () => {
+      test.each([
+        [17671, 17670],
+        [17670, 17672],
+      ])('replaces the cached client when the port changes from %s to %s', async (oldPort, newPort) => {
+        const oldEndpoint = `http://127.0.0.1:${oldPort}`;
+        const newEndpoint = `http://127.0.0.1:${newPort}`;
+        const sdkClient = createSdkClient({
+          getGateway: vi
+            .fn()
+            .mockResolvedValueOnce(metadata({ gateway_endpoint: oldEndpoint, gateway_port: oldPort }))
+            .mockResolvedValue(metadata({ gateway_endpoint: newEndpoint, gateway_port: newPort })),
+        });
+        const oldClient = { id: 'old' };
+        const newClient = { id: 'new' };
+        mockConnect.mockResolvedValueOnce(oldClient).mockResolvedValueOnce(newClient);
+
+        expect(await sdkClient.getClient('kaiden-local')).toBe(oldClient);
+        const [first, second] = await Promise.all([
+          sdkClient.getClient('kaiden-local'),
+          sdkClient.getClient('kaiden-local'),
+        ]);
+
+        expect(first).toBe(newClient);
+        expect(second).toBe(newClient);
+        expect(await sdkClient.getClient('kaiden-local')).toBe(newClient);
+        expect(mockConnect).toHaveBeenNthCalledWith(1, { gateway: oldEndpoint });
+        expect(mockConnect).toHaveBeenNthCalledWith(2, { gateway: newEndpoint });
+        expect(mockConnect).toHaveBeenCalledTimes(2);
+      });
+
+      test('keeps the replacement cached when the old connection fails later', async () => {
+        const sdkClient = createSdkClient({
+          getGateway: vi
+            .fn()
+            .mockResolvedValueOnce(metadata({ gateway_endpoint: 'http://127.0.0.1:17671', gateway_port: 17671 }))
+            .mockResolvedValue(metadata()),
+        });
+        const oldConnection = Promise.withResolvers<OpenShellClient>();
+        vi.mocked(OpenShellClient.connect).mockReturnValueOnce(oldConnection.promise);
+        const oldRequest = sdkClient.getClient('kaiden-local');
+        await vi.waitFor(() => expect(OpenShellClient.connect).toHaveBeenCalledOnce());
+
+        const replacement = await sdkClient.getClient('kaiden-local');
+        oldConnection.reject(new Error('old endpoint unavailable'));
+        await expect(oldRequest).rejects.toThrow('old endpoint unavailable');
+
+        expect(await sdkClient.getClient('kaiden-local')).toBe(replacement);
+        expect(OpenShellClient.connect).toHaveBeenCalledTimes(2);
+        expect(OpenShellClient.connect).toHaveBeenLastCalledWith({ gateway: 'http://127.0.0.1:17670' });
+      });
     });
 
     test('concurrent calls for same gateway share a single connection attempt', async () => {
