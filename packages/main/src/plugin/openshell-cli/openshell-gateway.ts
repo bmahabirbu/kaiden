@@ -375,6 +375,15 @@ export class OpenshellGateway implements IAsyncDisposable {
     if (gateways.some(gw => gw.metadata.name === name)) {
       throw new Error(`A gateway named "${name}" is already registered`);
     }
+    // A stopped gateway frees its port at the OS level but keeps its registration.
+    const portOwner = gateways.find(
+      gw =>
+        (!gw.metadata.is_remote || this.isLocalEndpoint(gw.metadata.gateway_endpoint)) &&
+        this.getEndpointPort(gw.metadata.gateway_endpoint) === port,
+    );
+    if (portOwner) {
+      throw new Error(`Port ${port} is already assigned to gateway "${portOwner.metadata.name}"`);
+    }
     await isFreePort(port);
     signal.throwIfAborted();
 

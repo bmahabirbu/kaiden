@@ -658,6 +658,37 @@ describe('createLocalGateway', () => {
     expect(gateway.canStopGateway('local-dev')).toBe(false);
   });
 
+  test.each([
+    { owner: 'stopped-gw', endpoint: 'http://127.0.0.1:17675', isRemote: false },
+    { owner: 'kaiden-local', endpoint: 'http://127.0.0.1:17675', isRemote: false },
+    { owner: 'external-gw', endpoint: 'http://localhost:17675', isRemote: false },
+    { owner: 'lan-gw', endpoint: 'http://192.168.1.10:17675', isRemote: false },
+    { owner: 'remote-flagged-gw', endpoint: 'http://127.0.0.1:17675', isRemote: true },
+  ])('rejects a port assigned to registered local gateway $owner', async ({ owner, endpoint, isRemote }) => {
+    vi.mocked(gatewayManager.listGateways).mockResolvedValue([listed(owner, endpoint, { is_remote: isRemote })]);
+
+    await expect(
+      gateway.createLocalGateway({ name: 'local-dev', bindAddress: '127.0.0.1', port: 17675 }),
+    ).rejects.toThrow(`Port 17675 is already assigned to gateway "${owner}"`);
+
+    expect(isFreePort).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+    expect(gatewayManager.addGateway).not.toHaveBeenCalled();
+  });
+
+  test('allows a port number used by a remote gateway', async () => {
+    vi.mocked(gatewayManager.listGateways).mockResolvedValue([
+      listed('remote-gw', 'https://gateway.example.com:17675', { is_remote: true }),
+    ]);
+
+    await gateway.createLocalGateway({ name: 'local-dev', bindAddress: '127.0.0.1', port: 17675 });
+
+    expect(gatewayManager.addGateway).toHaveBeenCalledWith(
+      'local-dev',
+      expect.objectContaining({ gateway_endpoint: 'http://127.0.0.1:17675' }),
+    );
+  });
+
   test('preserves each requested endpoint when same-name creations overlap', async () => {
     const opening = Promise.withResolvers<void>();
     const resume = Promise.withResolvers<void>();
