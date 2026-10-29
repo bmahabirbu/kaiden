@@ -18,6 +18,7 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import type { WriteStream } from 'node:fs';
 import { createWriteStream, existsSync } from 'node:fs';
 import { mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
@@ -392,7 +393,7 @@ export class OpenshellGateway implements IAsyncDisposable {
       throw new Error('openshell-gateway binary not registered in CLI tool registry');
     }
     const storageDirectory = this.getGatewayStorageDirectory(name);
-    const configPath = await this.createNamedGatewayConfig(binaryPath, storageDirectory, driver, signal);
+    const configPath = await this.createNamedGatewayConfig(name, binaryPath, storageDirectory, driver, signal);
     const gateway = this.getOrCreateGatewayBookkeeping(name);
     gateway.port = port;
     gateway.bindAddress = bindAddress;
@@ -569,7 +570,7 @@ export class OpenshellGateway implements IAsyncDisposable {
       gatewayProcess = spawn(binaryPath, args, {
         stdio: ['ignore', logFile.fd, logFile.fd],
         detached: false,
-        env: this.getGatewayEnvironment(binaryPath, storageDirectory),
+        env: this.getGatewayEnvironment(binaryPath, name),
       });
       gatewayProcess.once('error', err => (processState.spawnError = err));
       this.trackGatewayProcess(name, gatewayProcess);
@@ -579,9 +580,9 @@ export class OpenshellGateway implements IAsyncDisposable {
     return { gatewayProcess, processState };
   }
 
-  private getGatewayEnvironment(binaryPath: string, storageDirectory: string): NodeJS.ProcessEnv {
+  private getGatewayEnvironment(binaryPath: string, name: string): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: '1' };
-    env['XDG_STATE_HOME'] = join(storageDirectory, 'state');
+    env['XDG_STATE_HOME'] = this.getGatewayStateDirectory(name);
     if (isMac() || isLinux()) {
       // The VM driver finds the bundled e2fsprogs wrappers through PATH.
       env['PATH'] = [dirname(binaryPath), env['PATH']].filter(Boolean).join(delimiter);
@@ -673,7 +674,7 @@ export class OpenshellGateway implements IAsyncDisposable {
     const gatewayProcess = spawn(binaryPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
-      env: this.getGatewayEnvironment(binaryPath, this.getGatewayStorageDirectory(DEFAULT_GATEWAY_NAME)),
+      env: this.getGatewayEnvironment(binaryPath, DEFAULT_GATEWAY_NAME),
     });
     this.trackGatewayProcess(DEFAULT_GATEWAY_NAME, gatewayProcess);
 
@@ -1040,6 +1041,7 @@ export class OpenshellGateway implements IAsyncDisposable {
       const config = Mustache.render(gatewayConfigTemplate, {
         supervisorImage: image,
         supportsContainerSettings: driver !== 'vm',
+        vmStateDir: driver === 'vm' ? join(this.getGatewayStateDirectory(DEFAULT_GATEWAY_NAME), 'vm') : undefined,
         gatewayDir: storageDirectory,
         q: '"',
         driver,
@@ -1153,6 +1155,18 @@ export class OpenshellGateway implements IAsyncDisposable {
     return join(this.directories.getDataDirectory(), 'openshell-gateways', name);
   }
 
+  /**
+   * Used as `XDG_STATE_HOME` for every gateway; VM gateways use its `vm` subfolder as
+   * the driver `state_dir`. The VM driver binds `<state_dir>/run/compute-driver.sock`,
+   * which must fit in the macOS `sun_path` limit (104 bytes). Gateway names are
+   * unbounded, so use a short name prefix plus a stable hash to keep the directory
+   * name at 17 characters.
+   */
+  private getGatewayStateDirectory(name: string): string {
+    const hash = createHash('sha256').update(name).digest('hex').slice(0, 8);
+    return join(this.directories.getDataDirectory(), 'state', `${name.slice(0, 8)}-${hash}`);
+  }
+
   private isMigrationError(output: string): boolean {
     return output.includes('migration error');
   }
@@ -1166,6 +1180,7 @@ export class OpenshellGateway implements IAsyncDisposable {
   }
 
   private async createNamedGatewayConfig(
+    name: string,
     binaryPath: string,
     storageDirectory: string,
     driver: LocalGatewayDriver,
@@ -1188,6 +1203,7 @@ export class OpenshellGateway implements IAsyncDisposable {
       Mustache.render(gatewayConfigTemplate, {
         supervisorImage,
         supportsContainerSettings: driver !== 'vm',
+        vmStateDir: driver === 'vm' ? join(this.getGatewayStateDirectory(name), 'vm') : undefined,
         gatewayDir: storageDirectory,
         q: '"',
         driver,
