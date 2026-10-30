@@ -25,6 +25,7 @@ import type * as Timers from 'node:timers/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import type { CancellationToken, RunResult } from '@openkaiden/api';
+import { parse as parseToml } from 'smol-toml';
 import { afterEach, assert, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { CliToolRegistry } from '/@/plugin/cli-tool-registry.js';
@@ -860,6 +861,51 @@ describe('createLocalGateway', () => {
       await gateway.stopAndDrainGateway('local-dev');
       expect(gateway.canStopGateway('local-dev')).toBe(false);
     });
+  });
+
+  test('sets a short VM driver state_dir for a named VM gateway', async () => {
+    vi.mocked(spawn).mockReturnValue(createMockChildProcess());
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.116'));
+
+    await gateway.createLocalGateway({
+      name: 'local-dev',
+      bindAddress: '127.0.0.1',
+      port: 17675,
+      driver: 'vm',
+    });
+
+    const configPath = join(KAIDEN_DATA_DIRECTORY, 'openshell-gateways', 'local-dev', 'gateway.toml');
+    const writtenContent = vi.mocked(writeFile).mock.calls.find(([path]) => path === configPath)?.[1];
+    assert(typeof writtenContent === 'string');
+    expect(parseToml(writtenContent)).toMatchObject({
+      openshell: { drivers: { vm: { state_dir: join(KAIDEN_DATA_DIRECTORY, 'state', 'local-de-08846e81') } } },
+    });
+  });
+
+  test('keeps distinct bounded VM driver state_dirs for long gateway names with a shared prefix', async () => {
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.116'));
+
+    for (const name of ['customer-project-development-gateway', 'customer-project-staging-gateway']) {
+      vi.mocked(spawn).mockReturnValue(createMockChildProcess());
+      await gateway.createLocalGateway({ name, bindAddress: '127.0.0.1', port: 17675, driver: 'vm' });
+    }
+
+    const stateDirs = vi
+      .mocked(writeFile)
+      .mock.calls.filter(([path]) => String(path).endsWith('gateway.toml'))
+      .map(([, content]) => (typeof content === 'string' ? parseToml(content) : undefined));
+    expect(stateDirs).toEqual([
+      expect.objectContaining({
+        openshell: expect.objectContaining({
+          drivers: { vm: { state_dir: join(KAIDEN_DATA_DIRECTORY, 'state', 'customer-36c32574') } },
+        }),
+      }),
+      expect.objectContaining({
+        openshell: expect.objectContaining({
+          drivers: { vm: { state_dir: join(KAIDEN_DATA_DIRECTORY, 'state', 'customer-a0c7b50c') } },
+        }),
+      }),
+    ]);
   });
 
   test('starts and registers a named plaintext gateway on loopback', async () => {
@@ -2266,6 +2312,34 @@ describe('gateway config generation', () => {
     expect(writtenContent).toContain('[openshell.drivers.vm]');
     expect(writtenContent).not.toContain('enable_bind_mounts');
     expect(writtenContent).not.toContain('supervisor_image');
+  });
+
+  test.each([
+    KAIDEN_DATA_DIRECTORY,
+    // Joined with the runner's path separator, so this only checks that backslashes
+    // land verbatim in the TOML literal string, not Windows path handling.
+    'C:\\Users\\user\\AppData\\Local\\kaiden',
+  ])('sets a short VM driver state_dir under data directory %s', async dataDirectory => {
+    vi.mocked(directories.getDataDirectory).mockReturnValue(dataDirectory);
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.116'));
+
+    await gateway.start({ driver: 'vm' });
+
+    const writtenContent = vi.mocked(writeFile).mock.calls[0]?.[1];
+    assert(typeof writtenContent === 'string');
+    expect(parseToml(writtenContent)).toMatchObject({
+      openshell: { drivers: { vm: { state_dir: join(dataDirectory, 'state', 'kaiden-l-dff66a28') } } },
+    });
+  });
+
+  test.each(['podman', 'docker'] as const)('does not set a state_dir for the %s driver', async driver => {
+    vi.mocked(exec.exec).mockResolvedValue(mockExecResult('openshell-gateway 0.0.69'));
+
+    await gateway.start({ driver });
+
+    const writtenContent = vi.mocked(writeFile).mock.calls[0]?.[1];
+    assert(typeof writtenContent === 'string');
+    expect(writtenContent).not.toContain('state_dir');
   });
 
   test('defaults to Podman when no gateway is available', async () => {

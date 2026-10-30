@@ -18,6 +18,7 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import type { WriteStream } from 'node:fs';
 import { createWriteStream, existsSync } from 'node:fs';
 import { mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
@@ -59,6 +60,7 @@ const STOP_TIMEOUT_MS = 5000;
 const SUPERVISOR_IMAGE_BASE = 'ghcr.io/nvidia/openshell/supervisor';
 const GATEWAY_LOG_FILENAME = 'gateway.log';
 const GATEWAY_PID_FILENAME = 'gateway.pid';
+const VM_DRIVER_STATE_FOLDER = 'state';
 const DEFAULT_GATEWAY_NAME = KAIDEN_LOCAL_GATEWAY_NAME;
 
 const GatewayConfigSchema = z.object({
@@ -392,7 +394,7 @@ export class OpenshellGateway implements IAsyncDisposable {
       throw new Error('openshell-gateway binary not registered in CLI tool registry');
     }
     const storageDirectory = this.getGatewayStorageDirectory(name);
-    const configPath = await this.createNamedGatewayConfig(binaryPath, storageDirectory, driver, signal);
+    const configPath = await this.createNamedGatewayConfig(name, binaryPath, storageDirectory, driver, signal);
     const gateway = this.getOrCreateGatewayBookkeeping(name);
     gateway.port = port;
     gateway.bindAddress = bindAddress;
@@ -1040,6 +1042,7 @@ export class OpenshellGateway implements IAsyncDisposable {
       const config = Mustache.render(gatewayConfigTemplate, {
         supervisorImage: image,
         supportsContainerSettings: driver !== 'vm',
+        vmStateDir: this.getVmDriverStateDirectory(DEFAULT_GATEWAY_NAME, driver),
         gatewayDir: storageDirectory,
         q: '"',
         driver,
@@ -1153,6 +1156,19 @@ export class OpenshellGateway implements IAsyncDisposable {
     return join(this.directories.getDataDirectory(), 'openshell-gateways', name);
   }
 
+  /**
+   * A short `state_dir` for the VM driver. With OpenShell's default, the driver's socket path
+   * is too long for macOS (104 bytes) and the driver fails to start. A name prefix plus a hash
+   * keeps the folder short for any gateway name.
+   */
+  private getVmDriverStateDirectory(name: string, driver: LocalGatewayDriver): string | undefined {
+    if (driver !== 'vm') {
+      return undefined;
+    }
+    const hash = createHash('sha256').update(name).digest('hex').slice(0, 8);
+    return join(this.directories.getDataDirectory(), VM_DRIVER_STATE_FOLDER, `${name.slice(0, 8)}-${hash}`);
+  }
+
   private isMigrationError(output: string): boolean {
     return output.includes('migration error');
   }
@@ -1166,6 +1182,7 @@ export class OpenshellGateway implements IAsyncDisposable {
   }
 
   private async createNamedGatewayConfig(
+    name: string,
     binaryPath: string,
     storageDirectory: string,
     driver: LocalGatewayDriver,
@@ -1188,6 +1205,7 @@ export class OpenshellGateway implements IAsyncDisposable {
       Mustache.render(gatewayConfigTemplate, {
         supervisorImage,
         supportsContainerSettings: driver !== 'vm',
+        vmStateDir: this.getVmDriverStateDirectory(name, driver),
         gatewayDir: storageDirectory,
         q: '"',
         driver,
