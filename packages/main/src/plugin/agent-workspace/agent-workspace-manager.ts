@@ -1312,20 +1312,9 @@ export class AgentWorkspaceManager implements Disposable {
 
     this.disposables.push(
       this.openshellGateway.onDidGatewayStart(() => {
-        this.openshellGatewayStateManager
-          .refresh()
-          .catch((err: unknown) => {
-            console.warn(
-              `[AgentWorkspaceManager] unable to refresh gateways after startup: ${
-                err instanceof Error ? err.message : String(err)
-              }`,
-            );
-          })
-          .then(() => this.startAgentSessions())
-          .catch((err: unknown) => {
-            console.warn('[AgentWorkspaceManager] unable to start agents after gateway startup:', err);
-          });
-        this.apiSender.send('agent-workspace-update');
+        this.onGatewayStarted().catch((err: unknown) => {
+          console.warn('[AgentWorkspaceManager] unable to start agents after gateway startup:', err);
+        });
       }),
     );
 
@@ -1344,8 +1333,25 @@ export class AgentWorkspaceManager implements Disposable {
     this.disposables.push(
       this.openshellGatewayStateManager.onDidUpdateGateways(() => {
         this.apiSender.send('agent-gateway-update');
+        // the sandboxes that can be listed depend on the known and reachable gateways
+        this.apiSender.send('agent-workspace-update');
       }),
     );
+  }
+
+  private async onGatewayStarted(): Promise<void> {
+    try {
+      await this.openshellGatewayStateManager.refresh();
+    } catch (err: unknown) {
+      console.warn(
+        `[AgentWorkspaceManager] unable to refresh gateways after startup: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+    // the workspace list only covers the gateways known after the refresh
+    this.apiSender.send('agent-workspace-update');
+    await this.startAgentSessions();
   }
 
   @preDestroy()

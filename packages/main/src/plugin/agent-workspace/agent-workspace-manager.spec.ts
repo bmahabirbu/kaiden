@@ -437,10 +437,24 @@ describe('init', () => {
     expect(openshellGateway.onDidGatewayStart).toHaveBeenCalled();
   });
 
-  test('refreshes gateway state and sends a workspace update when gateway starts', () => {
+  test('refreshes gateway state and sends a workspace update once the refresh settles when gateway starts', async () => {
+    const refresh = Promise.withResolvers<void>();
+    vi.mocked(openshellGatewayStateManager.refresh).mockReturnValue(refresh.promise);
+
     gatewayStartCallback!();
+
     expect(openshellGatewayStateManager.refresh).toHaveBeenCalled();
-    expect(apiSender.send).toHaveBeenCalledWith('agent-workspace-update');
+    expect(apiSender.send).not.toHaveBeenCalledWith('agent-workspace-update');
+    refresh.resolve();
+    await vi.waitFor(() => expect(apiSender.send).toHaveBeenCalledWith('agent-workspace-update'));
+  });
+
+  test('sends a workspace update when the gateway refresh fails after gateway start', async () => {
+    vi.mocked(openshellGatewayStateManager.refresh).mockRejectedValue(new Error('cannot list gateways'));
+
+    gatewayStartCallback!();
+
+    await vi.waitFor(() => expect(apiSender.send).toHaveBeenCalledWith('agent-workspace-update'));
   });
 
   test('subscribes to gateway init failed event', () => {
@@ -455,6 +469,11 @@ describe('init', () => {
   test('sends gateway update event when monitored gateway state changes', () => {
     gatewayStateUpdateCallback!();
     expect(apiSender.send).toHaveBeenCalledWith('agent-gateway-update');
+  });
+
+  test('sends a workspace update when monitored gateway state changes', () => {
+    gatewayStateUpdateCallback!();
+    expect(apiSender.send).toHaveBeenCalledWith('agent-workspace-update');
   });
 });
 
