@@ -1190,6 +1190,16 @@ describe('stop', () => {
       expect(gateway.isRunning()).toBe(true);
     });
 
+    test('gives the managed gateway time to shut down gracefully before sending SIGKILL', async () => {
+      const stopping = gateway.stopAndDrainGateway('kaiden-local');
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fixture.process.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+      fixture.process.emit('exit', 0, undefined);
+      await stopping;
+      expect(gateway.isRunning()).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
     test('falls back to SIGKILL when the managed gateway does not exit', async () => {
       const stopping = gateway.stopAndDrainGateway('kaiden-local');
       let completed = false;
