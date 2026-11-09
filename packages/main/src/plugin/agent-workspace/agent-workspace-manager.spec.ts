@@ -23,6 +23,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import type { ExecInteractiveSession, OpenShellClient } from '@nvidia/openshell-sdk';
+import { SandboxPhase } from '@nvidia/openshell-sdk/raw';
 import type { Agent, AgentWorkspaceConfiguration } from '@openkaiden/api';
 import { Terminal as HeadlessTerminal } from '@xterm/headless';
 import type { IpcMainInvokeEvent, WebContents } from 'electron';
@@ -2911,6 +2912,167 @@ describe('agent session lifecycle', () => {
     await vi.waitFor(() => expect(sdkSandbox.execInteractive).toHaveBeenCalledTimes(2));
 
     for (const resolve of pendingExecs) resolve(createMockExecSession().session);
+  });
+
+  describe('workspaces still starting when the gateway starts', () => {
+    const BOOTING_REF: (typeof SDK_REFS_WITH_AGENT)[number] = {
+      id: 'ws-booting',
+      name: 'booting-workspace',
+      phase: 'provisioning',
+      labels: { [AGENT_LABEL]: 'test-agent' },
+      resourceVersion: '5',
+    };
+
+    type WatchRequest = { sandbox: string; followStatus: boolean; stopOnTerminal: boolean };
+    type WatchOptions = { signal: AbortSignal };
+    let watchSandbox: ReturnType<
+      typeof vi.fn<(request: WatchRequest, options: WatchOptions) => AsyncIterable<unknown>>
+    >;
+
+    function statusEvent(phase: SandboxPhase): unknown {
+      return { payload: { case: 'sandbox', value: { status: { phase } } } };
+    }
+
+    async function* statusStream(...phases: SandboxPhase[]): AsyncGenerator<unknown> {
+      for (const phase of phases) {
+        yield statusEvent(phase);
+      }
+    }
+
+    // a stream that stays open until its watch is aborted
+    async function* openStream(options: WatchOptions): AsyncGenerator<unknown> {
+      yield statusEvent(SandboxPhase.PROVISIONING);
+      await new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new Error('watch aborted')));
+      });
+    }
+
+    function mockGatewaySandboxes(refs: (typeof BOOTING_REF)[]): void {
+      vi.mocked(openshellGatewayStateManager.listGateways).mockReturnValue([TEST_GATEWAY]);
+      vi.mocked(openshellSdkClientManager.getClient).mockResolvedValue({
+        sandbox: { ...sdkSandbox, list: vi.fn().mockReturnValue({ all: vi.fn().mockResolvedValue(refs) }) },
+        raw: { watchSandbox },
+      } as unknown as OpenShellClient);
+    }
+
+    function getWorkspaceUpdateCount(): number {
+      return vi.mocked(apiSender.send).mock.calls.filter(([channel]) => channel === 'agent-workspace-update').length;
+    }
+
+    beforeEach(() => {
+      watchSandbox = vi.fn();
+      vi.mocked(agentRegistry.getAgent).mockResolvedValue(testAgent);
+      sdkSandbox.execInteractive.mockResolvedValue(createMockExecSession().session);
+    });
+
+    test('follows the workspace until it is ready, refreshing the list on each phase, then starts its agent', async () => {
+      mockGatewaySandboxes([BOOTING_REF]);
+      watchSandbox.mockReturnValue(statusStream(SandboxPhase.PROVISIONING, SandboxPhase.READY));
+
+      gatewayStartCallback!();
+
+      await vi.waitFor(() =>
+        expect(sdkSandbox.execInteractive).toHaveBeenCalledWith(
+          'booting-workspace',
+          TEST_SHELL_COMMAND,
+          expect.anything(),
+        ),
+      );
+      expect(watchSandbox).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ sandbox: 'booting-workspace', followStatus: true, stopOnTerminal: true }),
+        { signal: expect.any(AbortSignal) },
+      );
+      // one update after the gateway refresh, one per observed phase
+      expect(getWorkspaceUpdateCount()).toBe(3);
+    });
+
+    test('refreshes the list without starting the agent when the workspace ends in error', async () => {
+      mockGatewaySandboxes([{ ...BOOTING_REF, phase: 'starting' }]);
+      watchSandbox.mockReturnValue(statusStream(SandboxPhase.STARTING, SandboxPhase.ERROR));
+
+      gatewayStartCallback!();
+
+      await vi.waitFor(() => expect(getWorkspaceUpdateCount()).toBe(3));
+      expect(sdkSandbox.execInteractive).not.toHaveBeenCalled();
+    });
+
+    test('refreshes the list without starting the agent when the watch fails', async () => {
+      mockGatewaySandboxes([BOOTING_REF]);
+      watchSandbox.mockReturnValue(
+        (async function* (): AsyncGenerator<unknown> {
+          yield statusEvent(SandboxPhase.PROVISIONING);
+          throw new Error('connection reset');
+        })(),
+      );
+
+      gatewayStartCallback!();
+
+      await vi.waitFor(() => expect(getWorkspaceUpdateCount()).toBe(3));
+      expect(sdkSandbox.execInteractive).not.toHaveBeenCalled();
+    });
+
+    test('does not start an agent when the ready workspace has no agent label', async () => {
+      mockGatewaySandboxes([{ ...BOOTING_REF, labels: {} }]);
+      watchSandbox.mockReturnValue(statusStream(SandboxPhase.READY));
+
+      gatewayStartCallback!();
+
+      await vi.waitFor(() => expect(getWorkspaceUpdateCount()).toBe(2));
+      expect(sdkSandbox.execInteractive).not.toHaveBeenCalled();
+    });
+
+    test('does not watch a workspace that is already ready and starts its agent', async () => {
+      mockGatewaySandboxes([{ ...BOOTING_REF, phase: 'ready' }]);
+
+      gatewayStartCallback!();
+
+      await vi.waitFor(() => expect(sdkSandbox.execInteractive).toHaveBeenCalled());
+      expect(watchSandbox).not.toHaveBeenCalled();
+    });
+
+    test('a second gateway start does not open a second watch for the same workspace', async () => {
+      mockGatewaySandboxes([BOOTING_REF]);
+      watchSandbox.mockImplementation((_request, options) => openStream(options));
+
+      gatewayStartCallback!();
+      await vi.waitFor(() => expect(getWorkspaceUpdateCount()).toBe(2));
+      gatewayStartCallback!();
+      await vi.waitFor(() => expect(getWorkspaceUpdateCount()).toBe(3));
+
+      expect(watchSandbox).toHaveBeenCalledOnce();
+      manager.dispose();
+    });
+
+    test('dispose aborts the watch without refreshing the list', async () => {
+      mockGatewaySandboxes([BOOTING_REF]);
+      watchSandbox.mockImplementation((_request, options) => openStream(options));
+
+      gatewayStartCallback!();
+      await vi.waitFor(() => expect(getWorkspaceUpdateCount()).toBe(2));
+      manager.dispose();
+      await new Promise(r => setTimeout(r, 0));
+
+      const options = watchSandbox.mock.calls[0]?.[1];
+      assert(options);
+      expect(options.signal.aborted).toBe(true);
+      expect(getWorkspaceUpdateCount()).toBe(2);
+      expect(sdkSandbox.execInteractive).not.toHaveBeenCalled();
+    });
+
+    test('stopping the gateway aborts the watches of its workspaces', async () => {
+      mockGatewaySandboxes([BOOTING_REF]);
+      watchSandbox.mockImplementation((_request, options) => openStream(options));
+      vi.mocked(openshellGateway.stopManagedGateway).mockResolvedValue(undefined);
+
+      gatewayStartCallback!();
+      await vi.waitFor(() => expect(watchSandbox).toHaveBeenCalled());
+      await manager.stopOpenshellGateway(TEST_GATEWAY.name);
+
+      const options = watchSandbox.mock.calls[0]?.[1];
+      assert(options);
+      expect(options.signal.aborted).toBe(true);
+      expect(sdkSandbox.execInteractive).not.toHaveBeenCalled();
+    });
   });
 });
 

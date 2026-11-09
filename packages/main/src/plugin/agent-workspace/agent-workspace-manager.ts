@@ -21,6 +21,7 @@ import { homedir, tmpdir } from 'node:os';
 import { basename, isAbsolute, join, posix, resolve } from 'node:path';
 
 import type { ExecInteractiveSession } from '@nvidia/openshell-sdk';
+import { SandboxPhase } from '@nvidia/openshell-sdk/raw';
 import type { Agent, Disposable } from '@openkaiden/api';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { Terminal as HeadlessTerminal } from '@xterm/headless';
@@ -84,6 +85,21 @@ const MOUNT_HOME_PREFIX = '$HOME';
 // Timeouts for sandbox startup and deletion cleanup for sdk.
 const SANDBOX_READY_TIMEOUT_SECONDS = 300;
 const SANDBOX_DELETE_TIMEOUT_SECONDS = 120;
+const STARTING_SANDBOX_PHASES: ReadonlySet<SandboxInfo['phase']> = new Set(['Provisioning', 'Starting']);
+const SDK_RAW_PHASE_MAP: Record<SandboxPhase, SandboxInfo['phase']> = {
+  [SandboxPhase.UNSPECIFIED]: 'Unspecified',
+  [SandboxPhase.PROVISIONING]: 'Provisioning',
+  [SandboxPhase.READY]: 'Ready',
+  [SandboxPhase.ERROR]: 'Error',
+  [SandboxPhase.DELETING]: 'Deleting',
+  [SandboxPhase.UNKNOWN]: 'Unknown',
+  [SandboxPhase.STOPPING]: 'Stopping',
+  [SandboxPhase.STOPPED]: 'Stopped',
+  [SandboxPhase.STARTING]: 'Starting',
+  [SandboxPhase.COMPLETED]: 'Completed',
+  [SandboxPhase.SUSPENDING]: 'Suspending',
+  [SandboxPhase.SUSPENDED]: 'Suspended',
+};
 const DEFAULT_TERMINAL_SCROLLBACK = 1000;
 
 export interface AgentTerminalClient {
@@ -145,6 +161,8 @@ export class AgentWorkspaceManager implements Disposable {
   // bumped on every renderer reload so that a terminal request from the previous renderer is dropped
   private rendererGeneration = 0;
   private readonly disposables: Disposable[] = [];
+  // status streams of the sandboxes still starting after a gateway start, keyed by "gateway/sandbox"
+  private readonly sandboxStartupWatches = new Map<string, AbortController>();
 
   constructor(
     @inject(ApiSenderType)
@@ -775,6 +793,7 @@ export class AgentWorkspaceManager implements Disposable {
     task.state = 'running';
     task.status = 'in-progress';
     let stopped = false;
+    this.abortSandboxStartupWatches(name);
     try {
       await this.openshellGateway.stopManagedGateway(name);
       stopped = true;
@@ -1096,19 +1115,86 @@ export class AgentWorkspaceManager implements Disposable {
   // start agents of existing workspaces (e.g. after an application restart) without waiting for a terminal
   private async startAgentSessions(): Promise<void> {
     const targets = (await this.listOpenshellSandboxes()).flatMap(({ gateway, sandboxes }) =>
-      sandboxes
-        .filter(sandbox => sandbox.phase === 'Ready' && sandbox.labels?.[AGENT_LABEL])
-        .map(sandbox => ({ gateway, sandbox })),
+      sandboxes.map(sandbox => ({ gateway: gateway.name, sandbox })),
     );
     await Promise.all(
-      targets.map(({ gateway, sandbox }) =>
-        this.ensureAgentSession(sandbox.id, sandbox.name, gateway.name, () => this.resolveAgentCommand(sandbox)).catch(
+      targets.map(async ({ gateway, sandbox }) => {
+        // the gateway reports healthy before the sandboxes it restarts are Ready
+        const phase = STARTING_SANDBOX_PHASES.has(sandbox.phase)
+          ? await this.watchStartingSandbox(sandbox.name, gateway)
+          : sandbox.phase;
+        if (phase !== 'Ready' || !sandbox.labels?.[AGENT_LABEL]) {
+          return;
+        }
+        await this.ensureAgentSession(sandbox.id, sandbox.name, gateway, () => this.resolveAgentCommand(sandbox)).catch(
           (err: unknown) => {
             console.warn(`[AgentWorkspace] unable to start agent in workspace "${sandbox.name}":`, err);
           },
-        ),
-      ),
+        );
+      }),
     );
+  }
+
+  /**
+   * Follows a sandbox the gateway is still starting until it settles, refreshing the workspace list on each
+   * phase change. Returns the settled phase, or undefined when the sandbox is already followed or the watch
+   * did not complete.
+   */
+  private async watchStartingSandbox(sandboxName: string, gateway: string): Promise<SandboxInfo['phase'] | undefined> {
+    const key = `${gateway}/${sandboxName}`;
+    if (this.sandboxStartupWatches.has(key)) {
+      return undefined;
+    }
+    const controller = new AbortController();
+    this.sandboxStartupWatches.set(key, controller);
+    let phase: SandboxInfo['phase'] | undefined;
+    try {
+      const client = await this.openshellSdkClientManager.getClient(gateway);
+      const events = client.raw.watchSandbox(
+        {
+          sandbox: sandboxName,
+          followStatus: true,
+          // the gateway closes the stream once the sandbox is Ready or in a terminal phase
+          stopOnTerminal: true,
+          workspaceScope: OpenshellWorkspaceDefaults.WORKSPACE_SCOPE,
+        },
+        { signal: controller.signal },
+      );
+      for await (const event of events) {
+        if (event.payload.case !== 'sandbox') {
+          continue;
+        }
+        const next = SDK_RAW_PHASE_MAP[event.payload.value.status?.phase ?? SandboxPhase.UNSPECIFIED];
+        if (next !== phase) {
+          phase = next;
+          this.apiSender.send('agent-workspace-update');
+        }
+      }
+      return phase;
+    } catch (err: unknown) {
+      if (controller.signal.aborted) {
+        return undefined;
+      }
+      console.warn(
+        `[AgentWorkspace] unable to follow the startup of workspace "${sandboxName}" on gateway "${gateway}":`,
+        err,
+      );
+      this.apiSender.send('agent-workspace-update');
+      return undefined;
+    } finally {
+      if (this.sandboxStartupWatches.get(key) === controller) {
+        this.sandboxStartupWatches.delete(key);
+      }
+    }
+  }
+
+  private abortSandboxStartupWatches(gateway?: string): void {
+    for (const [key, controller] of this.sandboxStartupWatches) {
+      if (gateway === undefined || key.startsWith(`${gateway}/`)) {
+        controller.abort();
+        this.sandboxStartupWatches.delete(key);
+      }
+    }
   }
 
   private closeWorkspaceTerminals(sandboxName: string, gateway: string): void {
@@ -1356,6 +1442,7 @@ export class AgentWorkspaceManager implements Disposable {
 
   @preDestroy()
   dispose(): void {
+    this.abortSandboxStartupWatches();
     for (const start of this.startingAgentSessions.values()) {
       start.cancelled = true;
     }
